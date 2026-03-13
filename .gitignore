@@ -1,0 +1,20 @@
+# Database WAL/SHM files (transient)
+*.db-shm
+*.db-wal
+
+# Generated audio files
+voca_vault/audios/*.mp3
+
+# Session logs
+voca_vault/logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Keep directory structure
+!voca_vault/audios/.gitkeep
+!voca_vault/images/.gitkeep
