@@ -31,6 +31,39 @@ STORY_WORD_TARGET = (1100, 1300)  # ~1200 words = ~10 minutes audio
 QUESTIONS_PER_STORY = 5
 
 LEVELS = {
+    "P1": {
+        "label": "Primeiro Passo",
+        "description": "Top 50 words — very simple, repetitive",
+        "tiers": [1],
+        "known_pct": 1.00,
+        "stretch_tiers": [],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 1,
+        "questions": QUESTIONS_PER_STORY,
+        "freq_cap": 50,
+    },
+    "P2": {
+        "label": "Primeiras Palavras",
+        "description": "Top 100 words — basic daily situations",
+        "tiers": [1],
+        "known_pct": 1.00,
+        "stretch_tiers": [],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 1,
+        "questions": QUESTIONS_PER_STORY,
+        "freq_cap": 100,
+    },
+    "P3": {
+        "label": "Começando",
+        "description": "Top 300 words — simple stories with context",
+        "tiers": [1],
+        "known_pct": 1.00,
+        "stretch_tiers": [],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 1,
+        "questions": QUESTIONS_PER_STORY,
+        "freq_cap": 300,
+    },
     "A1": {
         "label": "Tudo Tranquilo",
         "description": "100% Tier 1 — simple daily life",
@@ -145,14 +178,20 @@ def get_story_connection():
 
 # ── Vocabulary extraction ─────────────────────────────────────────
 
-def get_tier_words(tiers):
-    """Get all words from specified tiers."""
+def get_tier_words(tiers, freq_cap=None):
+    """Get words from specified tiers, optionally capped by frequency rank."""
     conn = get_story_connection()
-    placeholders = ",".join("?" * len(tiers))
-    rows = conn.execute(
-        f"SELECT word FROM word_bank WHERE difficulty_tier IN ({placeholders})",
-        tiers,
-    ).fetchall()
+    if freq_cap:
+        rows = conn.execute(
+            "SELECT word FROM word_bank WHERE frequency_rank <= ? ORDER BY frequency_rank",
+            (freq_cap,),
+        ).fetchall()
+    else:
+        placeholders = ",".join("?" * len(tiers))
+        rows = conn.execute(
+            f"SELECT word FROM word_bank WHERE difficulty_tier IN ({placeholders})",
+            tiers,
+        ).fetchall()
     conn.close()
     return [r["word"] for r in rows]
 
@@ -184,8 +223,25 @@ def build_generation_prompt(level_key, theme_name, theme_desc, setting, known_wo
     level = LEVELS[level_key]
     known_pct = int(level["known_pct"] * 100)
     min_words, max_words = word_range
+    freq_cap = level.get("freq_cap")
 
     focus_str = ", ".join(focus_words) if focus_words else "(nenhuma)"
+
+    # Starter levels get a strict word list
+    if freq_cap:
+        words_list = ", ".join(known_words_sample)
+        vocab_block = f"""VOCABULÁRIO — RESTRIÇÃO RÍGIDA:
+Usa APENAS estas palavras (as {freq_cap} mais frequentes do português brasileiro): {words_list}
+- Pode conjugar verbos e usar formas gramaticais dessas palavras
+- Pode usar preposições, artigos, pronomes básicos mesmo que não estejam na lista
+- NÃO introduz palavras novas fora da lista. Se precisar de um conceito, descreve usando as palavras da lista
+- Repete palavras e estruturas — isso é PROPOSITAL para um iniciante
+- Frases curtas e simples. Sujeito + verbo + complemento.
+- Palavras de foco (DEVEM aparecer muitas vezes): {focus_str}"""
+    else:
+        vocab_block = f"""VOCABULÁRIO:
+- {known_pct}% das palavras devem ser simples e comuns (frequência alta no português brasileiro)
+- Palavras de foco (DEVEM aparecer naturalmente na história, mais de uma vez): {focus_str}"""
 
     return f"""Escreve uma história LONGA em primeira pessoa. Isso é pra ouvir durante 10 minutos caminhando.
 
@@ -194,9 +250,7 @@ TEMA: {theme_desc}
 CENÁRIO: {setting}, Salvador, Bahia
 TAMANHO: {min_words}-{max_words} palavras — OBRIGATÓRIO atingir pelo menos {min_words} palavras. Isso é uma história completa, não um resumo.
 
-VOCABULÁRIO:
-- {known_pct}% das palavras devem ser simples e comuns (frequência alta no português brasileiro)
-- Palavras de foco (DEVEM aparecer naturalmente na história, mais de uma vez): {focus_str}
+{vocab_block}
 
 ESTRUTURA (história rica, não resumo):
 1. ABERTURA — me situa: onde eu tô, que horas são, o que tá acontecendo ao meu redor, sensações (cheiro, barulho, calor)
@@ -250,8 +304,9 @@ def generate_story(level_key, theme=None, setting=None):
         setting = random.choice(SETTINGS)
 
     # Get vocabulary
-    known_words = get_tier_words(level["tiers"])
-    known_sample = random.sample(known_words, min(50, len(known_words)))
+    freq_cap = level.get("freq_cap")
+    known_words = get_tier_words(level["tiers"], freq_cap=freq_cap)
+    known_sample = random.sample(known_words, min(80, len(known_words)))
     focus = get_focus_words(6)
 
     prompt = build_generation_prompt(
@@ -396,6 +451,18 @@ def generate_story_audio(story_id):
                         f.write(audio_chunk)
                 break
             except Exception as e:
+                if "quota_exceeded" in str(e) or "quota" in str(e).lower():
+                    print(f"    ⚠ ElevenLabs quota exceeded — skipping remaining audio")
+                    # Save what we have so far
+                    all_audio = {"story_chunks": audio_files, "question_audio": [], "chunk_texts": chunks}
+                    conn.execute(
+                        "UPDATE story_library SET audio_chunks = ? WHERE id = ?",
+                        (json.dumps(all_audio), story_id),
+                    )
+                    conn.commit()
+                    conn.close()
+                    print(f"  Audio partial: {len(audio_files)} chunks saved (quota hit)")
+                    return
                 if "429" in str(e) or "rate" in str(e).lower():
                     wait = 2 ** attempt * 3
                     print(f"    Rate limited, waiting {wait}s...")
@@ -437,6 +504,9 @@ def generate_story_audio(story_id):
                         f.write(audio_chunk)
                 break
             except Exception as e:
+                if "quota_exceeded" in str(e) or "quota" in str(e).lower():
+                    print(f"    ⚠ ElevenLabs quota exceeded — skipping remaining question audio")
+                    break
                 if "429" in str(e) or "rate" in str(e).lower():
                     wait = 2 ** attempt * 3
                     print(f"    Rate limited, waiting {wait}s...")
@@ -447,8 +517,8 @@ def generate_story_audio(story_id):
         question_files.append(fname)
         print(f"    Question {qi+1}/{len(questions)}: {fname}")
 
-    # Save audio file list to DB
-    all_audio = {"story_chunks": audio_files, "question_audio": question_files}
+    # Save audio file list + chunk text segments to DB
+    all_audio = {"story_chunks": audio_files, "question_audio": question_files, "chunk_texts": chunks}
     conn.execute(
         "UPDATE story_library SET audio_chunks = ? WHERE id = ?",
         (json.dumps(all_audio), story_id),
@@ -512,10 +582,11 @@ def main():
             print(f"ERROR: Unknown level '{level}'. Valid: {', '.join(LEVELS.keys())}")
             return
 
-        print(f"\nGenerating {count} stories at level {level} ({LEVELS[level]['label']})...\n")
+        text_only = "--text-only" in sys.argv
+        print(f"\nGenerating {count} stories at level {level} ({LEVELS[level]['label']}){'  [text only]' if text_only else ''}...\n")
         for i in range(count):
             story_id = generate_story(level)
-            if story_id:
+            if story_id and not text_only:
                 generate_story_audio(story_id)
         print("\nDone.")
         return

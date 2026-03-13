@@ -132,10 +132,23 @@ STORY_HTML = r"""<!DOCTYPE html>
   }
   .story-text {
     display: none; background: #161b22; border-radius: 12px; padding: 16px;
-    font-size: 0.95em; line-height: 1.6; max-height: 40vh; overflow-y: auto;
-    border: 1px solid #30363d;
+    font-size: 1em; line-height: 1.8; max-height: 50vh; overflow-y: auto;
+    border: 1px solid #30363d; width: 100%;
   }
   .story-text.visible { display: block; }
+  .story-text .chunk-span { color: #484f58; transition: color 0.3s; }
+  .story-text .chunk-span.active { color: #555d66; }
+  .story-text .chunk-span.played { color: #8b949e; }
+  .story-text .chunk-span .word {
+    display: inline; transition: color 0.2s, background 0.2s;
+    border-radius: 3px; padding: 0 2px;
+  }
+  .story-text .chunk-span.active .word.highlight {
+    color: #f7931e; background: rgba(247, 147, 30, 0.15);
+  }
+  .story-text .chunk-span.played .word.highlight {
+    color: #8b949e; background: none;
+  }
 
   /* Questions */
   .q-wrap {
@@ -232,8 +245,10 @@ const qPlayer = $('q-player');
 let currentLevel = null;
 let currentStory = null;
 let storyChunks = [];
+let chunkTexts = [];
 let questionAudio = [];
 let chunkIndex = 0;
+let highlightTimer = null;
 let questions = [];
 let qIndex = 0;
 let qCorrect = 0;
@@ -358,6 +373,7 @@ async function loadStory(id) {
   questions = data.questions || [];
 
   storyChunks = data.audio_chunks?.story_chunks || [];
+  chunkTexts = data.audio_chunks?.chunk_texts || [];
   questionAudio = data.audio_chunks?.question_audio || [];
 
   // If no audio yet, generate it
@@ -366,6 +382,7 @@ async function loadStory(id) {
     const ares = await fetch('/api/story/' + id + '/audio', {method:'POST'});
     const adata = await ares.json();
     storyChunks = adata.audio?.story_chunks || [];
+    chunkTexts = adata.audio?.chunk_texts || [];
     questionAudio = adata.audio?.question_audio || [];
   }
 
@@ -384,7 +401,35 @@ async function loadStory(id) {
     dots.appendChild(dot);
   }
 
-  $('story-text').textContent = data.body;
+  // Build karaoke text with chunk-span and word spans
+  const storyText = $('story-text');
+  storyText.innerHTML = '';
+  if (chunkTexts.length > 0) {
+    chunkTexts.forEach((text, i) => {
+      const span = document.createElement('span');
+      span.className = 'chunk-span';
+      span.id = 'chunk-text-' + i;
+      // Split into words, preserve whitespace
+      const words = text.split(/(\s+)/);
+      words.forEach(w => {
+        if (/^\s+$/.test(w)) {
+          span.appendChild(document.createTextNode(w));
+        } else if (w) {
+          const ws = document.createElement('span');
+          ws.className = 'word';
+          ws.textContent = w;
+          span.appendChild(ws);
+        }
+      });
+      // Add space between chunks
+      if (i < chunkTexts.length - 1) {
+        span.appendChild(document.createTextNode(' '));
+      }
+      storyText.appendChild(span);
+    });
+  } else {
+    storyText.textContent = data.body;
+  }
   $('player-status').textContent = 'Toque para ouvir';
   $('play-btn').innerHTML = '&#9654;';
 
@@ -403,13 +448,19 @@ function togglePlay() {
 }
 
 function playChunk(idx) {
+  // Clear any previous highlight timer
+  if (highlightTimer) { clearInterval(highlightTimer); highlightTimer = null; }
+
   if (idx >= storyChunks.length) {
-    // Story finished
+    // Mark last chunk as played
+    document.querySelectorAll('.chunk-span').forEach(s => {
+      s.classList.remove('active');
+      s.classList.add('played');
+    });
     listenedOnce = true;
     $('player-status').textContent = 'Fim da história';
     $('play-btn').innerHTML = '&#9654;';
 
-    // Move to questions after a pause
     if (questions.length > 0) {
       setTimeout(() => startQuestions(), 2000);
     }
@@ -430,8 +481,45 @@ function playChunk(idx) {
     d.className = 'chunk-dot' + (i < idx ? ' played' : '') + (i === idx ? ' current' : '');
   });
 
+  // Update chunk text highlighting
+  document.querySelectorAll('.chunk-span').forEach((s, i) => {
+    s.classList.remove('active');
+    if (i < idx) s.classList.add('played');
+  });
+  const activeChunk = document.getElementById('chunk-text-' + idx);
+  if (activeChunk) {
+    activeChunk.classList.add('active');
+    activeChunk.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Progressive word highlighting
+    const words = activeChunk.querySelectorAll('.word');
+    if (words.length > 0) {
+      let wordIdx = 0;
+      // Reset word highlights
+      words.forEach(w => w.classList.remove('highlight'));
+
+      player.ontimeupdate = () => {
+        if (player.duration && words.length > 0) {
+          const progress = player.currentTime / player.duration;
+          const targetWord = Math.floor(progress * words.length);
+          while (wordIdx <= targetWord && wordIdx < words.length) {
+            words[wordIdx].classList.add('highlight');
+            wordIdx++;
+          }
+        }
+      };
+    }
+  }
+
   player.onended = () => {
+    // Mark all words in chunk as highlighted
+    if (activeChunk) {
+      activeChunk.querySelectorAll('.word').forEach(w => w.classList.add('highlight'));
+      activeChunk.classList.remove('active');
+      activeChunk.classList.add('played');
+    }
     $('dot-' + idx).className = 'chunk-dot played';
+    player.ontimeupdate = null;
     playChunk(idx + 1);
   };
 }
