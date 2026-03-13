@@ -43,7 +43,7 @@ LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-LATENCY_THRESHOLD_MS = 1500
+LATENCY_THRESHOLD_MS = 1000
 TRAP_PROBABILITY = 0.15
 TRAP_LATENCY_MS = 800
 
@@ -431,9 +431,9 @@ async function handleTap() {
   $('carrier-display').textContent = currentWord.carrier;
 
   $('latency-display').textContent = latencyMs + 'ms';
-  if (latencyMs <= 800) {
+  if (latencyMs <= 600) {
     $('latency-display').className = 'latency fast';
-  } else if (latencyMs <= 1500) {
+  } else if (latencyMs <= 1000) {
     $('latency-display').className = 'latency ok';
   } else {
     $('latency-display').className = 'latency slow';
@@ -584,11 +584,11 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
         latency_ms = body["latency_ms"]
 
         # Determine rating
-        if latency_ms <= 800:
+        if latency_ms <= 600:
             rating = Rating.Easy
         elif latency_ms <= LATENCY_THRESHOLD_MS:
             rating = Rating.Good
-        elif latency_ms <= 3000:
+        elif latency_ms <= 2000:
             rating = Rating.Hard
         else:
             rating = Rating.Again
@@ -601,7 +601,7 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
                 rating = Rating.Hard
             penalty_active = True
 
-        card, new_mastery = record_review(word_id, rating, latency_ms)
+        card, new_mastery, downgraded = record_review(word_id, rating, latency_ms)
         rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
 
         # Log
