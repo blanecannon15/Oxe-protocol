@@ -8,13 +8,13 @@ Compares user pronunciation against a native Baiano model using:
 - Nasalized 'ão' and palatal 'lh' pattern checks
 
 Scoring weights:
-  40% isochrony (syllable-duration DTW)
-  30% pitch contour DTW
-  15% speech rate similarity
+  50% isochrony (syllable-duration DTW)
+  25% pitch contour DTW
+  10% speech rate similarity
   15% rhythm metrics (nPVI / rPVI)
 
 If speech is stress-timed (English pattern) instead of syllable-timed (Baiano),
-the score is forced below 70 and open-mid vowel re-drill is triggered.
+the score is forced below 65 and open-mid vowel re-drill is triggered.
 
 Usage:
     python3 biometric_checker.py score <user_audio> <native_audio>
@@ -33,13 +33,13 @@ from tslearn.metrics import dtw as tslearn_dtw
 VAULT_AUDIOS = Path(__file__).parent / "voca_vault" / "audios"
 
 CHORUSING_THRESHOLD = 85
-ISOCHRONY_FAIL_CEILING = 70  # Max score when stress-timed pattern detected
+ISOCHRONY_FAIL_CEILING = 65  # Max score when stress-timed pattern detected
 
 # nPVI thresholds — syllable-timed languages have LOW nPVI (~30-50),
 # stress-timed languages have HIGH nPVI (~60-80).
 # Baiano Portuguese is strongly syllable-timed.
-NPVI_SYLLABLE_TIMED_MAX = 55   # Above this → stress-timed warning
-NPVI_STRESS_TIMED_MIN = 60     # Above this → definite English rhythm pattern
+NPVI_SYLLABLE_TIMED_MAX = 45   # Above this → stress-timed warning
+NPVI_STRESS_TIMED_MIN = 50     # Above this → definite English rhythm pattern
 
 # Open-mid vowels that need re-drill when isochrony fails
 OPEN_MID_VOWEL_WORDS = [
@@ -183,9 +183,11 @@ def is_stress_timed(durations):
     npvi = compute_npvi(durations)
     varco = compute_varco_v(durations)
 
-    if npvi >= NPVI_STRESS_TIMED_MIN:
+    varco = compute_varco_v(durations)
+
+    if npvi >= NPVI_STRESS_TIMED_MIN or (npvi >= NPVI_SYLLABLE_TIMED_MAX and varco > 50):
         return True, npvi, (
-            f"nPVI={npvi:.1f} (>{NPVI_STRESS_TIMED_MIN}) — English stress-timed rhythm detected. "
+            f"nPVI={npvi:.1f} (>{NPVI_STRESS_TIMED_MIN}), VarcoV={varco:.1f} — English stress-timed rhythm detected. "
             f"Baiano Portuguese is syllable-timed (target nPVI < {NPVI_SYLLABLE_TIMED_MAX}). "
             f"Your syllables have uneven duration — some are rushed, others stretched. "
             f"Focus on making every syllable roughly equal length."
@@ -315,12 +317,12 @@ def nativeness_score(user_audio, native_audio):
     Compute nativeness score (0-100) with isochrony as primary metric.
 
     Weights:
-      40% — Syllable-duration DTW (isochrony match)
-      30% — Pitch contour DTW
-      15% — Speech rate similarity
+      50% — Syllable-duration DTW (isochrony match)
+      25% — Pitch contour DTW
+      10% — Speech rate similarity
       15% — Rhythm regularity (nPVI comparison)
 
-    If stress-timed pattern detected → score capped at 70, open-mid vowel
+    If stress-timed pattern detected → score capped at 65, open-mid vowel
     re-drill flagged.
     """
     # --- Isochrony (syllable duration DTW) ---
@@ -354,9 +356,9 @@ def nativeness_score(user_audio, native_audio):
 
     # --- Weighted combination ---
     combined = (
-        iso_score * 0.40
-        + pitch_score * 0.30
-        + rate_score * 0.15
+        iso_score * 0.50
+        + pitch_score * 0.25
+        + rate_score * 0.10
         + npvi_score * 0.15
     )
 
@@ -376,6 +378,7 @@ def full_analysis(user_audio, native_audio):
         "score": 0.0,
         "stress_timed": False,
         "needs_chorusing": False,
+        "force_redrill": False,
         "needs_open_mid_drill": False,
         "open_mid_drill_words": [],
         "issues": [],
@@ -395,6 +398,14 @@ def full_analysis(user_audio, native_audio):
     result["metrics"]["user_varco_v"] = round(compute_varco_v(user_durs), 1)
     result["metrics"]["user_syllable_count"] = len(user_durs) + 1
     result["metrics"]["native_syllable_count"] = len(native_durs) + 1
+
+    # rPVI absolute check
+    user_rpvi = compute_rpvi(user_durs)
+    if user_rpvi > 60:
+        result["issues"].append(
+            f"rPVI={user_rpvi:.1f}ms — syllable durations vary too much in absolute terms. "
+            f"Target < 60ms. Even out every syllable."
+        )
 
     # Stress-timed detection
     result["stress_timed"] = stress_timed
@@ -436,9 +447,10 @@ def full_analysis(user_audio, native_audio):
     result["score"] = score
     result["needs_chorusing"] = score < CHORUSING_THRESHOLD
 
-    # Force open-mid drill if score < 70 due to isochrony failure
+    # Force re-drill if score < 65 due to isochrony failure
     if score < ISOCHRONY_FAIL_CEILING and stress_timed:
         result["needs_open_mid_drill"] = True
+        result["force_redrill"] = True
 
     return result
 

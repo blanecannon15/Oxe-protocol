@@ -58,7 +58,7 @@ TIER_RANGES = {
 }
 
 UNLOCK_THRESHOLD = 0.80  # 80% of tier must reach mastery >= 3
-LATENCY_THRESHOLD_MS = 1500  # 1.5-second automaticity rule
+LATENCY_THRESHOLD_MS = 1000  # 1-second automaticity rule
 
 
 def _serialize_card(card):
@@ -163,7 +163,7 @@ def get_next_word(db_path=DB_PATH):
 
 
 def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
-    """Record a review. If latency > 1.5s, auto-downgrade rating to Hard."""
+    """Record a review. If latency > 1s, auto-downgrade rating to Hard."""
     conn = get_connection(db_path)
     row = conn.execute(
         "SELECT * FROM word_bank WHERE id = ?", (word_id,)
@@ -172,10 +172,11 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
         conn.close()
         raise ValueError(f"Word {word_id} not found")
 
+    latency_downgraded = False
     if latency_ms is not None and latency_ms > LATENCY_THRESHOLD_MS:
         if rating.value > Rating.Hard.value:
-            print(f"  Latency {latency_ms}ms > {LATENCY_THRESHOLD_MS}ms — downgrading to Hard.")
             rating = Rating.Hard
+            latency_downgraded = True
 
     card = _deserialize_card(row["srs_state"])
     f = FSRS()
@@ -202,7 +203,7 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
     )
     conn.commit()
     conn.close()
-    return new_card, mastery
+    return new_card, mastery, latency_downgraded
 
 
 def list_words(tier=None, db_path=DB_PATH):
@@ -288,8 +289,11 @@ def _cli_review(word_id_str, rating_str, latency_str=None):
         print("Rating must be 1 (Again), 2 (Hard), 3 (Good), or 4 (Easy).")
         sys.exit(1)
     latency_ms = int(latency_str) if latency_str else None
-    card, mastery = record_review(word_id, rating_map[rating_int], latency_ms)
-    print(f"Reviewed word {word_id}: mastery={mastery}, next due={card.due}")
+    card, mastery, downgraded = record_review(word_id, rating_map[rating_int], latency_ms)
+    msg = f"Reviewed word {word_id}: mastery={mastery}, next due={card.due}"
+    if downgraded:
+        msg += f" (latency downgraded to Hard)"
+    print(msg)
 
 
 def _cli_progress():

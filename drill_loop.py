@@ -46,7 +46,7 @@ IMAGE_DIR = Path(__file__).parent / "voca_vault" / "images"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
 
 NATIVENESS_THRESHOLD = 85
-LATENCY_THRESHOLD_MS = 1500
+LATENCY_THRESHOLD_MS = 1000
 TRAP_LATENCY_MS = 800       # Must react to trap within 800ms
 TRAP_PROBABILITY = 0.15     # 15% chance of a trap during a session cycle
 LARANJADA_PENALTY_COUNT = 5 # Number of next chunks to make harder after a laranjada
@@ -297,11 +297,11 @@ def determine_rating(latency_ms, nativeness_score=None):
     if nativeness_score is not None and nativeness_score < NATIVENESS_THRESHOLD:
         return Rating.Again
 
-    if latency_ms <= 800:
+    if latency_ms <= 600:
         return Rating.Easy
     elif latency_ms <= LATENCY_THRESHOLD_MS:
         return Rating.Good
-    elif latency_ms <= 3000:
+    elif latency_ms <= 2000:
         return Rating.Hard
     else:
         return Rating.Again
@@ -412,9 +412,10 @@ def run_shadowing_mode(count=10):
         time.sleep(0.2)
         latency_ms = measure_response()
         rating = determine_rating(latency_ms)
-        record_review(row["id"], rating, latency_ms)
+        _, _, downgraded = record_review(row["id"], rating, latency_ms)
         rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
-        print(f"    → {latency_ms}ms — {rating_name}")
+        extra = " (downgraded)" if downgraded else ""
+        print(f"    → {latency_ms}ms — {rating_name}{extra}")
 
     print(f"\n  ✓ Shadowing session complete ({count} words).\n")
 
@@ -480,8 +481,10 @@ def run_one_cycle():
         run_chorus_drill(word, audio_path if audio_path.exists() else None, word_id=word_id)
 
     # Step 7: Record review
-    card, new_mastery = record_review(word_id, rating, latency_ms)
+    card, new_mastery, downgraded = record_review(word_id, rating, latency_ms)
     print(f"  ✓ Mastery: {mastery} → {new_mastery} | Next due: {card.due}")
+    if downgraded:
+        print(f"  ⚠  Latency {latency_ms}ms > {LATENCY_THRESHOLD_MS}ms — auto-downgraded to Hard.")
 
     # Step 8: Log
     log_session(word_id, word, rating.value, latency_ms)
