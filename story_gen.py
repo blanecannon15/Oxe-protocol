@@ -376,22 +376,32 @@ def generate_story_audio(story_id):
             audio_files.append(fname)
             continue
 
-        audio_iter = client.text_to_speech.convert(
-            text=chunk,
-            voice_id="pNInz6obpgDQGcFmaJgB",
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128",
-            voice_settings={
-                "stability": 0.55,
-                "similarity_boost": 0.90,
-                "style": 0.45,
-                "use_speaker_boost": True,
-            },
-        )
+        for attempt in range(5):
+            try:
+                audio_iter = client.text_to_speech.convert(
+                    text=chunk,
+                    voice_id="pNInz6obpgDQGcFmaJgB",
+                    model_id="eleven_multilingual_v2",
+                    output_format="mp3_44100_128",
+                    voice_settings={
+                        "stability": 0.55,
+                        "similarity_boost": 0.90,
+                        "style": 0.45,
+                        "use_speaker_boost": True,
+                    },
+                )
 
-        with open(outpath, "wb") as f:
-            for audio_chunk in audio_iter:
-                f.write(audio_chunk)
+                with open(outpath, "wb") as f:
+                    for audio_chunk in audio_iter:
+                        f.write(audio_chunk)
+                break
+            except Exception as e:
+                if "429" in str(e) or "rate" in str(e).lower():
+                    wait = 2 ** attempt * 3
+                    print(f"    Rate limited, waiting {wait}s...")
+                    time.sleep(wait)
+                else:
+                    raise
 
         audio_files.append(fname)
         print(f"    Chunk {i+1}/{len(chunks)}: {fname}")
@@ -407,22 +417,32 @@ def generate_story_audio(story_id):
             continue
 
         q_text = q["question"]
-        audio_iter = client.text_to_speech.convert(
-            text=q_text,
-            voice_id="pNInz6obpgDQGcFmaJgB",
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128",
-            voice_settings={
-                "stability": 0.55,
-                "similarity_boost": 0.90,
-                "style": 0.45,
-                "use_speaker_boost": True,
-            },
-        )
+        for attempt in range(5):
+            try:
+                audio_iter = client.text_to_speech.convert(
+                    text=q_text,
+                    voice_id="pNInz6obpgDQGcFmaJgB",
+                    model_id="eleven_multilingual_v2",
+                    output_format="mp3_44100_128",
+                    voice_settings={
+                        "stability": 0.55,
+                        "similarity_boost": 0.90,
+                        "style": 0.45,
+                        "use_speaker_boost": True,
+                    },
+                )
 
-        with open(outpath, "wb") as f:
-            for audio_chunk in audio_iter:
-                f.write(audio_chunk)
+                with open(outpath, "wb") as f:
+                    for audio_chunk in audio_iter:
+                        f.write(audio_chunk)
+                break
+            except Exception as e:
+                if "429" in str(e) or "rate" in str(e).lower():
+                    wait = 2 ** attempt * 3
+                    print(f"    Rate limited, waiting {wait}s...")
+                    time.sleep(wait)
+                else:
+                    raise
 
         question_files.append(fname)
         print(f"    Question {qi+1}/{len(questions)}: {fname}")
