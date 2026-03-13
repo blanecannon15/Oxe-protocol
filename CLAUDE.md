@@ -83,6 +83,28 @@ When the learner is using `/rc` (Remote Control) from their phone:
 - Prioritize audio + image. Text only after 3 consecutive failures (same as Voice Mode).
 - `serve_audio.py` runs on port 7777 — phone connects via local Wi-Fi.
 
+## Graded Stories (Input Interface)
+Comprehensible input via first-person Soteropolitano narratives, graded to the learner's tier.
+
+| Level | Label | Vocab | Duration |
+|---|---|---|---|
+| A1 | Tudo Tranquilo | 100% Tier 1 | ~10 min (1200 words) |
+| A2 | Quase Lá | 95% Tiers 1-2 | ~10 min (1200 words) |
+| B1 | No Pique | 85% Tiers 1-3 | ~10 min (1200 words) |
+| B2 | Desenrolado | 75% Tiers 1-4 | ~10 min (1200 words) |
+| C1 | Quase Nativo | 60% Tiers 1-5 | ~10 min (1200 words) |
+| C2 | Soteropolitano | 50% mixed | ~10 min (1200 words) |
+
+- All stories are ~1200 words / ~10 minutes of audio
+- 10 stories per level as a base library, plus on-the-fly generation from the app
+- Levels unlock when the learner's tier meets the minimum (A1/A2=Tier1, B1=Tier2, B2=Tier3, C1=Tier4, C2=Tier5)
+- "Mostrar texto" toggle available at any time — read-before-listen or listen-first, learner's choice
+- 5 comprehension questions per story, asked AFTER the story, spoken aloud
+- 75% correct = pass. Below = replay before moving on.
+- Focus words from the SRS due queue are woven into each story for reinforcement
+- `story_server.py` on port 8888. `story_gen.py` for CLI generation.
+- Generate on the fly: tap "Gerar nova história" in the app, or CLI: `python3 story_gen.py --generate --level B1 --count 1`
+
 ## File Paths
 - Audio files: `./voca_vault/audios/`
 - Image files: `./voca_vault/images/`
@@ -90,3 +112,5 @@ When the learner is using `/rc` (Remote Control) from their phone:
 - Corpus builder: `./build_corpus.py`
 - Biometric checker: `./biometric_checker.py`
 - Audio server: `./serve_audio.py` (mobile audio delivery, port 7777)
+- Story generator: `./story_gen.py` (LLM story creation + TTS chunking)
+- Story server: `./story_server.py` (mobile story interface, port 8888)
