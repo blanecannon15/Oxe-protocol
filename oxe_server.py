@@ -25,7 +25,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from cgi import parse_multipart
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
