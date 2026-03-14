@@ -63,6 +63,7 @@ STORY_HTML = r"""<!DOCTYPE html>
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     min-height: 100vh; min-height: 100dvh; -webkit-user-select: none; user-select: none;
+    padding-bottom: 76px;
   }
   .header {
     padding: 14px 20px; background: rgba(255,255,255,0.03);
@@ -673,6 +674,43 @@ function showResults() {
 // ── Init ────────────────────────────────────────────────
 loadLevels();
 </script>
+
+<!-- Bottom Tab Bar -->
+<style>
+  .tab-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    display: flex; justify-content: space-around; align-items: center;
+    height: 68px; padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(10,10,11,0.92); border-top: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
+    -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
+  }
+  .tab.active { color: #818cf8; }
+  .tab svg { width: 22px; height: 22px; fill: currentColor; }
+</style>
+<nav class="tab-bar">
+  <a href="/" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+    <span>Inicio</span>
+  </a>
+  <a href="/drill" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    <span>Treinar</span>
+  </a>
+  <a href="/stories" class="tab active">
+    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
+    <span>Historias</span>
+  </a>
+  <a href="/conversa" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+    <span>Conversa</span>
+  </a>
+</nav>
+
 </body></html>"""
 
 

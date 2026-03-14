@@ -101,215 +101,260 @@ def get_local_ip():
 
 # ── Home Page ──────────────────────────────────────────────────
 
-HOME_HTML = """<!DOCTYPE html>
+HOME_HTML = r"""<!DOCTYPE html>
 <html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Oxe Protocol</title>
+<title>Oxe</title>
 <style>
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 1; }
-  }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
-    align-items: center; justify-content: space-between; padding: 0;
     -webkit-user-select: none; user-select: none;
-    overflow: hidden;
+    padding-bottom: 72px;
   }
-  .bg-glow {
-    position: fixed; top: -40%; left: 50%; transform: translateX(-50%);
-    width: 600px; height: 600px;
-    background: radial-gradient(circle, rgba(94,106,210,0.12) 0%, transparent 70%);
-    pointer-events: none; z-index: 0;
+
+  /* ── Top Bar ── */
+  .topbar {
+    padding: 16px 20px 12px; display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 10; background: #0a0a0b;
   }
-  .content {
-    position: relative; z-index: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; flex: 1;
-    width: 100%; max-width: 420px; padding: 48px 24px 24px;
+  .topbar-brand {
+    font-size: 1.4em; font-weight: 800; letter-spacing: -1px;
+    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .brand {
-    animation: fadeUp 0.6s ease-out;
-    margin-bottom: 48px; text-align: center;
-  }
-  .logo {
-    font-size: 3em; font-weight: 800; letter-spacing: -2px;
-    background: linear-gradient(135deg, #5E6AD2 0%, #8B5CF6 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  .subtitle {
-    font-size: 0.8em; color: #525263; margin-top: 6px;
-    font-weight: 500; letter-spacing: 2px; text-transform: uppercase;
-  }
-  .cards {
-    display: flex; flex-direction: column; gap: 14px;
-    width: 100%; animation: fadeUp 0.6s ease-out 0.1s both;
-  }
-  .card {
-    display: flex; align-items: center; gap: 18px;
+  .streak-pill {
+    display: flex; align-items: center; gap: 4px; padding: 5px 12px;
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 20px; padding: 22px 24px; cursor: pointer;
-    transition: all 0.2s ease; text-decoration: none; color: inherit;
-    -webkit-tap-highlight-color: transparent;
+    border-radius: 20px; font-size: 0.8em; font-weight: 600; color: #818cf8;
+  }
+
+  /* ── Scroll content ── */
+  .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; }
+
+  /* ── Progress Card ── */
+  .progress-card {
+    background: linear-gradient(135deg, rgba(94,106,210,0.12), rgba(139,92,246,0.06));
+    border: 1px solid rgba(94,106,210,0.15); border-radius: 20px;
+    padding: 24px; margin-bottom: 24px; animation: fadeIn 0.4s ease-out;
+  }
+  .progress-row { display: flex; justify-content: space-between; align-items: center; }
+  .progress-left h2 { font-size: 1.1em; font-weight: 700; color: #fafafa; }
+  .progress-left p { font-size: 0.78em; color: #818cf8; margin-top: 2px; }
+  .progress-ring { position: relative; width: 64px; height: 64px; }
+  .progress-ring svg { transform: rotate(-90deg); }
+  .progress-ring .bg { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 5; }
+  .progress-ring .fg { fill: none; stroke: url(#grad); stroke-width: 5; stroke-linecap: round;
+    transition: stroke-dashoffset 0.8s ease; }
+  .progress-pct {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 0.85em; font-weight: 700; color: #fafafa;
+  }
+  .stats-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px;
+  }
+  .sstat { text-align: center; }
+  .sstat-val { font-size: 1.3em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sstat-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+  /* ── Section Headers ── */
+  .section-hdr {
+    font-size: 0.7em; font-weight: 600; color: #525263; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 12px; padding-left: 4px;
+  }
+
+  /* ── Feature Grid ── */
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 28px; }
+  .fcard {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px; padding: 20px 16px; text-decoration: none; color: inherit;
+    -webkit-tap-highlight-color: transparent; transition: all 0.15s;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .fcard:active { transform: scale(0.97); background: rgba(255,255,255,0.06); }
+  .fcard-icon {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.2em;
+  }
+  .fcard-icon.indigo { background: rgba(94,106,210,0.15); }
+  .fcard-icon.purple { background: rgba(139,92,246,0.15); }
+  .fcard-icon.red { background: rgba(248,113,113,0.12); }
+  .fcard-icon.blue { background: rgba(96,165,250,0.12); }
+  .fcard-title { font-size: 0.95em; font-weight: 700; }
+  .fcard-desc { font-size: 0.7em; color: #525263; line-height: 1.35; }
+  .fcard-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.65em;
+    font-weight: 600; background: rgba(94,106,210,0.12); color: #818cf8;
+    align-self: flex-start;
+  }
+  .fcard-badge.red { background: rgba(248,113,113,0.12); color: #f87171; }
+
+  /* ── Today Row ── */
+  .today-row { display: flex; gap: 10px; margin-bottom: 28px; animation: fadeIn 0.4s ease-out 0.15s both; }
+  .today-card {
+    flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px; padding: 16px; text-align: center;
+  }
+  .today-val { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .today-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+  /* ── Bottom Tab Bar ── */
+  .tab-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    display: flex; justify-content: space-around; align-items: center;
+    height: 68px; padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(10,10,11,0.92); border-top: 1px solid rgba(255,255,255,0.06);
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   }
-  .card:active {
-    transform: scale(0.98);
-    background: rgba(255,255,255,0.07);
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
+    -webkit-tap-highlight-color: transparent; padding: 6px 12px;
+    transition: color 0.15s;
   }
-  .card-icon {
-    width: 52px; height: 52px; border-radius: 14px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.5em; flex-shrink: 0;
-  }
-  .card.drill .card-icon {
-    background: linear-gradient(135deg, rgba(94,106,210,0.2), rgba(94,106,210,0.05));
-  }
-  .card.stories .card-icon {
-    background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(139,92,246,0.05));
-  }
-  .card.conversa .card-icon {
-    background: linear-gradient(135deg, rgba(94,106,210,0.15), rgba(139,92,246,0.1));
-  }
-  .card.conversa .card-title { color: #a78bfa; }
-  .card.weak .card-icon {
-    background: linear-gradient(135deg, rgba(248,113,113,0.2), rgba(248,113,113,0.05));
-  }
-  .card.weak .card-title { color: #f87171; }
-  .card-text { flex: 1; }
-  .card-title {
-    font-size: 1.05em; font-weight: 700; margin-bottom: 3px;
-  }
-  .card.drill .card-title { color: #818cf8; }
-  .card.stories .card-title { color: #a78bfa; }
-  .card-desc {
-    font-size: 0.78em; color: #525263; line-height: 1.4; font-weight: 400;
-  }
-  .card-arrow {
-    color: #333; font-size: 1.2em; font-weight: 300; flex-shrink: 0;
-  }
-  .stats {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
-    width: 100%; margin-top: 40px;
-    animation: fadeUp 0.6s ease-out 0.2s both;
-  }
-  .stat {
-    text-align: center; padding: 16px 0;
-    border-right: 1px solid rgba(255,255,255,0.04);
-  }
-  .stat:last-child { border-right: none; }
-  .stat-value {
-    font-size: 1.5em; font-weight: 700; color: #fafafa;
-    font-variant-numeric: tabular-nums;
-  }
-  .stat-label {
-    font-size: 0.65em; color: #525263; margin-top: 4px;
-    text-transform: uppercase; letter-spacing: 1px; font-weight: 500;
-  }
-  .footer-bar {
-    position: relative; z-index: 1; width: 100%; padding: 20px 0;
-    text-align: center;
-    animation: fadeUp 0.6s ease-out 0.3s both;
-  }
-  .dot {
-    display: inline-block; width: 4px; height: 4px; border-radius: 50%;
-    background: #5E6AD2; margin: 0 6px; vertical-align: middle;
-    animation: pulse 3s ease-in-out infinite;
-  }
-  .footer-text {
-    font-size: 0.7em; color: #333; font-weight: 400;
-  }
+  .tab.active { color: #818cf8; }
+  .tab svg { width: 22px; height: 22px; fill: currentColor; }
+
+  /* ── Gradient def ── */
+  .hidden-svg { position: absolute; width: 0; height: 0; }
 </style>
 </head><body>
 
-<div class="bg-glow"></div>
+<!-- SVG gradient definition -->
+<svg class="hidden-svg"><defs>
+  <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" stop-color="#5E6AD2"/>
+    <stop offset="100%" stop-color="#8B5CF6"/>
+  </linearGradient>
+</defs></svg>
 
-<div class="content">
-  <div class="brand">
-    <div class="logo">OXE</div>
-    <div class="subtitle">Parceiro Soteropolitano</div>
-  </div>
-
-  <div class="cards">
-    <a href="/drill" class="card drill">
-      <div class="card-icon">&#x1f3af;</div>
-      <div class="card-text">
-        <div class="card-title">Treinar</div>
-        <div class="card-desc">Audio-first 1+T drills com SRS</div>
-      </div>
-      <div class="card-arrow">&#x203A;</div>
-    </a>
-    <a href="/stories" class="card stories">
-      <div class="card-icon">&#x1f4d6;</div>
-      <div class="card-text">
-        <div class="card-title">Historias</div>
-        <div class="card-desc">Narrativas graduadas de Salvador</div>
-      </div>
-      <div class="card-arrow">&#x203A;</div>
-    </a>
-    <a href="/drill?mode=weak" class="card weak">
-      <div class="card-icon">&#x1f534;</div>
-      <div class="card-text">
-        <div class="card-title">Palavras Fracas</div>
-        <div class="card-desc">Reforco das palavras mais dificeis</div>
-      </div>
-      <div class="card-arrow">&#x203A;</div>
-    </a>
-    <a href="/conversa" class="card conversa">
-      <div class="card-icon">&#x1f4ac;</div>
-      <div class="card-text">
-        <div class="card-title">Conversa</div>
-        <div class="card-desc">Papo livre com parceiro baiano</div>
-      </div>
-      <div class="card-arrow">&#x203A;</div>
-    </a>
-  </div>
-
-  <div class="stats">
-    <div class="stat">
-      <div class="stat-value" id="tier">-</div>
-      <div class="stat-label">Tier</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value" id="due">-</div>
-      <div class="stat-label">Due</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value" id="mastery">-</div>
-      <div class="stat-label">Mastery</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value" id="stories">-</div>
-      <div class="stat-label">Stories</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value" id="streak">-</div>
-      <div class="stat-label">&#x1f525; Streak</div>
-    </div>
+<div class="topbar">
+  <div class="topbar-brand">Oxe</div>
+  <div class="streak-pill" id="streak-pill">
+    <span>&#x1f525;</span> <span id="streak">0</span> dias
   </div>
 </div>
 
-<div class="footer-bar">
-  <span class="footer-text">Salvador, Bahia</span>
-  <span class="dot"></span>
-  <span class="footer-text">Oxe Protocol</span>
+<div class="page">
+
+  <!-- Progress Card -->
+  <div class="progress-card">
+    <div class="progress-row">
+      <div class="progress-left">
+        <h2 id="tier-label">Tier 1 — Survival</h2>
+        <p><span id="due">0</span> palavras pra revisar</p>
+      </div>
+      <div class="progress-ring">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle class="bg" cx="32" cy="32" r="28"/>
+          <circle class="fg" id="ring-fg" cx="32" cy="32" r="28"
+            stroke-dasharray="175.93" stroke-dashoffset="175.93"/>
+        </svg>
+        <div class="progress-pct" id="mastery-pct">0%</div>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="sstat"><div class="sstat-val" id="today-reviewed">0</div><div class="sstat-lbl">Hoje</div></div>
+      <div class="sstat"><div class="sstat-val" id="today-mastered">0</div><div class="sstat-lbl">Dominadas</div></div>
+      <div class="sstat"><div class="sstat-val" id="story-count">0</div><div class="sstat-lbl">Historias</div></div>
+    </div>
+  </div>
+
+  <!-- Practice -->
+  <div class="section-hdr">Praticar</div>
+  <div class="feature-grid" style="animation:fadeIn 0.4s ease-out 0.1s both">
+    <a href="/drill" class="fcard">
+      <div class="fcard-icon indigo">&#x1f3af;</div>
+      <div class="fcard-title">Treinar</div>
+      <div class="fcard-desc">Drills com audio, imagem e SRS</div>
+      <div class="fcard-badge" id="due-badge">0 due</div>
+    </a>
+    <a href="/stories" class="fcard">
+      <div class="fcard-icon purple">&#x1f4d6;</div>
+      <div class="fcard-title">Historias</div>
+      <div class="fcard-desc">Narrativas graduadas 10 min</div>
+      <div class="fcard-badge" id="stories-badge">0 stories</div>
+    </a>
+    <a href="/drill?mode=weak" class="fcard">
+      <div class="fcard-icon red">&#x26a0;&#xfe0f;</div>
+      <div class="fcard-title">Reforco</div>
+      <div class="fcard-desc">Palavras que voce mais erra</div>
+      <div class="fcard-badge red" id="weak-badge">0 fracas</div>
+    </a>
+    <a href="/conversa" class="fcard">
+      <div class="fcard-icon blue">&#x1f4ac;</div>
+      <div class="fcard-title">Conversa</div>
+      <div class="fcard-desc">Papo livre com IA baiana</div>
+    </a>
+  </div>
+
+  <!-- Today -->
+  <div class="section-hdr">Hoje</div>
+  <div class="today-row">
+    <div class="today-card">
+      <div class="today-val" id="today-mins">0</div>
+      <div class="today-lbl">Minutos</div>
+    </div>
+    <div class="today-card">
+      <div class="today-val" id="today-words">0</div>
+      <div class="today-lbl">Revisadas</div>
+    </div>
+    <div class="today-card">
+      <div class="today-val" id="today-new">0</div>
+      <div class="today-lbl">Dominadas</div>
+    </div>
+  </div>
+
 </div>
+
+<!-- Bottom Tab Bar -->
+<nav class="tab-bar">
+  <a href="/" class="tab active">
+    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+    <span>Inicio</span>
+  </a>
+  <a href="/drill" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    <span>Treinar</span>
+  </a>
+  <a href="/stories" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
+    <span>Historias</span>
+  </a>
+  <a href="/conversa" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+    <span>Conversa</span>
+  </a>
+</nav>
 
 <script>
 fetch('/api/home-stats').then(r=>r.json()).then(d=>{
-  document.getElementById('tier').textContent=d.tier;
+  document.getElementById('tier-label').textContent='Tier '+d.tier+' \u2014 '+(
+    {1:'Survival',2:'Daily Core',3:'Conversational',4:'Fluency',5:'Nuanced',6:'Near-Native'}[d.tier]||'');
   document.getElementById('due').textContent=d.due;
-  document.getElementById('mastery').textContent=d.mastery_pct+'%';
-  document.getElementById('stories').textContent=d.story_count;
-  document.getElementById('streak').textContent=d.streak;
+  document.getElementById('mastery-pct').textContent=d.mastery_pct+'%';
+  document.getElementById('streak').textContent=d.streak||0;
+  document.getElementById('story-count').textContent=d.story_count;
+  document.getElementById('due-badge').textContent=d.due+' due';
+  document.getElementById('stories-badge').textContent=d.story_count+' stories';
+  document.getElementById('weak-badge').textContent=(d.weak_count||0)+' fracas';
+  // Progress ring
+  const circumference=175.93;
+  const offset=circumference-(d.mastery_pct/100)*circumference;
+  document.getElementById('ring-fg').style.strokeDashoffset=offset;
+});
+fetch('/api/daily-stats').then(r=>r.json()).then(d=>{
+  const t=d.today||{};
+  document.getElementById('today-reviewed').textContent=t.words_reviewed||0;
+  document.getElementById('today-mastered').textContent=t.words_mastered||0;
+  document.getElementById('today-words').textContent=t.words_reviewed||0;
+  document.getElementById('today-new').textContent=t.words_mastered||0;
+  document.getElementById('today-mins').textContent=Math.round(t.minutes||0);
 });
 </script>
 </body></html>"""
@@ -374,7 +419,7 @@ CONVERSA_HTML = """<!DOCTYPE html>
   }
   .msg.ai .typing { color: #525263; }
   .input-bar {
-    padding: 12px 16px; background: rgba(255,255,255,0.03);
+    padding: 12px 16px 80px; background: rgba(255,255,255,0.03);
     border-top: 1px solid rgba(255,255,255,0.06);
     display: flex; gap: 10px; align-items: center; flex-shrink: 0;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
@@ -410,7 +455,6 @@ CONVERSA_HTML = """<!DOCTYPE html>
   <h1>CONVERSA</h1>
   <div class="header-btns">
     <button class="hdr-btn" onclick="newConversa()">Nova</button>
-    <a href="/" class="hdr-btn" style="text-decoration:none">Voltar</a>
   </div>
 </div>
 
@@ -517,6 +561,43 @@ async function toggleConvMic() {
 // Init
 addMsg('E ai, parceiro! Bora jogar conversa fora?', 'ai');
 </script>
+
+<!-- Bottom Tab Bar -->
+<style>
+  .tab-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    display: flex; justify-content: space-around; align-items: center;
+    height: 68px; padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(10,10,11,0.92); border-top: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
+    -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
+  }
+  .tab.active { color: #818cf8; }
+  .tab svg { width: 22px; height: 22px; fill: currentColor; }
+</style>
+<nav class="tab-bar">
+  <a href="/" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+    <span>Inicio</span>
+  </a>
+  <a href="/drill" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    <span>Treinar</span>
+  </a>
+  <a href="/stories" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
+    <span>Historias</span>
+  </a>
+  <a href="/conversa" class="tab active">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+    <span>Conversa</span>
+  </a>
+</nav>
+
 </body></html>"""
 
 
@@ -627,12 +708,14 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         story_count = conn.execute("SELECT COUNT(*) FROM story_library").fetchone()[0]
         conn.close()
         streak = get_streak()
+        weak_count = len(get_weak_words())
         self._json({
             "tier": tier,
             "due": due,
             "mastery_pct": current_pct,
             "story_count": story_count,
             "streak": streak,
+            "weak_count": weak_count,
         })
 
     def _daily_stats(self):
