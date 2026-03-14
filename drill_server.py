@@ -242,6 +242,49 @@ def generate_explanation(word):
         return None, None
 
 
+def build_cloze(word, carrier):
+    """Replace the target word in the carrier with '...' for cloze drills."""
+    import re
+    cloze_text = re.sub(re.escape(word), '...', carrier, count=1, flags=re.IGNORECASE)
+    return cloze_text, carrier
+
+
+def score_pronunciation(user_audio_path, native_audio_path):
+    """Convert uploaded audio to WAV and score against native using biometric_checker."""
+    import subprocess
+    import tempfile
+
+    user_wav = user_audio_path
+    # Convert to WAV if not already
+    if not str(user_audio_path).endswith('.wav'):
+        wav_path = str(user_audio_path).rsplit('.', 1)[0] + '.wav'
+        try:
+            subprocess.run(
+                ['afconvert', str(user_audio_path), wav_path, '-d', 'LEI16', '-f', 'WAVE'],
+                check=True, capture_output=True, timeout=10,
+            )
+            user_wav = wav_path
+        except Exception as e:
+            print(f"[afconvert] Error: {e}")
+            user_wav = str(user_audio_path)
+
+    native_wav = native_audio_path
+    if not str(native_audio_path).endswith('.wav'):
+        native_wav_path = str(native_audio_path).rsplit('.', 1)[0] + '_native.wav'
+        try:
+            subprocess.run(
+                ['afconvert', str(native_audio_path), native_wav_path, '-d', 'LEI16', '-f', 'WAVE'],
+                check=True, capture_output=True, timeout=10,
+            )
+            native_wav = native_wav_path
+        except Exception:
+            native_wav = str(native_audio_path)
+
+    from biometric_checker import full_analysis
+    result = full_analysis(str(user_wav), str(native_wav))
+    return result
+
+
 def log_drill(word_id, word, rating, latency_ms, drill_type="drill"):
     log_file = LOG_DIR / f"session_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
     entry = {
@@ -269,7 +312,7 @@ def get_local_ip():
 
 # ── HTML UI ────────────────────────────────────────────────────────
 
-DRILL_HTML = """<!DOCTYPE html>
+DRILL_HTML = r"""<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -369,6 +412,60 @@ DRILL_HTML = """<!DOCTYPE html>
   }
   .loading { color: #525263; font-size: 1.2em; }
   .pulsing { animation: pulse 1.5s infinite; }
+
+  /* Mic button */
+  @keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)} 50%{box-shadow:0 0 0 12px rgba(248,113,113,0)} }
+  .mic-btn {
+    width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: #818cf8; font-size: 1.8em;
+    cursor: pointer; display: none; align-items: center; justify-content: center;
+    transition: all 0.2s; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mic-btn.visible { display: flex; animation: fadeUp 0.3s ease-out; }
+  .mic-btn.recording { border-color: #f87171; color: #f87171; animation: micPulse 1.2s infinite; background: rgba(248,113,113,0.08); }
+  .mic-btn:active { transform: scale(0.95); }
+  .mic-score { font-size: 2em; font-weight: 700; min-height: 1.2em; text-align: center; }
+  .mic-score.pass { color: #818cf8; }
+  .mic-score.fail { color: #f87171; }
+  .mic-msg { font-size: 0.9em; color: #525263; text-align: center; min-height: 1.2em; }
+  .mic-denied { font-size: 0.75em; color: #525263; text-align: center; display: none; }
+
+  /* Shadow button */
+  .shadow-btn {
+    padding: 12px 24px; border: 1px solid rgba(139,92,246,0.3); border-radius: 12px;
+    background: rgba(139,92,246,0.08); color: #a78bfa; font-size: 0.9em; font-weight: 600;
+    cursor: pointer; display: none; transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .shadow-btn.visible { display: inline-block; animation: fadeUp 0.3s ease-out; }
+  .shadow-btn:active { transform: scale(0.97); background: rgba(139,92,246,0.15); }
+
+  /* Cloze UI */
+  .cloze-input-wrap {
+    width: 100%; max-width: 300px; display: none; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .cloze-input-wrap.visible { display: flex; animation: fadeUp 0.4s ease-out; }
+  .cloze-input {
+    width: 100%; padding: 16px 20px; font-size: 1.3em; font-weight: 600; text-align: center;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; color: #fafafa; outline: none; font-family: inherit;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    -webkit-appearance: none;
+  }
+  .cloze-input:focus { border-color: rgba(94,106,210,0.5); }
+  .cloze-input::placeholder { color: #333; }
+  .cloze-submit {
+    padding: 12px 32px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    font-size: 1em; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .cloze-submit:active { transform: scale(0.97); opacity: 0.9; }
+  .cloze-result { font-size: 1.4em; font-weight: 700; text-align: center; min-height: 1.5em; }
+  .cloze-result.correct { color: #818cf8; }
+  .cloze-result.wrong { color: #f87171; }
+  .cloze-answer { font-size: 0.9em; color: #525263; text-align: center; min-height: 1.2em; }
 </style>
 </head><body>
 
@@ -391,8 +488,22 @@ DRILL_HTML = """<!DOCTYPE html>
   <div class="explanation" id="explanation"></div>
   <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
 
+  <div class="mic-score" id="mic-score"></div>
+  <div class="mic-msg" id="mic-msg"></div>
+  <button class="mic-btn" id="mic-btn" onclick="toggleMic()">&#x1F3A4;</button>
+  <div class="mic-denied" id="mic-denied">Mic access denied — check browser permissions</div>
+  <button class="shadow-btn" id="shadow-btn" onclick="startShadow()">Sombra</button>
+
+  <div class="cloze-input-wrap" id="cloze-wrap">
+    <input class="cloze-input" id="cloze-input" type="text" placeholder="Qual palavra?" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button class="cloze-submit" id="cloze-submit" onclick="submitCloze()">Enviar</button>
+  </div>
+  <div class="cloze-result" id="cloze-result"></div>
+  <div class="cloze-answer" id="cloze-answer"></div>
+
   <audio id="player" preload="auto"></audio>
   <audio id="explain-player" preload="auto"></audio>
+  <audio id="mic-playback" preload="auto"></audio>
 
   <button id="tap-zone" disabled>Loading...</button>
 
@@ -413,21 +524,38 @@ DRILL_HTML = """<!DOCTYPE html>
 const $ = id => document.getElementById(id);
 const player = $('player');
 const explainPlayer = $('explain-player');
+const micPlayback = $('mic-playback');
 const tapZone = $('tap-zone');
 const trapZone = $('trap-zone');
+const micBtn = $('mic-btn');
+const shadowBtn = $('shadow-btn');
 
-let state = 'loading'; // loading, playing, waiting, result, trap
+const isWeakMode = new URLSearchParams(window.location.search).get('mode') === 'weak';
+if (isWeakMode) {
+  document.querySelector('.header h1').textContent = 'PALAVRAS FRACAS';
+}
+
+let state = 'loading'; // loading, playing, waiting, result, mic, shadow, cloze, trap
 let audioEndTime = 0;
 let currentWord = null;
 let sessionCount = 0;
 let sessionCorrect = 0;
 let trapStart = 0;
 
+// Mic recording state
+let mediaRecorder = null;
+let micChunks = [];
+let isRecording = false;
+let micAttempts = 0;
+let lastDrillRating = 0;
+
 // ── Fetch next word from server ──────────────────────────
 async function fetchNext() {
   setState('loading');
+  resetMicUI();
+  resetClozeUI();
   try {
-    const res = await fetch('/api/next');
+    const res = await fetch(isWeakMode ? '/api/next?mode=weak' : '/api/next');
     const data = await res.json();
 
     if (data.error) {
@@ -445,6 +573,8 @@ async function fetchNext() {
 
     if (data.type === 'trap') {
       showTrap(data);
+    } else if (data.type === 'cloze') {
+      showCloze(data);
     } else {
       showDrill(data);
     }
@@ -453,6 +583,24 @@ async function fetchNext() {
     $('carrier-display').textContent = e.message;
     setTimeout(fetchNext, 3000);
   }
+}
+
+function resetMicUI() {
+  micBtn.classList.remove('visible', 'recording');
+  shadowBtn.classList.remove('visible');
+  $('mic-score').textContent = '';
+  $('mic-msg').textContent = '';
+  $('mic-denied').style.display = 'none';
+  micAttempts = 0;
+  isRecording = false;
+}
+
+function resetClozeUI() {
+  $('cloze-wrap').classList.remove('visible');
+  $('cloze-input').value = '';
+  $('cloze-result').textContent = '';
+  $('cloze-result').className = 'cloze-result';
+  $('cloze-answer').textContent = '';
 }
 
 function showDrill(data) {
@@ -467,7 +615,6 @@ function showDrill(data) {
   trapZone.style.display = 'none';
   tapZone.style.display = 'block';
 
-  // Show image first, then play audio after image loads
   const img = $('drill-image');
   const playAudio = () => {
     player.src = '/audio/' + data.audio_file;
@@ -496,6 +643,87 @@ function showDrill(data) {
   }
 }
 
+// ── Cloze Drill ──────────────────────────────────────────
+function showCloze(data) {
+  $('word-display').textContent = '';
+  $('carrier-display').textContent = '';
+  $('latency-display').textContent = '';
+  $('rating-label').textContent = '';
+  $('explanation').classList.remove('visible');
+  explainPlayer.pause();
+
+  trapZone.style.display = 'none';
+  tapZone.style.display = 'none';
+
+  const img = $('drill-image');
+  if (data.image_file) {
+    img.src = '/image/' + data.image_file;
+    img.classList.add('visible');
+  } else {
+    img.classList.remove('visible');
+  }
+
+  player.src = '/audio/' + data.audio_file;
+  player.onended = () => {
+    setState('cloze');
+    $('cloze-wrap').classList.add('visible');
+    $('cloze-input').focus();
+  };
+  setState('playing');
+  player.play().catch(() => {
+    setState('cloze');
+    $('cloze-wrap').classList.add('visible');
+    $('cloze-input').focus();
+  });
+}
+
+$('cloze-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitCloze();
+});
+
+async function submitCloze() {
+  const answer = $('cloze-input').value.trim();
+  if (!answer) return;
+
+  $('cloze-submit').disabled = true;
+  $('cloze-input').disabled = true;
+
+  const res = await fetch('/api/cloze-respond', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      word_id: currentWord.word_id,
+      answer: answer,
+      expected: currentWord.word,
+    }),
+  });
+  const data = await res.json();
+
+  $('cloze-wrap').classList.remove('visible');
+
+  if (data.correct) {
+    $('cloze-result').textContent = currentWord.word;
+    $('cloze-result').className = 'cloze-result correct';
+  } else {
+    $('cloze-result').textContent = answer;
+    $('cloze-result').className = 'cloze-result wrong';
+    $('cloze-answer').textContent = 'Resposta: ' + currentWord.word;
+  }
+  $('word-display').textContent = currentWord.word;
+  $('carrier-display').textContent = currentWord.full_carrier || '';
+
+  $('rating-label').textContent = data.rating_name;
+  sessionCount++;
+  if (data.rating >= 3) sessionCorrect++;
+  updateSessionStats();
+
+  $('cloze-submit').disabled = false;
+  $('cloze-input').disabled = false;
+  $('cloze-input').value = '';
+
+  setTimeout(fetchNext, 2500);
+}
+
 function showTrap(data) {
   $('word-display').textContent = '';
   $('carrier-display').textContent = '';
@@ -509,8 +737,7 @@ function showTrap(data) {
   player.src = '/audio/' + data.audio_file;
   player.onended = () => {
     trapStart = performance.now();
-    // Show trap buttons
-    $('word-display').textContent = '🎭';
+    $('word-display').textContent = '\u{1F3AD}';
     $('carrier-display').textContent = 'REACT!';
   };
 
@@ -538,10 +765,10 @@ async function trapReact(reaction) {
 
   $('latency-display').textContent = latency + 'ms';
   $('latency-display').className = 'latency ' + (data.passed ? 'fast' : 'slow');
-  $('rating-label').textContent = data.passed ? 'Sobreviveu!' : '🍊 LARANJADA!';
+  $('rating-label').textContent = data.passed ? 'Sobreviveu!' : '\u{1F34A} LARANJADA!';
   $('carrier-display').textContent = data.expected;
   if (data.penalty_remaining > 0) {
-    $('penalty-display').textContent = '🍊 Penalty: ' + data.penalty_remaining + ' restantes';
+    $('penalty-display').textContent = '\u{1F34A} Penalty: ' + data.penalty_remaining + ' restantes';
   }
 
   sessionCount++;
@@ -557,7 +784,8 @@ function setState(s) {
     tapZone.textContent = 'Carregando...';
     tapZone.disabled = true;
     tapZone.className = '';
-    $('word-display').innerHTML = '<span class="loading pulsing">●●●</span>';
+    tapZone.style.display = 'block';
+    $('word-display').innerHTML = '<span class="loading pulsing">\u25CF\u25CF\u25CF</span>';
   } else if (s === 'image') {
     tapZone.textContent = 'Olha...';
     tapZone.disabled = true;
@@ -569,8 +797,15 @@ function setState(s) {
     tapZone.disabled = false;
     tapZone.onclick = handleTap;
   } else if (s === 'result') {
-    tapZone.textContent = 'Próximo...';
+    tapZone.textContent = 'Pr\u00F3ximo...';
     tapZone.disabled = true;
+  } else if (s === 'mic') {
+    tapZone.style.display = 'none';
+    micBtn.classList.add('visible');
+  } else if (s === 'shadow') {
+    tapZone.style.display = 'none';
+  } else if (s === 'cloze') {
+    tapZone.style.display = 'none';
   }
 }
 
@@ -580,7 +815,6 @@ async function handleTap() {
 
   setState('result');
 
-  // Show word now (after attempt)
   $('word-display').textContent = currentWord.word;
   $('carrier-display').textContent = currentWord.carrier;
 
@@ -593,7 +827,6 @@ async function handleTap() {
     $('latency-display').className = 'latency slow';
   }
 
-  // Send response to server
   const res = await fetch('/api/respond', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -604,10 +837,11 @@ async function handleTap() {
   });
   const data = await res.json();
 
+  lastDrillRating = data.rating;
   $('rating-label').textContent = data.rating_name;
   $('mastery-label').textContent = 'Mastery: ' + data.new_mastery + '/5';
   if (data.penalty_active) {
-    $('penalty-display').textContent = '🍊 Laranjada — forced Hard';
+    $('penalty-display').textContent = '\u{1F34A} Laranjada \u2014 forced Hard';
   } else {
     $('penalty-display').textContent = '';
   }
@@ -620,7 +854,7 @@ async function handleTap() {
   if (data.rating >= 3) sessionCorrect++;
   updateSessionStats();
 
-  // On miss (Again or Hard) — fetch and play explanation
+  // On miss — fetch and play explanation, then show mic
   if (data.rating <= 2) {
     fetch('/api/explain', {
       method: 'POST',
@@ -634,13 +868,192 @@ async function handleTap() {
       if (ex.audio_file) {
         explainPlayer.src = '/audio/' + ex.audio_file;
         explainPlayer.play().catch(() => {});
-        explainPlayer.onended = () => { setTimeout(fetchNext, 1500); };
+        explainPlayer.onended = () => { showMicPhase(); };
         return;
       }
-      setTimeout(fetchNext, 3000);
-    }).catch(() => { setTimeout(fetchNext, 2500); });
+      setTimeout(() => { showMicPhase(); }, 2000);
+    }).catch(() => { showMicPhase(); });
   } else {
+    setTimeout(() => { showMicPhase(); }, 800);
+  }
+}
+
+// ── Mic Recording (Feature 1) ───────────────────────────
+function showMicPhase() {
+  micAttempts = 0;
+  setState('mic');
+  $('mic-msg').textContent = 'Toca pra gravar sua pron\u00FAncia';
+}
+
+async function toggleMic() {
+  if (isRecording) {
+    stopRecording();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) micChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(micChunks, { type: mediaRecorder.mimeType || 'audio/mp4' });
+      await uploadPronunciation(blob);
+    };
+    mediaRecorder.start();
+    isRecording = true;
+    micBtn.classList.add('recording');
+    $('mic-msg').textContent = 'Gravando... toca pra parar';
+    setTimeout(() => { if (isRecording) stopRecording(); }, 5000);
+  } catch (e) {
+    $('mic-denied').style.display = 'block';
+    $('mic-msg').textContent = '';
+    setTimeout(fetchNext, 2500);
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    isRecording = false;
+    micBtn.classList.remove('recording');
+    $('mic-msg').textContent = 'Analisando...';
+    mediaRecorder.stop();
+  }
+}
+
+async function uploadPronunciation(blob) {
+  micAttempts++;
+  const fd = new FormData();
+  fd.append('audio', blob, 'recording.m4a');
+  fd.append('word_id', currentWord.word_id);
+  fd.append('native_audio', currentWord.audio_file);
+
+  try {
+    const res = await fetch('/api/score-pronunciation', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    const score = data.score || 0;
+    $('mic-score').textContent = score + '/100';
+    $('mic-score').className = 'mic-score ' + (score >= 85 ? 'pass' : 'fail');
+
+    if (score >= 85) {
+      $('mic-msg').textContent = 'Massa! Pron\u00FAncia boa.';
+      micBtn.classList.remove('visible');
+      shadowBtn.classList.add('visible');
+      setTimeout(() => {
+        if (!shadowBtn.classList.contains('visible')) return;
+        shadowBtn.classList.remove('visible');
+        fetchNext();
+      }, 5000);
+    } else if (micAttempts >= 3) {
+      $('mic-msg').textContent = 'Bora pra frente. Pratica depois.';
+      micBtn.classList.remove('visible');
+      setTimeout(fetchNext, 2000);
+    } else {
+      $('mic-msg').textContent = 'De novo! (' + micAttempts + '/3)';
+      player.src = '/audio/' + currentWord.audio_file;
+      player.play().catch(() => {});
+    }
+  } catch (e) {
+    $('mic-msg').textContent = 'Erro na an\u00E1lise';
     setTimeout(fetchNext, 2000);
+  }
+}
+
+// ── Shadow Mode (Feature 4) ─────────────────────────────
+let shadowAttempts = 0;
+
+async function startShadow() {
+  shadowBtn.classList.remove('visible');
+  setState('shadow');
+  shadowAttempts = 0;
+  doShadowRound();
+}
+
+async function doShadowRound() {
+  shadowAttempts++;
+  $('mic-score').textContent = '';
+  $('mic-msg').textContent = 'Ouvindo nativo...';
+
+  player.src = '/audio/' + currentWord.audio_file;
+  player.onended = async () => {
+    $('mic-msg').textContent = 'Gravando sombra...';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micChunks = [];
+      const rec = new MediaRecorder(stream);
+      rec.ondataavailable = e => { if (e.data.size > 0) micChunks.push(e.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(micChunks, { type: rec.mimeType || 'audio/mp4' });
+        await uploadShadow(blob);
+      };
+      rec.start();
+      micBtn.classList.add('visible', 'recording');
+      isRecording = true;
+
+      const dur = player.duration || 3;
+      setTimeout(() => {
+        if (rec.state === 'recording') {
+          rec.stop();
+          isRecording = false;
+          micBtn.classList.remove('recording');
+          $('mic-msg').textContent = 'Analisando sombra...';
+        }
+      }, (dur + 1) * 1000);
+    } catch (e) {
+      $('mic-denied').style.display = 'block';
+      setTimeout(fetchNext, 2000);
+    }
+  };
+  player.play().catch(() => {});
+}
+
+async function uploadShadow(blob) {
+  const fd = new FormData();
+  fd.append('audio', blob, 'shadow.m4a');
+  fd.append('word_id', currentWord.word_id);
+  fd.append('native_audio', currentWord.audio_file);
+
+  try {
+    const res = await fetch('/api/shadow-score', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    const score = data.score || 0;
+    $('mic-score').textContent = score + '/100';
+    $('mic-score').className = 'mic-score ' + (score >= 85 ? 'pass' : 'fail');
+
+    $('mic-msg').textContent = 'Comparando...';
+    player.src = '/audio/' + currentWord.audio_file;
+    player.onended = () => {
+      if (data.user_audio_url) {
+        micPlayback.src = data.user_audio_url;
+        micPlayback.onended = () => { finishShadowRound(score); };
+        micPlayback.play().catch(() => { finishShadowRound(score); });
+      } else {
+        finishShadowRound(score);
+      }
+    };
+    player.play().catch(() => { finishShadowRound(score); });
+  } catch (e) {
+    $('mic-msg').textContent = 'Erro na an\u00E1lise';
+    micBtn.classList.remove('visible');
+    setTimeout(fetchNext, 2000);
+  }
+}
+
+function finishShadowRound(score) {
+  if (score >= 85) {
+    $('mic-msg').textContent = 'Sombra perfeita!';
+    micBtn.classList.remove('visible');
+    setTimeout(fetchNext, 2000);
+  } else if (shadowAttempts >= 3) {
+    $('mic-msg').textContent = 'Bora pra frente.';
+    micBtn.classList.remove('visible');
+    setTimeout(fetchNext, 2000);
+  } else {
+    $('mic-msg').textContent = 'De novo! (' + shadowAttempts + '/3)';
+    setTimeout(() => doShadowRound(), 1000);
   }
 }
 

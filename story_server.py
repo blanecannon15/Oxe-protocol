@@ -149,6 +149,18 @@ STORY_HTML = r"""<!DOCTYPE html>
     cursor: pointer; transition: all 0.2s;
   }
   .show-text-btn:active { border-color: rgba(255,255,255,0.15); }
+  .speed-controls {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .speed-btn {
+    padding: 6px 14px; border-radius: 10px; font-size: 0.8em; font-weight: 600;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    color: #525263; cursor: pointer; transition: all 0.2s;
+  }
+  .speed-btn.active {
+    background: rgba(94,106,210,0.15); border-color: rgba(94,106,210,0.3);
+    color: #818cf8;
+  }
   .story-text {
     display: none; background: rgba(255,255,255,0.03); border-radius: 14px;
     padding: 16px; font-size: 1em; line-height: 1.8; max-height: 50vh;
@@ -233,6 +245,12 @@ STORY_HTML = r"""<!DOCTYPE html>
     <div class="player-status" id="player-status">Preparando...</div>
     <button class="player-btn" id="play-btn" onclick="togglePlay()">&#9654;</button>
     <button class="show-text-btn" id="show-text-btn" onclick="toggleText()">Mostrar texto</button>
+    <div class="speed-controls">
+      <button class="speed-btn" onclick="setSpeed(0.85)">0.85x</button>
+      <button class="speed-btn active" onclick="setSpeed(1.0)">1.0x</button>
+      <button class="speed-btn" onclick="setSpeed(1.25)">1.25x</button>
+      <button class="speed-btn" onclick="setSpeed(1.5)">1.5x</button>
+    </div>
     <div class="story-text" id="story-text"></div>
   </div>
 </div>
@@ -262,6 +280,15 @@ STORY_HTML = r"""<!DOCTYPE html>
 const $ = id => document.getElementById(id);
 const player = $('audio-player');
 const qPlayer = $('q-player');
+
+let currentSpeed = 1.0;
+function setSpeed(speed) {
+  currentSpeed = speed;
+  player.playbackRate = speed;
+  document.querySelectorAll('.speed-btn').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.textContent) === speed);
+  });
+}
 
 let currentLevel = null;
 let currentStory = null;
@@ -493,6 +520,7 @@ function playChunk(idx) {
   player.play().catch(() => {
     $('player-status').textContent = 'Toque para continuar';
   });
+  player.playbackRate = currentSpeed;
 
   $('play-btn').innerHTML = '⏸';
   $('player-status').textContent = (idx + 1) + ' / ' + storyChunks.length;
@@ -626,6 +654,13 @@ function showResults() {
   $('result-label').textContent = pass
     ? 'Massa! Entendeu a história.'
     : 'Oxe, bora ouvir de novo.';
+
+  if (pass && currentSpeed < 1.5) {
+    const suggestion = document.createElement('div');
+    suggestion.style.cssText = 'font-size:0.9em;color:#818cf8;margin-top:8px;';
+    suggestion.textContent = 'Tenta mais rápido?';
+    $('result-label').parentNode.insertBefore(suggestion, $('result-label').nextSibling);
+  }
 
   // Log result
   fetch('/api/story/' + currentStory.id + '/result', {
