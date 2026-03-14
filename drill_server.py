@@ -39,8 +39,10 @@ from srs_engine import (
 )
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
+IMAGE_DIR = Path(__file__).parent / "voca_vault" / "images"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LATENCY_THRESHOLD_MS = 1000
@@ -137,6 +139,109 @@ def generate_tts(text):
     return fname
 
 
+import threading
+
+_image_lock = threading.Lock()
+_image_pending = set()
+
+
+def get_cached_image(word):
+    """Return cached image filename if it exists, else None."""
+    safe = "".join(c if c.isalnum() else "_" for c in word)
+    fname = f"img_{safe}.png"
+    cached = IMAGE_DIR / fname
+    if cached.exists() and cached.stat().st_size > 0:
+        return fname
+    return None
+
+
+def _bg_generate_image(word):
+    """Background thread: generate DALL-E image and cache it."""
+    safe = "".join(c if c.isalnum() else "_" for c in word)
+    fname = f"img_{safe}.png"
+    cached = IMAGE_DIR / fname
+    try:
+        import openai
+        client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        prompt = (
+            f"A vivid, colorful illustration representing the concept of '{word}' "
+            f"in the context of Salvador, Bahia, Brazil. "
+            f"Include Bahian cultural elements — colorful colonial buildings, palm trees, "
+            f"or street scenes from Pelourinho. No text, no words, no letters in the image. "
+            f"Warm tropical colors, clean modern illustration style."
+        )
+        resp = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        import urllib.request
+        urllib.request.urlretrieve(resp.data[0].url, str(cached))
+    except Exception as e:
+        print(f"[DALL-E] Error for '{word}': {e}")
+    finally:
+        with _image_lock:
+            _image_pending.discard(word)
+
+
+def generate_image(word):
+    """Return cached image, generating synchronously if needed (user wants to see it)."""
+    cached = get_cached_image(word)
+    if cached:
+        return cached
+    # Generate now — user wants the image before drilling
+    _bg_generate_image(word)
+    return get_cached_image(word)
+
+
+def prefetch_images(words):
+    """Pre-generate images for a list of words in background threads."""
+    for w in words:
+        if get_cached_image(w):
+            continue
+        with _image_lock:
+            if w not in _image_pending:
+                _image_pending.add(w)
+                t = threading.Thread(target=_bg_generate_image, args=(w,), daemon=True)
+                t.start()
+
+
+def generate_explanation(word):
+    """Generate a simple PT explanation of the word using GPT-4o, then TTS it. Returns audio filename or None."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None, None
+
+    try:
+        import openai
+        client = openai.OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=120,
+            temperature=0.7,
+            messages=[{
+                "role": "system",
+                "content": (
+                    "Tu é um parceiro baiano de Salvador. Explica o significado da palavra "
+                    "usando só as 1000 palavras mais comuns do português. "
+                    "Máximo 2 frases curtas. Fala natural, tipo conversa de rua. "
+                    "Sem inglês. Sem markdown."
+                ),
+            }, {
+                "role": "user",
+                "content": f"Explica o que significa: {word}",
+            }],
+        )
+        explanation = resp.choices[0].message.content.strip()
+        audio_fname = generate_tts(explanation)
+        return explanation, audio_fname
+    except Exception as e:
+        print(f"[Explain] Error for '{word}': {e}")
+        return None, None
+
+
 def log_drill(word_id, word, rating, latency_ms, drill_type="drill"):
     log_file = LOG_DIR / f"session_{datetime.now().strftime('%Y-%m-%d')}.jsonl"
     entry = {
@@ -169,71 +274,100 @@ DRILL_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Oxe Protocol</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
+  @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: #0d1117; color: #e6edf3; font-family: system-ui, -apple-system, sans-serif;
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh;
     overflow: hidden; -webkit-user-select: none; user-select: none;
   }
   .header {
-    padding: 16px 20px; background: #161b22; border-bottom: 1px solid #30363d;
+    padding: 16px 20px; background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
     display: flex; justify-content: space-between; align-items: center;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   }
-  .header h1 { font-size: 1.1em; color: #f7931e; }
-  .stats { font-size: 0.75em; color: #8b949e; text-align: right; }
+  .header h1 {
+    font-size: 1.1em; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .stats { font-size: 0.75em; color: #525263; text-align: right; }
   .main {
     flex: 1; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 20px; gap: 24px;
+    animation: fadeUp 0.5s ease-out;
   }
   .word-display {
-    font-size: 2.4em; font-weight: 700; color: #f7931e;
-    min-height: 1.2em; text-align: center;
+    font-size: 2.4em; font-weight: 700; min-height: 1.2em; text-align: center;
+    background: linear-gradient(135deg, #818cf8, #a78bfa);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .carrier { font-size: 1em; color: #8b949e; text-align: center; min-height: 1.5em; }
+  .carrier { font-size: 1em; color: #525263; text-align: center; min-height: 1.5em; }
   .tier-badge {
     font-size: 0.75em; padding: 4px 12px; border-radius: 12px;
-    background: #1f2937; color: #9ca3af; display: inline-block;
+    background: rgba(94,106,210,0.12); color: #818cf8; display: inline-block;
+    border: 1px solid rgba(94,106,210,0.15);
   }
   .latency {
     font-size: 3em; font-weight: 700; min-height: 1.2em;
-    transition: color 0.3s;
+    transition: color 0.3s; font-variant-numeric: tabular-nums;
   }
-  .latency.fast { color: #3fb950; }
-  .latency.ok { color: #d29922; }
-  .latency.slow { color: #f85149; }
-  .rating-label { font-size: 1em; min-height: 1.2em; }
+  .latency.fast { color: #34d399; }
+  .latency.ok { color: #fbbf24; }
+  .latency.slow { color: #f87171; }
+  .rating-label { font-size: 1em; min-height: 1.2em; color: #9ca3af; }
+  .drill-image {
+    width: 160px; height: 160px; border-radius: 20px; object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.06); display: none;
+    box-shadow: 0 0 40px rgba(94,106,210,0.1);
+  }
+  .drill-image.visible { display: block; animation: fadeUp 0.4s ease-out; }
   #tap-zone {
     width: 100%; padding: 28px; font-size: 1.3em; font-weight: 600;
     border: none; border-radius: 16px; cursor: pointer;
-    background: #238636; color: #fff; transition: all 0.15s;
-    -webkit-tap-highlight-color: transparent;
+    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    transition: all 0.2s; -webkit-tap-highlight-color: transparent;
   }
-  #tap-zone:active { transform: scale(0.97); background: #2ea043; }
-  #tap-zone:disabled { background: #21262d; color: #484f58; }
+  #tap-zone:active { transform: scale(0.97); opacity: 0.9; }
+  #tap-zone:disabled { background: rgba(255,255,255,0.04); color: #333; }
   .trap-zone {
     width: 100%; display: none; gap: 8px;
   }
   .trap-btn {
     flex: 1; padding: 16px 8px; font-size: 1em; font-weight: 600;
-    border: 2px solid #30363d; border-radius: 12px; background: #161b22;
-    color: #e6edf3; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    background: rgba(255,255,255,0.04); color: #fafafa; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: all 0.15s;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
-  .trap-btn:active { background: #f7931e; color: #000; border-color: #f7931e; }
-  .penalty { color: #f85149; font-size: 0.85em; min-height: 1.2em; }
+  .trap-btn:active { background: #5E6AD2; color: #fff; border-color: #5E6AD2; }
+  .penalty { color: #f87171; font-size: 0.85em; min-height: 1.2em; }
+  .explanation {
+    font-size: 0.9em; color: #9ca3af; text-align: center; line-height: 1.5;
+    padding: 12px 16px; background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+    display: none; width: 100%; max-width: 340px;
+    animation: fadeUp 0.4s ease-out;
+  }
+  .explanation.visible { display: block; }
   .progress-bar {
-    width: 100%; height: 4px; background: #21262d; border-radius: 2px;
+    width: 100%; height: 3px; background: rgba(255,255,255,0.04); border-radius: 2px;
     overflow: hidden;
   }
   .progress-fill {
-    height: 100%; background: #f7931e; transition: width 0.5s;
+    height: 100%; background: linear-gradient(90deg, #5E6AD2, #8B5CF6);
+    transition: width 0.5s;
   }
   .footer {
-    padding: 12px 20px; background: #161b22; border-top: 1px solid #30363d;
-    display: flex; justify-content: space-between; font-size: 0.75em; color: #484f58;
+    padding: 12px 20px; background: rgba(255,255,255,0.02);
+    border-top: 1px solid rgba(255,255,255,0.04);
+    display: flex; justify-content: space-between; font-size: 0.75em; color: #333;
   }
-  .loading { color: #8b949e; font-size: 1.2em; }
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .loading { color: #525263; font-size: 1.2em; }
   .pulsing { animation: pulse 1.5s infinite; }
 </style>
 </head><body>
@@ -248,14 +382,17 @@ DRILL_HTML = """<!DOCTYPE html>
 
 <div class="main">
   <div class="tier-badge" id="tier-label"></div>
+  <img class="drill-image" id="drill-image" alt="">
   <div class="word-display" id="word-display"></div>
   <div class="carrier" id="carrier-display"></div>
   <div class="latency" id="latency-display"></div>
   <div class="rating-label" id="rating-label"></div>
   <div class="penalty" id="penalty-display"></div>
+  <div class="explanation" id="explanation"></div>
   <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
 
   <audio id="player" preload="auto"></audio>
+  <audio id="explain-player" preload="auto"></audio>
 
   <button id="tap-zone" disabled>Loading...</button>
 
@@ -275,6 +412,7 @@ DRILL_HTML = """<!DOCTYPE html>
 <script>
 const $ = id => document.getElementById(id);
 const player = $('player');
+const explainPlayer = $('explain-player');
 const tapZone = $('tap-zone');
 const trapZone = $('trap-zone');
 
@@ -318,32 +456,44 @@ async function fetchNext() {
 }
 
 function showDrill(data) {
-  // Don't show the word yet — audio first (zero-reading)
   $('word-display').textContent = '';
   $('carrier-display').textContent = '';
   $('latency-display').textContent = '';
   $('rating-label').textContent = '';
+  $('explanation').classList.remove('visible');
+  $('explanation').textContent = '';
+  explainPlayer.pause();
 
   trapZone.style.display = 'none';
   tapZone.style.display = 'block';
 
-  player.src = '/audio/' + data.audio_file;
-  player.onended = () => {
-    audioEndTime = performance.now();
-    setState('waiting');
-  };
-  player.onerror = () => {
-    // Skip to next on audio error
-    setTimeout(fetchNext, 1000);
+  // Show image first, then play audio after image loads
+  const img = $('drill-image');
+  const playAudio = () => {
+    player.src = '/audio/' + data.audio_file;
+    player.onended = () => {
+      setState('waiting');
+      audioEndTime = performance.now();
+    };
+    player.onerror = () => { setTimeout(fetchNext, 1000); };
+    setState('playing');
+    player.play().catch(() => {
+      tapZone.textContent = 'TAP TO PLAY';
+      tapZone.disabled = false;
+      tapZone.onclick = () => { player.play(); tapZone.onclick = handleTap; };
+    });
   };
 
-  setState('playing');
-  player.play().catch(() => {
-    // Autoplay blocked — let user tap to start
-    tapZone.textContent = 'TAP TO PLAY';
-    tapZone.disabled = false;
-    tapZone.onclick = () => { player.play(); tapZone.onclick = handleTap; };
-  });
+  if (data.image_file) {
+    img.onload = () => { setTimeout(playAudio, 800); };
+    img.onerror = () => { playAudio(); };
+    img.src = '/image/' + data.image_file;
+    img.classList.add('visible');
+    setState('image');
+  } else {
+    img.classList.remove('visible');
+    playAudio();
+  }
 }
 
 function showTrap(data) {
@@ -351,6 +501,7 @@ function showTrap(data) {
   $('carrier-display').textContent = '';
   $('latency-display').textContent = '';
   $('rating-label').textContent = '';
+  $('drill-image').classList.remove('visible');
 
   tapZone.style.display = 'none';
   trapZone.style.display = 'flex';
@@ -407,11 +558,14 @@ function setState(s) {
     tapZone.disabled = true;
     tapZone.className = '';
     $('word-display').innerHTML = '<span class="loading pulsing">●●●</span>';
+  } else if (s === 'image') {
+    tapZone.textContent = 'Olha...';
+    tapZone.disabled = true;
   } else if (s === 'playing') {
     tapZone.textContent = 'Ouvindo...';
     tapZone.disabled = true;
   } else if (s === 'waiting') {
-    tapZone.textContent = 'SHADOW → TAP';
+    tapZone.textContent = 'SEI';
     tapZone.disabled = false;
     tapZone.onclick = handleTap;
   } else if (s === 'result') {
@@ -458,7 +612,6 @@ async function handleTap() {
     $('penalty-display').textContent = '';
   }
 
-  // Update progress bar
   if (data.tier_progress !== undefined) {
     $('progress-fill').style.width = data.tier_progress + '%';
   }
@@ -467,7 +620,28 @@ async function handleTap() {
   if (data.rating >= 3) sessionCorrect++;
   updateSessionStats();
 
-  setTimeout(fetchNext, 2000);
+  // On miss (Again or Hard) — fetch and play explanation
+  if (data.rating <= 2) {
+    fetch('/api/explain', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ word: currentWord.word }),
+    }).then(r => r.json()).then(ex => {
+      if (ex.explanation) {
+        $('explanation').textContent = ex.explanation;
+        $('explanation').classList.add('visible');
+      }
+      if (ex.audio_file) {
+        explainPlayer.src = '/audio/' + ex.audio_file;
+        explainPlayer.play().catch(() => {});
+        explainPlayer.onended = () => { setTimeout(fetchNext, 1500); };
+        return;
+      }
+      setTimeout(fetchNext, 3000);
+    }).catch(() => { setTimeout(fetchNext, 2500); });
+  } else {
+    setTimeout(fetchNext, 2000);
+  }
 }
 
 function updateSessionStats() {
@@ -502,6 +676,9 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
         elif path.startswith("/audio/"):
             self._serve_audio(path[7:])
 
+        elif path.startswith("/image/"):
+            self._serve_image(path[7:])
+
         else:
             self.send_error(404)
 
@@ -511,6 +688,9 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/respond":
             self._handle_respond(body)
+
+        elif path == "/api/explain":
+            self._handle_explain(body)
 
         elif path == "/api/trap-respond":
             self._handle_trap_respond(body)
@@ -561,9 +741,15 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "TTS failed"})
             return
 
+        img_fname = generate_image(word["word"])
+
+        # Pre-fetch next 5 due words' images in background
+        due_words = list(get_due_words())
+        upcoming = [w["word"] for w in due_words[:5] if w["word"] != word["word"]]
+        if upcoming:
+            prefetch_images(upcoming)
+
         tier = get_unlocked_tier()
-        due = get_due_words()
-        due_count = len(list(due))
 
         self._json({
             "type": "drill",
@@ -571,6 +757,7 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
             "word": word["word"],
             "carrier": carrier,
             "audio_file": fname,
+            "image_file": img_fname,
             "tier": word["difficulty_tier"],
             "tier_label": TIER_LABELS[word["difficulty_tier"]],
             "mastery": word["mastery_level"],
@@ -622,6 +809,14 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
             "new_mastery": new_mastery,
             "penalty_active": penalty_active,
             "tier_progress": round(current_pct, 1),
+        })
+
+    def _handle_explain(self, body):
+        word = body.get("word", "")
+        explanation, audio_fname = generate_explanation(word)
+        self._json({
+            "explanation": explanation,
+            "audio_file": audio_fname,
         })
 
     def _handle_trap_respond(self, body):
@@ -677,6 +872,20 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "audio/mpeg")
         self.send_header("Content-Length", str(filepath.stat().st_size))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        with open(filepath, "rb") as f:
+            self.wfile.write(f.read())
+
+    def _serve_image(self, filename):
+        filepath = IMAGE_DIR / filename
+        if not filepath.exists():
+            self.send_error(404)
+            return
+        ct = "image/png" if filename.endswith(".png") else "image/jpeg"
+        self.send_response(200)
+        self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(filepath.stat().st_size))
+        self.send_header("Cache-Control", "public, max-age=86400")
         self.end_headers()
         with open(filepath, "rb") as f:
             self.wfile.write(f.read())
