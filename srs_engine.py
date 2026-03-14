@@ -178,6 +178,8 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
             rating = Rating.Hard
             latency_downgraded = True
 
+    old_mastery = dict(row)["mastery_level"]
+
     card = _deserialize_card(row["srs_state"])
     f = FSRS()
     scheduling = f.repeat(card)
@@ -185,24 +187,32 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
 
     mastery = min(new_card.reps, 5)
     if rating == Rating.Again:
-        mastery = max(dict(row)["mastery_level"] - 1, 0)
+        mastery = max(old_mastery - 1, 0)
+
+    times_failed_clause = ""
+    params = [
+        _serialize_card(new_card),
+        new_card.stability,
+        new_card.difficulty,
+        mastery,
+        latency_ms,
+    ]
+    if rating == Rating.Again:
+        times_failed_clause = ", times_failed = times_failed + 1"
 
     conn.execute(
-        """UPDATE word_bank
+        f"""UPDATE word_bank
            SET srs_state = ?, srs_stability = ?, srs_difficulty = ?,
-               mastery_level = ?, last_retrieval_latency = ?
+               mastery_level = ?, last_retrieval_latency = ?{times_failed_clause}
            WHERE id = ?""",
-        (
-            _serialize_card(new_card),
-            new_card.stability,
-            new_card.difficulty,
-            mastery,
-            latency_ms,
-            word_id,
-        ),
+        (*params, word_id),
     )
     conn.commit()
     conn.close()
+
+    was_mastered = mastery >= 3 and old_mastery < 3
+    record_daily_activity(was_mastered=was_mastered, db_path=db_path)
+
     return new_card, mastery, latency_downgraded
 
 
@@ -234,6 +244,107 @@ def tier_progress(db_path=DB_PATH):
         results.append((tier, TIER_LABELS[tier], mastered, total, pct))
     conn.close()
     return results
+
+
+def migrate_db(db_path=DB_PATH):
+    """Add new columns and tables for daily stats / weak word tracking."""
+    conn = get_connection(db_path)
+    # Add times_failed to word_bank
+    try:
+        conn.execute("ALTER TABLE word_bank ADD COLUMN times_failed INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    # Add mastered_speed to story_library
+    try:
+        conn.execute("ALTER TABLE story_library ADD COLUMN mastered_speed REAL NOT NULL DEFAULT 1.0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    # Create daily_stats table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS daily_stats (
+            date TEXT PRIMARY KEY,
+            words_reviewed INTEGER NOT NULL DEFAULT 0,
+            words_mastered INTEGER NOT NULL DEFAULT 0,
+            minutes REAL NOT NULL DEFAULT 0.0,
+            session_start TEXT,
+            session_end TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def record_daily_activity(was_mastered=False, db_path=DB_PATH):
+    """Upsert today's row in daily_stats."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM daily_stats WHERE date = ?", (today,)).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO daily_stats (date, words_reviewed, words_mastered, session_start, session_end) VALUES (?, 1, ?, ?, ?)",
+            (today, 1 if was_mastered else 0, now, now),
+        )
+    else:
+        mastered_inc = 1 if was_mastered else 0
+        conn.execute(
+            """UPDATE daily_stats
+               SET words_reviewed = words_reviewed + 1,
+                   words_mastered = words_mastered + ?,
+                   session_end = ?,
+                   session_start = COALESCE(session_start, ?)
+               WHERE date = ?""",
+            (mastered_inc, now, now, today),
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_daily_stats(db_path=DB_PATH):
+    """Return today's stats dict."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM daily_stats WHERE date = ?", (today,)).fetchone()
+    conn.close()
+    if row is None:
+        return {"date": today, "words_reviewed": 0, "words_mastered": 0, "minutes": 0.0, "session_start": None, "session_end": None}
+    return dict(row)
+
+
+def get_streak(db_path=DB_PATH):
+    """Walk backwards from today counting consecutive days with words_reviewed > 0."""
+    from datetime import timedelta
+    conn = get_connection(db_path)
+    streak = 0
+    day = datetime.now(timezone.utc).date()
+    while True:
+        day_str = day.strftime("%Y-%m-%d")
+        row = conn.execute(
+            "SELECT words_reviewed FROM daily_stats WHERE date = ?", (day_str,)
+        ).fetchone()
+        if row and row["words_reviewed"] > 0:
+            streak += 1
+            day -= timedelta(days=1)
+        else:
+            break
+    conn.close()
+    return streak
+
+
+def get_weak_words(db_path=DB_PATH):
+    """Return words with mastery_level=0 and times_failed >= 2, limited to unlocked tiers."""
+    max_tier = get_unlocked_tier(db_path)
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """SELECT * FROM word_bank
+           WHERE mastery_level = 0 AND times_failed >= 2 AND difficulty_tier <= ?
+           ORDER BY times_failed DESC""",
+        (max_tier,),
+    ).fetchall()
+    conn.close()
+    return rows
 
 
 # ---------------------------------------------------------------------------

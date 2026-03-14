@@ -18,10 +18,16 @@ import http.server
 import json
 import os
 import random
+import re
 import socket
+import sqlite3
+import subprocess
 import sys
+import tempfile
 import time
+from cgi import parse_multipart
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -30,10 +36,9 @@ from fsrs import Rating
 from srs_engine import (
     get_next_word, get_due_words, record_review,
     get_unlocked_tier, tier_progress, TIER_LABELS, DB_PATH,
+    migrate_db, get_daily_stats, get_streak, get_weak_words,
 )
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
-
-import sqlite3
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
@@ -43,11 +48,13 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 LATENCY_THRESHOLD_MS = 1000
 TRAP_PROBABILITY = 0.15
 TRAP_LATENCY_MS = 800
+CLOZE_PROBABILITY = 0.30
 
 # ── Imports from drill_server ──────────────────────────────────
 from drill_server import (
     DRILL_HTML, build_carrier, generate_tts, generate_image, generate_explanation,
     prefetch_images, log_drill, TRAP_SENTENCES, TRAP_REACTIONS, IMAGE_DIR,
+    build_cloze, score_pronunciation,
 )
 
 # ── Imports from story_server ──────────────────────────────────
@@ -55,6 +62,24 @@ from story_server import STORY_HTML
 
 # Session state
 _laranjada_remaining = 0
+
+# Conversation history for Conversa mode
+_conversa_history = []
+
+
+# ── Levenshtein edit distance ──────────────────────────────────
+def _levenshtein(a, b):
+    if len(a) < len(b):
+        return _levenshtein(b, a)
+    if len(b) == 0:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (0 if ca == cb else 1)))
+        prev = curr
+    return prev[-1]
 
 
 def get_conn():
@@ -151,6 +176,14 @@ HOME_HTML = """<!DOCTYPE html>
   .card.stories .card-icon {
     background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(139,92,246,0.05));
   }
+  .card.conversa .card-icon {
+    background: linear-gradient(135deg, rgba(94,106,210,0.15), rgba(139,92,246,0.1));
+  }
+  .card.conversa .card-title { color: #a78bfa; }
+  .card.weak .card-icon {
+    background: linear-gradient(135deg, rgba(248,113,113,0.2), rgba(248,113,113,0.05));
+  }
+  .card.weak .card-title { color: #f87171; }
   .card-text { flex: 1; }
   .card-title {
     font-size: 1.05em; font-weight: 700; margin-bottom: 3px;
@@ -164,7 +197,7 @@ HOME_HTML = """<!DOCTYPE html>
     color: #333; font-size: 1.2em; font-weight: 300; flex-shrink: 0;
   }
   .stats {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
     width: 100%; margin-top: 40px;
     animation: fadeUp 0.6s ease-out 0.2s both;
   }
@@ -222,6 +255,22 @@ HOME_HTML = """<!DOCTYPE html>
       </div>
       <div class="card-arrow">&#x203A;</div>
     </a>
+    <a href="/drill?mode=weak" class="card weak">
+      <div class="card-icon">&#x1f534;</div>
+      <div class="card-text">
+        <div class="card-title">Palavras Fracas</div>
+        <div class="card-desc">Reforco das palavras mais dificeis</div>
+      </div>
+      <div class="card-arrow">&#x203A;</div>
+    </a>
+    <a href="/conversa" class="card conversa">
+      <div class="card-icon">&#x1f4ac;</div>
+      <div class="card-text">
+        <div class="card-title">Conversa</div>
+        <div class="card-desc">Papo livre com parceiro baiano</div>
+      </div>
+      <div class="card-arrow">&#x203A;</div>
+    </a>
   </div>
 
   <div class="stats">
@@ -241,6 +290,10 @@ HOME_HTML = """<!DOCTYPE html>
       <div class="stat-value" id="stories">-</div>
       <div class="stat-label">Stories</div>
     </div>
+    <div class="stat">
+      <div class="stat-value" id="streak">-</div>
+      <div class="stat-label">&#x1f525; Streak</div>
+    </div>
   </div>
 </div>
 
@@ -256,7 +309,213 @@ fetch('/api/home-stats').then(r=>r.json()).then(d=>{
   document.getElementById('due').textContent=d.due;
   document.getElementById('mastery').textContent=d.mastery_pct+'%';
   document.getElementById('stories').textContent=d.story_count;
+  document.getElementById('streak').textContent=d.streak;
 });
+</script>
+</body></html>"""
+
+
+# ── Conversa HTML ─────────────────────────────────────────────
+
+CONVERSA_HTML = """<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Oxe Protocol — Conversa</title>
+<style>
+  @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)} 50%{box-shadow:0 0 0 10px rgba(248,113,113,0)} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    overflow: hidden; -webkit-user-select: none; user-select: none;
+  }
+  .header {
+    padding: 14px 20px; background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; justify-content: space-between; align-items: center;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 1.05em; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .header-btns { display: flex; gap: 8px; }
+  .hdr-btn {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    color: #9ca3af; padding: 6px 12px; border-radius: 8px; font-size: 0.8em;
+    cursor: pointer; backdrop-filter: blur(10px);
+  }
+  .hdr-btn:active { background: rgba(255,255,255,0.08); }
+  .messages {
+    flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .msg {
+    max-width: 82%; padding: 12px 16px; border-radius: 16px; font-size: 0.95em;
+    line-height: 1.5; animation: fadeUp 0.3s ease-out;
+    word-wrap: break-word;
+  }
+  .msg.ai {
+    align-self: flex-start; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-bottom-left-radius: 4px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, rgba(94,106,210,0.25), rgba(139,92,246,0.2));
+    border: 1px solid rgba(94,106,210,0.3);
+    border-bottom-right-radius: 4px;
+  }
+  .msg.ai .typing { color: #525263; }
+  .input-bar {
+    padding: 12px 16px; background: rgba(255,255,255,0.03);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; gap: 10px; align-items: center; flex-shrink: 0;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .input-bar input {
+    flex: 1; padding: 12px 16px; background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    color: #fafafa; font-size: 1em; outline: none; font-family: inherit;
+    -webkit-appearance: none;
+  }
+  .input-bar input:focus { border-color: rgba(94,106,210,0.5); }
+  .input-bar input::placeholder { color: #333; }
+  .send-btn {
+    width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    font-size: 1.2em; cursor: pointer; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0; transition: all 0.2s;
+  }
+  .send-btn:active { transform: scale(0.95); }
+  .send-btn:disabled { background: rgba(255,255,255,0.04); color: #333; }
+  .mic-send-btn {
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: #818cf8; font-size: 1.2em;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all 0.2s;
+  }
+  .mic-send-btn.recording { border-color: #f87171; color: #f87171; animation: micPulse 1.2s infinite; }
+  .mic-send-btn:active { transform: scale(0.95); }
+</style>
+</head><body>
+
+<div class="header">
+  <h1>CONVERSA</h1>
+  <div class="header-btns">
+    <button class="hdr-btn" onclick="newConversa()">Nova</button>
+    <a href="/" class="hdr-btn" style="text-decoration:none">Voltar</a>
+  </div>
+</div>
+
+<div class="messages" id="messages"></div>
+
+<div class="input-bar">
+  <input type="text" id="msg-input" placeholder="Fala, parceiro..." autocomplete="off" autocorrect="off">
+  <button class="mic-send-btn" id="mic-send-btn" onclick="toggleConvMic()">&#x1F3A4;</button>
+  <button class="send-btn" id="send-btn" onclick="sendMessage()">&#x27A4;</button>
+</div>
+
+<audio id="conv-player" preload="auto"></audio>
+
+<script>
+const msgBox = document.getElementById('messages');
+const msgInput = document.getElementById('msg-input');
+const sendBtn = document.getElementById('send-btn');
+const convPlayer = document.getElementById('conv-player');
+const micSendBtn = document.getElementById('mic-send-btn');
+
+let convRecording = false;
+let convRecorder = null;
+let convMicChunks = [];
+
+msgInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+function addMsg(text, role) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  msgBox.appendChild(div);
+  msgBox.scrollTop = msgBox.scrollHeight;
+  return div;
+}
+
+async function sendMessage(text) {
+  const msg = text || msgInput.value.trim();
+  if (!msg) return;
+  msgInput.value = '';
+  addMsg(msg, 'user');
+
+  sendBtn.disabled = true;
+  const typing = addMsg('...', 'ai');
+  typing.innerHTML = '<span class="typing">Pensando...</span>';
+
+  try {
+    const res = await fetch('/api/conversa/send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message: msg }),
+    });
+    const data = await res.json();
+    typing.textContent = data.reply || 'Erro';
+    if (data.audio_file) {
+      convPlayer.src = '/audio/' + data.audio_file;
+      convPlayer.play().catch(() => {});
+    }
+  } catch (e) {
+    typing.textContent = 'Erro de conexao.';
+  }
+  sendBtn.disabled = false;
+  msgInput.focus();
+}
+
+function newConversa() {
+  fetch('/api/conversa/send', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ message: '__reset__' }),
+  });
+  msgBox.innerHTML = '';
+  addMsg('Opa! Bora conversar, parceiro?', 'ai');
+}
+
+async function toggleConvMic() {
+  if (convRecording) {
+    convRecording = false;
+    micSendBtn.classList.remove('recording');
+    if (convRecorder && convRecorder.state === 'recording') convRecorder.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    convMicChunks = [];
+    convRecorder = new MediaRecorder(stream);
+    convRecorder.ondataavailable = e => { if (e.data.size > 0) convMicChunks.push(e.data); };
+    convRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(convMicChunks, { type: convRecorder.mimeType || 'audio/mp4' });
+      // For now, transcribe locally is not available — inform user to type
+      addMsg('[Gravacao de voz — use texto por enquanto]', 'user');
+    };
+    convRecorder.start();
+    convRecording = true;
+    micSendBtn.classList.add('recording');
+    setTimeout(() => { if (convRecording) toggleConvMic(); }, 10000);
+  } catch (e) {
+    // Mic not available
+  }
+}
+
+// Init
+addMsg('E ai, parceiro! Bora jogar conversa fora?', 'ai');
 </script>
 </body></html>"""
 
@@ -278,7 +537,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/drill":
             self._html(DRILL_HTML)
         elif path == "/api/next":
-            self._drill_next()
+            self._drill_next(query)
+
+        # ── Conversa ──
+        elif path == "/conversa":
+            self._html(CONVERSA_HTML)
 
         # ── Stories ──
         elif path == "/stories":
@@ -293,6 +556,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._story_get_story(story_id)
 
         # ── Shared ──
+        elif path == "/api/daily-stats":
+            self._daily_stats()
         elif path == "/api/home-stats":
             self._home_stats()
         elif path.startswith("/audio/"):
@@ -305,6 +570,15 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
+
+        # Multipart routes (audio upload)
+        if path in ("/api/score-pronunciation", "/api/shadow-score"):
+            if path == "/api/score-pronunciation":
+                self._score_pronunciation()
+            else:
+                self._shadow_score()
+            return
+
         body = self._read_body()
 
         # ── Drill ──
@@ -314,6 +588,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._drill_explain(body)
         elif path == "/api/trap-respond":
             self._drill_trap_respond(body)
+        elif path == "/api/cloze-respond":
+            self._cloze_respond(body)
+
+        # ── Conversa ──
+        elif path == "/api/conversa/send":
+            self._conversa_send(body)
 
         # ── Stories ──
         elif path == "/api/generate":
@@ -346,46 +626,91 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         conn = get_conn()
         story_count = conn.execute("SELECT COUNT(*) FROM story_library").fetchone()[0]
         conn.close()
+        streak = get_streak()
         self._json({
             "tier": tier,
             "due": due,
             "mastery_pct": current_pct,
             "story_count": story_count,
+            "streak": streak,
+        })
+
+    def _daily_stats(self):
+        self._json({
+            "today": get_daily_stats(),
+            "streak": get_streak(),
         })
 
     # ── Drill Endpoints ────────────────────────────────────
 
-    def _drill_next(self):
+    def _drill_next(self, query=None):
         global _laranjada_remaining
 
-        if random.random() < TRAP_PROBABILITY:
-            trap = random.choice(TRAP_SENTENCES)
-            sentence, trap_type, expected = trap
-            fname = generate_tts(sentence)
-            if not fname:
-                self._json({"error": "TTS failed"})
-                return
-            tier = get_unlocked_tier()
-            due_count = len(list(get_due_words()))
-            self._json({
-                "type": "trap",
-                "trap_sentence": sentence,
-                "trap_type": trap_type,
-                "expected": expected,
-                "audio_file": fname,
-                "tier": tier,
-                "tier_label": TIER_LABELS[tier],
-                "due_count": due_count,
-                "mastery": "-",
-            })
-            return
+        mode = query.get("mode", [None])[0] if query else None
 
-        word = get_next_word()
+        if mode == "weak":
+            weak = get_weak_words()
+            word = weak[0] if weak else None
+        else:
+            if random.random() < TRAP_PROBABILITY:
+                trap = random.choice(TRAP_SENTENCES)
+                sentence, trap_type, expected = trap
+                fname = generate_tts(sentence)
+                if not fname:
+                    self._json({"error": "TTS failed"})
+                    return
+                tier = get_unlocked_tier()
+                due_count = len(list(get_due_words()))
+                self._json({
+                    "type": "trap",
+                    "trap_sentence": sentence,
+                    "trap_type": trap_type,
+                    "expected": expected,
+                    "audio_file": fname,
+                    "tier": tier,
+                    "tier_label": TIER_LABELS[tier],
+                    "due_count": due_count,
+                    "mastery": "-",
+                })
+                return
+
+            word = get_next_word()
         if not word:
             self._json({"error": "no_words_due"})
             return
 
         carrier = build_carrier(word["word"])
+
+        # Cloze mode: 30% chance (not in weak mode, not trap)
+        is_cloze = (mode != "weak" and random.random() < CLOZE_PROBABILITY)
+
+        if is_cloze:
+            cloze_text, full_carrier = build_cloze(word["word"], carrier)
+            fname = generate_tts(cloze_text)
+            if not fname:
+                self._json({"error": "TTS failed"})
+                return
+            img_fname = generate_image(word["word"])
+            due_words = list(get_due_words())
+            upcoming = [w["word"] for w in due_words[:5] if w["word"] != word["word"]]
+            if upcoming:
+                prefetch_images(upcoming)
+            tier = get_unlocked_tier()
+            self._json({
+                "type": "cloze",
+                "word_id": word["id"],
+                "word": word["word"],
+                "cloze_text": cloze_text,
+                "full_carrier": full_carrier,
+                "audio_file": fname,
+                "image_file": img_fname,
+                "tier": word["difficulty_tier"],
+                "tier_label": TIER_LABELS[word["difficulty_tier"]],
+                "mastery": word["mastery_level"],
+                "due_count": len(due_words),
+            })
+            return
+
         fname = generate_tts(carrier)
         if not fname:
             self._json({"error": "TTS failed"})
@@ -496,6 +821,226 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "expected": expected,
             "penalty_remaining": _laranjada_remaining,
         })
+
+    # ── Cloze Endpoint ──────────────────────────────────────
+
+    def _cloze_respond(self, body):
+        word_id = body.get("word_id")
+        answer = body.get("answer", "").strip().lower()
+        expected = body.get("expected", "").strip().lower()
+
+        # Normalize: strip accents for comparison
+        import unicodedata
+        def _strip_accents(s):
+            return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+        norm_answer = _strip_accents(answer)
+        norm_expected = _strip_accents(expected)
+
+        dist = _levenshtein(norm_answer, norm_expected)
+
+        if dist == 0 or (dist == 1 and norm_answer != norm_expected):
+            # Exact or accent difference
+            rating = Rating.Good
+            correct = True
+        elif dist <= 2:
+            rating = Rating.Hard
+            correct = False
+        else:
+            rating = Rating.Again
+            correct = False
+
+        card, new_mastery, downgraded = record_review(word_id, rating, None)
+        rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
+        log_drill(word_id, expected, rating.value, 0, drill_type="cloze")
+
+        self._json({
+            "correct": correct,
+            "rating": rating.value,
+            "rating_name": rating_name,
+            "new_mastery": new_mastery,
+            "edit_distance": dist,
+        })
+
+    # ── Pronunciation Scoring Endpoint ────────────────────
+
+    def _parse_multipart(self):
+        """Parse multipart/form-data from the request."""
+        content_type = self.headers.get("Content-Type", "")
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length)
+
+        if "boundary=" not in content_type:
+            return {}, raw
+
+        boundary = content_type.split("boundary=")[1].strip()
+        if boundary.startswith('"') and boundary.endswith('"'):
+            boundary = boundary[1:-1]
+
+        fields = {}
+        parts = raw.split(("--" + boundary).encode())
+        for part in parts:
+            if part in (b"", b"--", b"--\r\n", b"\r\n"):
+                continue
+            if b"\r\n\r\n" not in part:
+                continue
+            header_data, body_data = part.split(b"\r\n\r\n", 1)
+            if body_data.endswith(b"\r\n"):
+                body_data = body_data[:-2]
+            header_str = header_data.decode("utf-8", errors="replace")
+            name_match = re.search(r'name="([^"]+)"', header_str)
+            if name_match:
+                name = name_match.group(1)
+                fname_match = re.search(r'filename="([^"]+)"', header_str)
+                if fname_match:
+                    fields[name] = {"filename": fname_match.group(1), "data": body_data}
+                else:
+                    fields[name] = body_data.decode("utf-8", errors="replace")
+        return fields
+
+    def _score_pronunciation(self):
+        fields = self._parse_multipart()
+        audio_field = fields.get("audio")
+        word_id = fields.get("word_id", "0")
+        native_audio_name = fields.get("native_audio", "")
+
+        if not audio_field or not isinstance(audio_field, dict):
+            self._json({"error": "No audio uploaded", "score": 0})
+            return
+
+        # Save uploaded audio
+        ts = int(time.time() * 1000)
+        ext = ".m4a"
+        user_fname = f"user_pron_{word_id}_{ts}{ext}"
+        user_path = AUDIO_DIR / user_fname
+        with open(user_path, "wb") as f:
+            f.write(audio_field["data"])
+
+        native_path = AUDIO_DIR / native_audio_name
+        if not native_path.exists():
+            self._json({"error": "Native audio not found", "score": 0})
+            return
+
+        try:
+            result = score_pronunciation(str(user_path), str(native_path))
+            self._json({
+                "score": result.get("score", 0),
+                "details": result.get("issues", []),
+                "force_redrill": result.get("force_redrill", False),
+                "metrics": result.get("metrics", {}),
+            })
+        except Exception as e:
+            print(f"[Pronunciation] Error: {e}")
+            self._json({"error": str(e), "score": 0})
+
+    def _shadow_score(self):
+        fields = self._parse_multipart()
+        audio_field = fields.get("audio")
+        word_id = fields.get("word_id", "0")
+        native_audio_name = fields.get("native_audio", "")
+
+        if not audio_field or not isinstance(audio_field, dict):
+            self._json({"error": "No audio uploaded", "score": 0})
+            return
+
+        ts = int(time.time() * 1000)
+        user_fname = f"shadow_{word_id}_{ts}.m4a"
+        user_path = AUDIO_DIR / user_fname
+        with open(user_path, "wb") as f:
+            f.write(audio_field["data"])
+
+        native_path = AUDIO_DIR / native_audio_name
+        if not native_path.exists():
+            self._json({"error": "Native audio not found", "score": 0})
+            return
+
+        try:
+            result = score_pronunciation(str(user_path), str(native_path))
+            self._json({
+                "score": result.get("score", 0),
+                "details": result.get("issues", []),
+                "force_redrill": result.get("force_redrill", False),
+                "metrics": result.get("metrics", {}),
+                "user_audio_url": "/audio/" + user_fname,
+            })
+        except Exception as e:
+            print(f"[Shadow] Error: {e}")
+            self._json({"error": str(e), "score": 0})
+
+    # ── Conversa Endpoints ────────────────────────────────
+
+    def _conversa_send(self, body):
+        global _conversa_history
+        message = body.get("message", "").strip()
+
+        if message == "__reset__":
+            _conversa_history = []
+            self._json({"reply": "Nova conversa!", "audio_file": None})
+            return
+
+        if not message:
+            self._json({"reply": "Fala alguma coisa, parceiro!", "audio_file": None})
+            return
+
+        # Get recent drilled words
+        recent_words = self._get_recent_words()
+        words_str = ", ".join(recent_words) if recent_words else "nenhuma palavra recente"
+
+        system_prompt = (
+            "Tu \u00E9 um parceiro soteropolitano de Salvador. "
+            "Conversa naturalmente em portugu\u00EAs baiano \u2014 usa oxe, vixe, massa, arretado. "
+            "NUNCA use ingl\u00EAs. Respostas curtas, 2-3 frases m\u00E1ximo. "
+            f"Tenta usar estas palavras na conversa: {words_str}"
+        )
+
+        _conversa_history.append({"role": "user", "content": message})
+
+        # Keep history manageable
+        if len(_conversa_history) > 20:
+            _conversa_history = _conversa_history[-20:]
+
+        messages = [{"role": "system", "content": system_prompt}] + _conversa_history
+
+        try:
+            import openai
+            client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=150,
+                temperature=0.8,
+                messages=messages,
+            )
+            reply = resp.choices[0].message.content.strip()
+            _conversa_history.append({"role": "assistant", "content": reply})
+
+            # Generate TTS
+            audio_fname = generate_tts(reply)
+
+            self._json({
+                "reply": reply,
+                "audio_file": audio_fname,
+            })
+        except Exception as e:
+            print(f"[Conversa] Error: {e}")
+            self._json({"reply": "Oxe, deu erro aqui. Tenta de novo.", "audio_file": None})
+
+    def _get_recent_words(self):
+        """Get up to 5 recently drilled words from today."""
+        try:
+            conn = get_conn()
+            # Get words with recent last_retrieval_latency updates
+            rows = conn.execute(
+                """SELECT word FROM word_bank
+                   WHERE last_retrieval_latency IS NOT NULL
+                   ORDER BY ROWID DESC LIMIT 20"""
+            ).fetchall()
+            conn.close()
+            words = [r["word"] for r in rows]
+            if len(words) > 5:
+                words = random.sample(words, 5)
+            return words
+        except Exception:
+            return []
 
     # ── Story Endpoints ────────────────────────────────────
 
@@ -631,8 +1176,13 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         if not filepath.exists():
             self.send_error(404)
             return
+        ct = "audio/mpeg"
+        if filename.endswith(".m4a"):
+            ct = "audio/mp4"
+        elif filename.endswith(".wav"):
+            ct = "audio/wav"
         self.send_response(200)
-        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Content-Type", ct)
         self.send_header("Content-Length", str(filepath.stat().st_size))
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
@@ -686,6 +1236,7 @@ def main():
             port = int(sys.argv[idx + 1])
 
     init_story_db()
+    migrate_db()
     ip = get_local_ip()
     server = http.server.HTTPServer(("0.0.0.0", port), OxeHandler)
 
@@ -699,9 +1250,10 @@ def main():
     print(f"  Tier:    {tier} ({TIER_LABELS[tier]})")
     print(f"  Due:     {due} words")
     print(f"  {'='*44}")
-    print(f"  /        Home (Treinar + Histórias)")
-    print(f"  /drill   1+T Drills")
-    print(f"  /stories Graded Stories")
+    print(f"  /          Home")
+    print(f"  /drill     1+T Drills + Pronunciation + Cloze")
+    print(f"  /stories   Graded Stories")
+    print(f"  /conversa  Conversation Mode")
     print(f"  {'='*44}\n")
 
     try:
