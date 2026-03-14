@@ -679,7 +679,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 # ── Main ───────────────────────────────────────────────────────
 
 def main():
-    port = 7777
+    port = int(os.environ.get("PORT", 7777))
     if "--port" in sys.argv:
         idx = sys.argv.index("--port")
         if idx + 1 < len(sys.argv):
