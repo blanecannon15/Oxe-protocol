@@ -329,16 +329,17 @@ DRILL_HTML = r"""<!DOCTYPE html>
   }
   .header {
     padding: 16px 20px; background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
     display: flex; justify-content: space-between; align-items: center;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   }
   .header h1 {
     font-size: 1.1em; font-weight: 800; letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .stats { font-size: 0.75em; color: #525263; text-align: right; }
+  .stats { font-size: 0.75em; color: #6b7280; text-align: right; }
   .main {
     flex: 1; display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 20px; gap: 24px;
@@ -346,14 +347,23 @@ DRILL_HTML = r"""<!DOCTYPE html>
   }
   .word-display {
     font-size: 2.4em; font-weight: 700; min-height: 1.2em; text-align: center;
-    background: linear-gradient(135deg, #818cf8, #a78bfa);
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
   .carrier { font-size: 1em; color: #525263; text-align: center; min-height: 1.5em; }
   .tier-badge {
-    font-size: 0.75em; padding: 4px 12px; border-radius: 12px;
-    background: rgba(94,106,210,0.12); color: #818cf8; display: inline-block;
-    border: 1px solid rgba(94,106,210,0.15);
+    font-size: 0.75em; padding: 5px 16px; border-radius: 999px;
+    background: rgba(59,130,246,0.08); color: #60a5fa; display: inline-block;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    position: relative;
+  }
+  .tier-badge::before {
+    content: ''; position: absolute; inset: 0; border-radius: 999px; padding: 1px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    pointer-events: none;
   }
   .latency {
     font-size: 3em; font-weight: 700; min-height: 1.2em;
@@ -365,18 +375,20 @@ DRILL_HTML = r"""<!DOCTYPE html>
   .rating-label { font-size: 1em; min-height: 1.2em; color: #9ca3af; }
   .drill-image {
     width: 160px; height: 160px; border-radius: 20px; object-fit: cover;
-    border: 1px solid rgba(255,255,255,0.06); display: none;
-    box-shadow: 0 0 40px rgba(94,106,210,0.1);
+    border: 1px solid rgba(255,255,255,0.08); display: none;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3), 0 0 40px rgba(59,130,246,0.08);
   }
   .drill-image.visible { display: block; animation: fadeUp 0.4s ease-out; }
   #tap-zone {
-    width: 100%; padding: 28px; font-size: 1.3em; font-weight: 600;
-    border: none; border-radius: 16px; cursor: pointer;
-    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    width: 100%; max-width: 340px; padding: 22px 80px; font-size: 1.3em; font-weight: 700;
+    border: none; border-radius: 20px; cursor: pointer;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
     transition: all 0.2s; -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 0 20px rgba(59,130,246,0.25), 0 4px 12px rgba(0,0,0,0.3);
+    letter-spacing: 0.5px;
   }
   #tap-zone:active { transform: scale(0.97); opacity: 0.9; }
-  #tap-zone:disabled { background: rgba(255,255,255,0.04); color: #333; }
+  #tap-zone:disabled { background: rgba(255,255,255,0.04); color: #444; box-shadow: none; }
   .trap-zone {
     width: 100%; display: none; gap: 8px;
   }
@@ -387,14 +399,15 @@ DRILL_HTML = r"""<!DOCTYPE html>
     -webkit-tap-highlight-color: transparent; transition: all 0.15s;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
-  .trap-btn:active { background: #5E6AD2; color: #fff; border-color: #5E6AD2; }
+  .trap-btn:active { background: #3B82F6; color: #fff; border-color: #3B82F6; }
   .penalty { color: #f87171; font-size: 0.85em; min-height: 1.2em; }
   .explanation {
-    font-size: 0.9em; color: #9ca3af; text-align: center; line-height: 1.5;
-    padding: 12px 16px; background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
-    display: none; width: 100%; max-width: 340px;
+    font-size: 0.9em; color: #9ca3af; text-align: left; line-height: 1.6;
+    padding: 14px 18px 14px 20px; background: rgba(59,130,246,0.04);
+    border: 1px solid rgba(59,130,246,0.1); border-left: 3px solid #3B82F6;
+    border-radius: 14px; display: none; width: 100%; max-width: 340px;
     animation: fadeUp 0.4s ease-out;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
   }
   .explanation.visible { display: block; }
   .progress-bar {
@@ -402,13 +415,14 @@ DRILL_HTML = r"""<!DOCTYPE html>
     overflow: hidden;
   }
   .progress-fill {
-    height: 100%; background: linear-gradient(90deg, #5E6AD2, #8B5CF6);
+    height: 100%; background: linear-gradient(90deg, #3B82F6, #7C5CFC);
     transition: width 0.5s;
   }
   .footer {
-    padding: 12px 20px 80px; background: rgba(255,255,255,0.02);
-    border-top: 1px solid rgba(255,255,255,0.04);
-    display: flex; justify-content: space-between; font-size: 0.75em; color: #333;
+    padding: 14px 24px 80px; background: rgba(255,255,255,0.02);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.75em; color: #6b7280; letter-spacing: 0.3px;
   }
   .loading { color: #525263; font-size: 1.2em; }
   .pulsing { animation: pulse 1.5s infinite; }
@@ -417,7 +431,7 @@ DRILL_HTML = r"""<!DOCTYPE html>
   @keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)} 50%{box-shadow:0 0 0 12px rgba(248,113,113,0)} }
   .mic-btn {
     width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04); color: #818cf8; font-size: 1.8em;
+    background: rgba(255,255,255,0.04); color: #60a5fa; font-size: 1.8em;
     cursor: pointer; display: none; align-items: center; justify-content: center;
     transition: all 0.2s; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     -webkit-tap-highlight-color: transparent;
@@ -426,21 +440,21 @@ DRILL_HTML = r"""<!DOCTYPE html>
   .mic-btn.recording { border-color: #f87171; color: #f87171; animation: micPulse 1.2s infinite; background: rgba(248,113,113,0.08); }
   .mic-btn:active { transform: scale(0.95); }
   .mic-score { font-size: 2em; font-weight: 700; min-height: 1.2em; text-align: center; }
-  .mic-score.pass { color: #818cf8; }
+  .mic-score.pass { color: #60a5fa; }
   .mic-score.fail { color: #f87171; }
   .mic-msg { font-size: 0.9em; color: #525263; text-align: center; min-height: 1.2em; }
   .mic-denied { font-size: 0.75em; color: #525263; text-align: center; display: none; }
 
   /* Shadow button */
   .shadow-btn {
-    padding: 12px 24px; border: 1px solid rgba(139,92,246,0.3); border-radius: 12px;
-    background: rgba(139,92,246,0.08); color: #a78bfa; font-size: 0.9em; font-weight: 600;
+    padding: 12px 24px; border: 1px solid rgba(124,92,252,0.3); border-radius: 14px;
+    background: rgba(124,92,252,0.08); color: #a78bfa; font-size: 0.9em; font-weight: 600;
     cursor: pointer; display: none; transition: all 0.2s;
     -webkit-tap-highlight-color: transparent;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
   .shadow-btn.visible { display: inline-block; animation: fadeUp 0.3s ease-out; }
-  .shadow-btn:active { transform: scale(0.97); background: rgba(139,92,246,0.15); }
+  .shadow-btn:active { transform: scale(0.97); background: rgba(124,92,252,0.15); }
 
   /* Cloze UI */
   .cloze-input-wrap {
@@ -450,20 +464,21 @@ DRILL_HTML = r"""<!DOCTYPE html>
   .cloze-input {
     width: 100%; padding: 16px 20px; font-size: 1.3em; font-weight: 600; text-align: center;
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px; color: #fafafa; outline: none; font-family: inherit;
+    border-radius: 16px; color: #fafafa; outline: none; font-family: inherit;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     -webkit-appearance: none;
   }
-  .cloze-input:focus { border-color: rgba(94,106,210,0.5); }
+  .cloze-input:focus { border-color: rgba(59,130,246,0.5); }
   .cloze-input::placeholder { color: #333; }
   .cloze-submit {
     padding: 12px 32px; border: none; border-radius: 12px;
-    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
     font-size: 1em; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 0 12px rgba(59,130,246,0.2);
   }
   .cloze-submit:active { transform: scale(0.97); opacity: 0.9; }
   .cloze-result { font-size: 1.4em; font-weight: 700; text-align: center; min-height: 1.5em; }
-  .cloze-result.correct { color: #818cf8; }
+  .cloze-result.correct { color: #60a5fa; }
   .cloze-result.wrong { color: #f87171; }
   .cloze-answer { font-size: 0.9em; color: #525263; text-align: center; min-height: 1.2em; }
 </style>
@@ -1087,7 +1102,7 @@ fetchNext();
     text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
     -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
   }
-  .tab.active { color: #818cf8; }
+  .tab.active { color: #60a5fa; }
   .tab svg { width: 22px; height: 22px; fill: currentColor; }
 </style>
 <nav class="tab-bar">

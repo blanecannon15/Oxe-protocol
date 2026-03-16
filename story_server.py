@@ -67,61 +67,68 @@ STORY_HTML = r"""<!DOCTYPE html>
   }
   .header {
     padding: 14px 20px; background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
     display: flex; justify-content: space-between; align-items: center;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
     position: sticky; top: 0; z-index: 10;
   }
   .header h1 {
     font-size: 1.05em; font-weight: 800; letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
   .back-btn {
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-    color: #9ca3af; padding: 6px 14px; border-radius: 8px; font-size: 0.85em;
-    cursor: pointer; display: none; backdrop-filter: blur(10px);
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    color: #9ca3af; padding: 6px 14px; border-radius: 10px; font-size: 0.85em;
+    cursor: pointer; display: none; backdrop-filter: blur(10px); transition: all 0.2s;
   }
+  .back-btn:active { background: rgba(255,255,255,0.1); }
   .screen { display: none; padding: 20px; animation: fadeUp 0.4s ease-out; }
   .screen.active { display: block; }
 
   /* Level Select */
-  .level-grid { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+  .level-grid { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
   .level-card {
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 16px; padding: 18px 20px; cursor: pointer; transition: all 0.2s;
+    border-radius: 20px; padding: 20px 22px; cursor: pointer; transition: all 0.2s;
     -webkit-tap-highlight-color: transparent;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    border-left: 3px solid transparent;
   }
-  .level-card:active { transform: scale(0.98); border-color: rgba(94,106,210,0.4); }
+  .level-card:not(.locked) { border-left: 3px solid #3B82F6; }
+  .level-card:active { transform: scale(0.98); border-color: rgba(59,130,246,0.4); border-left-color: #7C5CFC; }
   .level-card.locked { opacity: 0.25; pointer-events: none; }
   .level-card .level-tag {
-    font-size: 0.75em; font-weight: 700; color: #818cf8;
+    font-size: 0.75em; font-weight: 700; color: #60a5fa;
     text-transform: uppercase; letter-spacing: 1px;
   }
-  .level-card .level-name { font-size: 1.15em; font-weight: 600; margin: 4px 0; color: #fafafa; }
+  .level-card .level-name { font-size: 1.15em; font-weight: 600; margin: 6px 0 2px; color: #fafafa; }
   .level-card .level-desc { font-size: 0.8em; color: #525263; }
-  .level-card .level-stats { font-size: 0.75em; color: #333; margin-top: 8px; }
+  .level-card .level-stats { font-size: 0.75em; color: #444; margin-top: 8px; }
   .lock-icon { color: #333; }
 
   /* Story List */
   .story-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
   .story-item {
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px; padding: 16px 18px; cursor: pointer; transition: all 0.2s;
+    border-radius: 20px; padding: 16px 18px; cursor: pointer; transition: all 0.2s;
     backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
   }
-  .story-item:active { border-color: rgba(94,106,210,0.4); transform: scale(0.99); }
+  .story-item:active { border-color: rgba(59,130,246,0.4); transform: scale(0.99); }
   .story-title { font-size: 1em; font-weight: 600; color: #fafafa; }
   .story-meta { font-size: 0.75em; color: #525263; margin-top: 4px; }
   .gen-btn {
-    width: 100%; padding: 14px; margin-top: 16px;
-    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
-    border: none; border-radius: 14px; font-size: 1em; font-weight: 600;
+    width: 100%; padding: 16px; margin-top: 18px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+    border: none; border-radius: 16px; font-size: 1em; font-weight: 700;
     cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.25);
   }
   .gen-btn:active { transform: scale(0.98); opacity: 0.9; }
-  .gen-btn:disabled { background: rgba(255,255,255,0.04); color: #333; }
+  .gen-btn:disabled { background: rgba(255,255,255,0.04); color: #333; box-shadow: none; }
 
   /* Player */
   .player-wrap {
@@ -134,38 +141,40 @@ STORY_HTML = r"""<!DOCTYPE html>
     background: rgba(255,255,255,0.08); transition: all 0.3s;
   }
   .chunk-dot.played { background: #34d399; }
-  .chunk-dot.current { background: #818cf8; transform: scale(1.4); }
+  .chunk-dot.current { background: #60a5fa; transform: scale(1.4); }
   .player-status { font-size: 1.1em; text-align: center; min-height: 1.5em; color: #9ca3af; }
   .player-btn {
     width: 80px; height: 80px; border-radius: 50%; border: none;
-    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
     font-size: 2em; cursor: pointer; display: flex; align-items: center;
     justify-content: center; transition: all 0.2s;
-    box-shadow: 0 0 30px rgba(94,106,210,0.2);
+    box-shadow: 0 0 30px rgba(59,130,246,0.25), 0 0 0 1px rgba(255,255,255,0.05);
   }
   .player-btn:active { transform: scale(0.95); }
   .show-text-btn {
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-    color: #525263; padding: 8px 16px; border-radius: 10px; font-size: 0.8em;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    color: #6b7280; padding: 8px 18px; border-radius: 20px; font-size: 0.8em;
     cursor: pointer; transition: all 0.2s;
   }
-  .show-text-btn:active { border-color: rgba(255,255,255,0.15); }
+  .show-text-btn:active { border-color: rgba(59,130,246,0.3); background: rgba(255,255,255,0.08); }
   .speed-controls {
     display: flex; gap: 8px; margin-top: 8px;
   }
   .speed-btn {
-    padding: 6px 14px; border-radius: 10px; font-size: 0.8em; font-weight: 600;
+    padding: 6px 16px; border-radius: 20px; font-size: 0.8em; font-weight: 600;
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
     color: #525263; cursor: pointer; transition: all 0.2s;
   }
   .speed-btn.active {
-    background: rgba(94,106,210,0.15); border-color: rgba(94,106,210,0.3);
-    color: #818cf8;
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(124,92,252,0.15));
+    border-color: rgba(59,130,246,0.3);
+    color: #60a5fa;
   }
   .story-text {
-    display: none; background: rgba(255,255,255,0.03); border-radius: 14px;
-    padding: 16px; font-size: 1em; line-height: 1.8; max-height: 50vh;
+    display: none; background: rgba(255,255,255,0.03); border-radius: 20px;
+    padding: 18px; font-size: 1em; line-height: 1.8; max-height: 50vh;
     overflow-y: auto; border: 1px solid rgba(255,255,255,0.06); width: 100%;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
   }
   .story-text.visible { display: block; }
   .story-text .chunk-span { color: #333; transition: color 0.3s; }
@@ -176,7 +185,7 @@ STORY_HTML = r"""<!DOCTYPE html>
     border-radius: 3px; padding: 0 2px;
   }
   .story-text .chunk-span.active .word.highlight {
-    color: #818cf8; background: rgba(129,140,248,0.12);
+    color: #60a5fa; background: rgba(96,165,250,0.12);
   }
   .story-text .chunk-span.played .word.highlight {
     color: #7a7a8a; background: none;
@@ -192,11 +201,12 @@ STORY_HTML = r"""<!DOCTYPE html>
   .q-options { display: flex; flex-direction: column; gap: 10px; width: 100%; }
   .q-option {
     width: 100%; padding: 14px 18px; background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; color: #fafafa;
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; color: #fafafa;
     font-size: 0.95em; cursor: pointer; text-align: left; transition: all 0.2s;
     backdrop-filter: blur(10px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
   }
-  .q-option:active { border-color: rgba(94,106,210,0.4); }
+  .q-option:active { border-color: rgba(59,130,246,0.4); }
   .q-option.correct { background: rgba(52,211,153,0.2); border-color: #34d399; }
   .q-option.wrong { background: rgba(248,113,113,0.2); border-color: #f87171; }
 
@@ -210,10 +220,11 @@ STORY_HTML = r"""<!DOCTYPE html>
   .result-score.fail { color: #f87171; }
   .result-label { font-size: 1.1em; color: #525263; }
   .result-btn {
-    padding: 16px 32px; border: none; border-radius: 14px;
-    font-size: 1.1em; font-weight: 600; cursor: pointer;
-    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    padding: 16px 32px; border: none; border-radius: 16px;
+    font-size: 1.1em; font-weight: 700; cursor: pointer;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
     transition: all 0.2s;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.25);
   }
   .result-btn:active { transform: scale(0.97); }
 
@@ -234,7 +245,7 @@ STORY_HTML = r"""<!DOCTYPE html>
 
 <!-- Screen 2: Story List -->
 <div class="screen" id="screen-stories">
-  <h2 id="stories-heading" style="font-size:1.1em;color:#818cf8"></h2>
+  <h2 id="stories-heading" style="font-size:1.1em;color:#60a5fa"></h2>
   <div class="story-list" id="story-list"></div>
   <button class="gen-btn" id="gen-btn" onclick="generateStory()">Gerar nova história</button>
 </div>
@@ -658,7 +669,7 @@ function showResults() {
 
   if (pass && currentSpeed < 1.5) {
     const suggestion = document.createElement('div');
-    suggestion.style.cssText = 'font-size:0.9em;color:#818cf8;margin-top:8px;';
+    suggestion.style.cssText = 'font-size:0.9em;color:#60a5fa;margin-top:8px;';
     suggestion.textContent = 'Tenta mais rápido?';
     $('result-label').parentNode.insertBefore(suggestion, $('result-label').nextSibling);
   }
@@ -689,7 +700,7 @@ loadLevels();
     text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
     -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
   }
-  .tab.active { color: #818cf8; }
+  .tab.active { color: #60a5fa; }
   .tab svg { width: 22px; height: 22px; fill: currentColor; }
 </style>
 <nav class="tab-bar">
