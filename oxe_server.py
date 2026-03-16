@@ -107,29 +107,32 @@ HOME_HTML = r"""<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Oxe</title>
 <style>
-  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes ringPulse { 0%,100%{filter:drop-shadow(0 0 6px rgba(79,123,239,0.3))} 50%{filter:drop-shadow(0 0 12px rgba(79,123,239,0.5))} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
     -webkit-user-select: none; user-select: none;
-    padding-bottom: 72px;
+    padding-bottom: 76px;
   }
 
   /* ── Top Bar ── */
   .topbar {
-    padding: 16px 20px 12px; display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px 14px; display: flex; justify-content: space-between; align-items: center;
     position: sticky; top: 0; z-index: 10; background: #0a0a0b;
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
   }
   .topbar-brand {
-    font-size: 1.4em; font-weight: 800; letter-spacing: -1px;
-    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    font-size: 1.5em; font-weight: 800; letter-spacing: -1px;
+    background: linear-gradient(135deg, #4F7BEF, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
   .streak-pill {
-    display: flex; align-items: center; gap: 4px; padding: 5px 12px;
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 20px; font-size: 0.8em; font-weight: 600; color: #818cf8;
+    display: flex; align-items: center; gap: 5px; padding: 6px 14px;
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.15);
+    border-radius: 20px; font-size: 0.8em; font-weight: 600; color: #60a5fa;
   }
 
   /* ── Scroll content ── */
@@ -137,86 +140,134 @@ HOME_HTML = r"""<!DOCTYPE html>
 
   /* ── Progress Card ── */
   .progress-card {
-    background: linear-gradient(135deg, rgba(94,106,210,0.12), rgba(139,92,246,0.06));
-    border: 1px solid rgba(94,106,210,0.15); border-radius: 20px;
-    padding: 24px; margin-bottom: 24px; animation: fadeIn 0.4s ease-out;
+    background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(124,92,252,0.06));
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px;
+    padding: 28px; margin-bottom: 32px; animation: fadeIn 0.4s ease-out;
+    transition: transform 0.2s, box-shadow 0.2s;
   }
   .progress-row { display: flex; justify-content: space-between; align-items: center; }
-  .progress-left h2 { font-size: 1.1em; font-weight: 700; color: #fafafa; }
-  .progress-left p { font-size: 0.78em; color: #818cf8; margin-top: 2px; }
-  .progress-ring { position: relative; width: 64px; height: 64px; }
-  .progress-ring svg { transform: rotate(-90deg); }
+  .progress-left { display: flex; flex-direction: column; gap: 4px; }
+  .progress-left h2 { font-size: 1.2em; font-weight: 700; color: #fafafa; }
+  .progress-tier-name { font-size: 0.85em; color: #60a5fa; font-weight: 600; }
+  .progress-due { font-size: 0.78em; color: #7a7a8e; margin-top: 2px; }
+  .progress-ring { position: relative; width: 80px; height: 80px; }
+  .progress-ring svg { transform: rotate(-90deg); animation: ringPulse 3s ease-in-out infinite; }
   .progress-ring .bg { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 5; }
   .progress-ring .fg { fill: none; stroke: url(#grad); stroke-width: 5; stroke-linecap: round;
     transition: stroke-dashoffset 0.8s ease; }
-  .progress-pct {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 0.85em; font-weight: 700; color: #fafafa;
+  .progress-tier-num {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
   }
+  .progress-tier-num .tier-big { font-size: 1.4em; font-weight: 800; color: #fafafa; line-height: 1; }
+  .progress-tier-num .tier-sub { font-size: 0.55em; color: #7a7a8e; font-weight: 500; margin-top: 1px; }
   .stats-row {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 20px;
-    border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 22px;
+    border-top: 1px solid rgba(255,255,255,0.06); padding-top: 18px;
   }
   .sstat { text-align: center; }
-  .sstat-val { font-size: 1.3em; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .sstat-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .sstat-val { font-size: 1.3em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
+  .sstat-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
+
+  /* ── Palavra do Dia ── */
+  .wod-card {
+    background: rgba(255,255,255,0.03);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; padding: 24px 28px; margin-bottom: 32px;
+    animation: fadeIn 0.4s ease-out 0.08s both;
+    border-top: 2px solid #7C5CFC;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .wod-header {
+    font-size: 0.7em; font-weight: 600; color: #7C5CFC; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+  }
+  .wod-header::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #7C5CFC; }
+  .wod-word {
+    font-size: 1.6em; font-weight: 800; color: #fafafa; letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .wod-sentence {
+    font-size: 0.88em; color: #7a7a8e; line-height: 1.6; font-style: italic;
+  }
 
   /* ── Section Headers ── */
   .section-hdr {
-    font-size: 0.7em; font-weight: 600; color: #525263; text-transform: uppercase;
-    letter-spacing: 1.5px; margin-bottom: 12px; padding-left: 4px;
+    font-size: 0.78em; font-weight: 700; color: #60a5fa; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 16px; padding-left: 4px;
   }
 
   /* ── Feature Grid ── */
-  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 28px; }
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 32px; }
   .fcard {
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 16px; padding: 20px 16px; text-decoration: none; color: inherit;
-    -webkit-tap-highlight-color: transparent; transition: all 0.15s;
-    display: flex; flex-direction: column; gap: 10px;
+    background: rgba(255,255,255,0.03);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; padding: 22px 18px; text-decoration: none; color: inherit;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex; flex-direction: column; gap: 12px;
+    position: relative; overflow: hidden;
   }
-  .fcard:active { transform: scale(0.97); background: rgba(255,255,255,0.06); }
+  .fcard::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .fcard.blue-edge::before { background: linear-gradient(90deg, #3B82F6, #60a5fa); }
+  .fcard.purple-edge::before { background: linear-gradient(90deg, #7C5CFC, #a78bfa); }
+  .fcard.red-edge::before { background: linear-gradient(90deg, #f87171, #fca5a5); }
+  .fcard.cyan-edge::before { background: linear-gradient(90deg, #22d3ee, #67e8f9); }
+  .fcard:active { transform: scale(0.97); box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.4); }
   .fcard-icon {
-    width: 40px; height: 40px; border-radius: 12px;
-    display: flex; align-items: center; justify-content: center; font-size: 1.2em;
+    width: 48px; height: 48px; border-radius: 14px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.3em;
   }
-  .fcard-icon.indigo { background: rgba(94,106,210,0.15); }
-  .fcard-icon.purple { background: rgba(139,92,246,0.15); }
-  .fcard-icon.red { background: rgba(248,113,113,0.12); }
-  .fcard-icon.blue { background: rgba(96,165,250,0.12); }
-  .fcard-title { font-size: 0.95em; font-weight: 700; }
-  .fcard-desc { font-size: 0.7em; color: #525263; line-height: 1.35; }
+  .fcard-icon.blue { background: rgba(59,130,246,0.12); }
+  .fcard-icon.purple { background: rgba(124,92,252,0.12); }
+  .fcard-icon.red { background: rgba(248,113,113,0.10); }
+  .fcard-icon.cyan { background: rgba(34,211,238,0.10); }
+  .fcard-title { font-size: 1em; font-weight: 700; }
+  .fcard-desc { font-size: 0.72em; color: #7a7a8e; line-height: 1.55; }
   .fcard-badge {
-    display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.65em;
-    font-weight: 600; background: rgba(94,106,210,0.12); color: #818cf8;
+    display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 0.65em;
+    font-weight: 600; background: rgba(59,130,246,0.10); color: #60a5fa;
     align-self: flex-start;
   }
-  .fcard-badge.red { background: rgba(248,113,113,0.12); color: #f87171; }
+  .fcard-badge.red { background: rgba(248,113,113,0.10); color: #f87171; }
 
-  /* ── Today Row ── */
-  .today-row { display: flex; gap: 10px; margin-bottom: 28px; animation: fadeIn 0.4s ease-out 0.15s both; }
+  /* ── Today Stats ── */
   .today-card {
-    flex: 1; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px; padding: 16px; text-align: center;
+    background: rgba(255,255,255,0.03);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; padding: 20px 0; margin-bottom: 32px;
+    display: flex; align-items: center;
+    animation: fadeIn 0.4s ease-out 0.15s both;
+    transition: transform 0.2s, box-shadow 0.2s;
   }
-  .today-val { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .today-stat {
+    flex: 1; text-align: center; position: relative;
+  }
+  .today-stat + .today-stat::before {
+    content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    width: 1px; height: 36px; background: rgba(255,255,255,0.06);
+  }
+  .today-val { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
   .today-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
 
   /* ── Bottom Tab Bar ── */
   .tab-bar {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
     display: flex; justify-content: space-around; align-items: center;
-    height: 68px; padding-bottom: env(safe-area-inset-bottom, 0);
-    background: rgba(10,10,11,0.92); border-top: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    height: 72px; padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(10,10,11,0.94); border-top: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
   }
   .tab {
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
     -webkit-tap-highlight-color: transparent; padding: 6px 12px;
-    transition: color 0.15s;
+    transition: color 0.2s;
   }
-  .tab.active { color: #818cf8; }
+  .tab.active { color: #60a5fa; }
   .tab svg { width: 22px; height: 22px; fill: currentColor; }
 
   /* ── Gradient def ── */
@@ -227,8 +278,8 @@ HOME_HTML = r"""<!DOCTYPE html>
 <!-- SVG gradient definition -->
 <svg class="hidden-svg"><defs>
   <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-    <stop offset="0%" stop-color="#5E6AD2"/>
-    <stop offset="100%" stop-color="#8B5CF6"/>
+    <stop offset="0%" stop-color="#3B82F6"/>
+    <stop offset="100%" stop-color="#7C5CFC"/>
   </linearGradient>
 </defs></svg>
 
@@ -245,16 +296,20 @@ HOME_HTML = r"""<!DOCTYPE html>
   <div class="progress-card">
     <div class="progress-row">
       <div class="progress-left">
-        <h2 id="tier-label">Tier 1 — Survival</h2>
-        <p><span id="due">0</span> palavras pra revisar</p>
+        <h2 id="tier-label">Tier 1</h2>
+        <div class="progress-tier-name" id="tier-name">Survival</div>
+        <div class="progress-due"><span id="due">0</span> palavras pra revisar</div>
       </div>
       <div class="progress-ring">
-        <svg width="64" height="64" viewBox="0 0 64 64">
-          <circle class="bg" cx="32" cy="32" r="28"/>
-          <circle class="fg" id="ring-fg" cx="32" cy="32" r="28"
-            stroke-dasharray="175.93" stroke-dashoffset="175.93"/>
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle class="bg" cx="40" cy="40" r="34"/>
+          <circle class="fg" id="ring-fg" cx="40" cy="40" r="34"
+            stroke-dasharray="213.63" stroke-dashoffset="213.63"/>
         </svg>
-        <div class="progress-pct" id="mastery-pct">0%</div>
+        <div class="progress-tier-num">
+          <span class="tier-big" id="tier-num">1</span>
+          <span class="tier-sub" id="mastery-pct">0%</span>
+        </div>
       </div>
     </div>
     <div class="stats-row">
@@ -264,29 +319,36 @@ HOME_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Palavra do Dia -->
+  <div class="wod-card" id="wod-card" style="display:none">
+    <div class="wod-header">Palavra do Dia</div>
+    <div class="wod-word" id="wod-word"></div>
+    <div class="wod-sentence" id="wod-sentence"></div>
+  </div>
+
   <!-- Practice -->
   <div class="section-hdr">Praticar</div>
   <div class="feature-grid" style="animation:fadeIn 0.4s ease-out 0.1s both">
-    <a href="/drill" class="fcard">
-      <div class="fcard-icon indigo">&#x1f3af;</div>
+    <a href="/drill" class="fcard blue-edge">
+      <div class="fcard-icon blue">&#x1f3af;</div>
       <div class="fcard-title">Treinar</div>
       <div class="fcard-desc">Drills com audio, imagem e SRS</div>
       <div class="fcard-badge" id="due-badge">0 due</div>
     </a>
-    <a href="/stories" class="fcard">
+    <a href="/stories" class="fcard purple-edge">
       <div class="fcard-icon purple">&#x1f4d6;</div>
       <div class="fcard-title">Historias</div>
       <div class="fcard-desc">Narrativas graduadas 10 min</div>
       <div class="fcard-badge" id="stories-badge">0 stories</div>
     </a>
-    <a href="/drill?mode=weak" class="fcard">
+    <a href="/drill?mode=weak" class="fcard red-edge">
       <div class="fcard-icon red">&#x26a0;&#xfe0f;</div>
       <div class="fcard-title">Reforco</div>
       <div class="fcard-desc">Palavras que voce mais erra</div>
       <div class="fcard-badge red" id="weak-badge">0 fracas</div>
     </a>
-    <a href="/conversa" class="fcard">
-      <div class="fcard-icon blue">&#x1f4ac;</div>
+    <a href="/conversa" class="fcard cyan-edge">
+      <div class="fcard-icon cyan">&#x1f4ac;</div>
       <div class="fcard-title">Conversa</div>
       <div class="fcard-desc">Papo livre com IA baiana</div>
     </a>
@@ -294,16 +356,16 @@ HOME_HTML = r"""<!DOCTYPE html>
 
   <!-- Today -->
   <div class="section-hdr">Hoje</div>
-  <div class="today-row">
-    <div class="today-card">
+  <div class="today-card">
+    <div class="today-stat">
       <div class="today-val" id="today-mins">0</div>
       <div class="today-lbl">Minutos</div>
     </div>
-    <div class="today-card">
+    <div class="today-stat">
       <div class="today-val" id="today-words">0</div>
       <div class="today-lbl">Revisadas</div>
     </div>
-    <div class="today-card">
+    <div class="today-stat">
       <div class="today-val" id="today-new">0</div>
       <div class="today-lbl">Dominadas</div>
     </div>
@@ -332,9 +394,11 @@ HOME_HTML = r"""<!DOCTYPE html>
 </nav>
 
 <script>
+var tierNames={1:'Survival',2:'Daily Core',3:'Conversational',4:'Fluency',5:'Nuanced',6:'Near-Native'};
 fetch('/api/home-stats').then(r=>r.json()).then(d=>{
-  document.getElementById('tier-label').textContent='Tier '+d.tier+' \u2014 '+(
-    {1:'Survival',2:'Daily Core',3:'Conversational',4:'Fluency',5:'Nuanced',6:'Near-Native'}[d.tier]||'');
+  document.getElementById('tier-label').textContent='Tier '+d.tier;
+  document.getElementById('tier-name').textContent=tierNames[d.tier]||'';
+  document.getElementById('tier-num').textContent=d.tier;
   document.getElementById('due').textContent=d.due;
   document.getElementById('mastery-pct').textContent=d.mastery_pct+'%';
   document.getElementById('streak').textContent=d.streak||0;
@@ -342,13 +406,20 @@ fetch('/api/home-stats').then(r=>r.json()).then(d=>{
   document.getElementById('due-badge').textContent=d.due+' due';
   document.getElementById('stories-badge').textContent=d.story_count+' stories';
   document.getElementById('weak-badge').textContent=(d.weak_count||0)+' fracas';
-  // Progress ring
-  const circumference=175.93;
-  const offset=circumference-(d.mastery_pct/100)*circumference;
+  // Progress ring (r=34, circumference=2*pi*34=213.63)
+  var circumference=213.63;
+  var offset=circumference-(d.mastery_pct/100)*circumference;
   document.getElementById('ring-fg').style.strokeDashoffset=offset;
+  // Word of the Day
+  if(d.word_of_day){
+    var wod=d.word_of_day;
+    document.getElementById('wod-word').textContent=wod.text||'';
+    document.getElementById('wod-sentence').textContent=wod.sentence||'';
+    document.getElementById('wod-card').style.display='block';
+  }
 });
 fetch('/api/daily-stats').then(r=>r.json()).then(d=>{
-  const t=d.today||{};
+  var t=d.today||{};
   document.getElementById('today-reviewed').textContent=t.words_reviewed||0;
   document.getElementById('today-mastered').textContent=t.words_mastered||0;
   document.getElementById('today-words').textContent=t.words_reviewed||0;
@@ -378,43 +449,47 @@ CONVERSA_HTML = """<!DOCTYPE html>
   }
   .header {
     padding: 14px 20px; background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
     display: flex; justify-content: space-between; align-items: center;
     backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
     flex-shrink: 0;
   }
   .header h1 {
     font-size: 1.05em; font-weight: 800; letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
   .header-btns { display: flex; gap: 8px; }
   .hdr-btn {
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-    color: #9ca3af; padding: 6px 12px; border-radius: 8px; font-size: 0.8em;
-    cursor: pointer; backdrop-filter: blur(10px);
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    color: #9ca3af; padding: 6px 14px; border-radius: 10px; font-size: 0.8em;
+    cursor: pointer; backdrop-filter: blur(10px); transition: all 0.2s;
+    font-weight: 600;
   }
-  .hdr-btn:active { background: rgba(255,255,255,0.08); }
+  .hdr-btn:active { background: rgba(255,255,255,0.1); }
   .messages {
     flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
     -webkit-overflow-scrolling: touch;
   }
   .msg {
-    max-width: 82%; padding: 12px 16px; border-radius: 16px; font-size: 0.95em;
+    max-width: 82%; padding: 12px 16px; border-radius: 20px; font-size: 0.95em;
     line-height: 1.5; animation: fadeUp 0.3s ease-out;
     word-wrap: break-word;
   }
   .msg.ai {
-    align-self: flex-start; background: rgba(255,255,255,0.04);
+    align-self: flex-start; background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.06);
     border-bottom-left-radius: 4px;
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
   }
   .msg.user {
     align-self: flex-end;
-    background: linear-gradient(135deg, rgba(94,106,210,0.25), rgba(139,92,246,0.2));
-    border: 1px solid rgba(94,106,210,0.3);
+    background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(124,92,252,0.2));
+    border: 1px solid rgba(59,130,246,0.3);
     border-bottom-right-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   }
   .msg.ai .typing { color: #525263; }
   .input-bar {
@@ -425,23 +500,24 @@ CONVERSA_HTML = """<!DOCTYPE html>
   }
   .input-bar input {
     flex: 1; padding: 12px 16px; background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 14px;
     color: #fafafa; font-size: 1em; outline: none; font-family: inherit;
-    -webkit-appearance: none;
+    -webkit-appearance: none; transition: border-color 0.2s;
   }
-  .input-bar input:focus { border-color: rgba(94,106,210,0.5); }
+  .input-bar input:focus { border-color: rgba(59,130,246,0.5); }
   .input-bar input::placeholder { color: #333; }
   .send-btn {
     width: 44px; height: 44px; border-radius: 50%; border: none;
-    background: linear-gradient(135deg, #5E6AD2, #7C3AED); color: #fff;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
     font-size: 1.2em; cursor: pointer; display: flex; align-items: center;
     justify-content: center; flex-shrink: 0; transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(59,130,246,0.25);
   }
   .send-btn:active { transform: scale(0.95); }
-  .send-btn:disabled { background: rgba(255,255,255,0.04); color: #333; }
+  .send-btn:disabled { background: rgba(255,255,255,0.04); color: #333; box-shadow: none; }
   .mic-send-btn {
     width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.1);
-    background: rgba(255,255,255,0.04); color: #818cf8; font-size: 1.2em;
+    background: rgba(255,255,255,0.04); color: #60a5fa; font-size: 1.2em;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; transition: all 0.2s;
   }
@@ -575,7 +651,7 @@ addMsg('E ai, parceiro! Bora jogar conversa fora?', 'ai');
     text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
     -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
   }
-  .tab.active { color: #818cf8; }
+  .tab.active { color: #60a5fa; }
   .tab svg { width: 22px; height: 22px; fill: currentColor; }
 </style>
 <nav class="tab-bar">
@@ -708,14 +784,31 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         conn.close()
         streak = get_streak()
         weak_count = len(get_weak_words())
-        self._json({
+        # Word of the day — deterministic per date
+        conn2 = get_conn()
+        day_seed = int(datetime.now().strftime("%Y%m%d"))
+        total_words = conn2.execute("SELECT COUNT(*) FROM word_bank WHERE difficulty_tier <= ?", (tier,)).fetchone()[0]
+        wod = None
+        if total_words > 0:
+            idx = day_seed % total_words
+            row = conn2.execute(
+                "SELECT word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?",
+                (tier, idx)
+            ).fetchone()
+            if row:
+                wod = {"text": row[0], "sentence": ""}
+        conn2.close()
+        resp = {
             "tier": tier,
             "due": due,
             "mastery_pct": current_pct,
             "story_count": story_count,
             "streak": streak,
             "weak_count": weak_count,
-        })
+        }
+        if wod:
+            resp["word_of_day"] = wod
+        self._json(resp)
 
     def _daily_stats(self):
         self._json({
