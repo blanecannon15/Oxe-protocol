@@ -36,6 +36,9 @@ from srs_engine import (
     get_next_word, get_due_words, record_review,
     get_unlocked_tier, tier_progress, TIER_LABELS, DB_PATH,
     migrate_db, get_daily_stats, get_streak, get_weak_words,
+    add_chunk, get_next_chunk, get_due_chunks,
+    update_chunk_pass, record_chunk_review, get_chunk_by_id,
+    get_review_feed,
 )
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 
@@ -54,6 +57,11 @@ from drill_server import (
     DRILL_HTML, build_carrier, generate_tts, generate_image, generate_explanation,
     prefetch_images, log_drill, TRAP_SENTENCES, TRAP_REACTIONS, IMAGE_DIR,
     build_cloze, score_pronunciation,
+)
+
+# ── Imports from dictionary_engine ────────────────────────────
+from dictionary_engine import (
+    search_word, get_full_word_data, log_search,
 )
 
 # ── Imports from story_server ──────────────────────────────────
@@ -297,7 +305,7 @@ HOME_HTML = r"""<!DOCTYPE html>
     <div class="progress-row">
       <div class="progress-left">
         <h2 id="tier-label">Tier 1</h2>
-        <div class="progress-tier-name" id="tier-name">Survival</div>
+        <div class="progress-tier-name" id="tier-name">Sobrevivência</div>
         <div class="progress-due"><span id="due">0</span> palavras pra revisar</div>
       </div>
       <div class="progress-ring">
@@ -333,13 +341,13 @@ HOME_HTML = r"""<!DOCTYPE html>
       <div class="fcard-icon blue">&#x1f3af;</div>
       <div class="fcard-title">Treinar</div>
       <div class="fcard-desc">Drills com audio, imagem e SRS</div>
-      <div class="fcard-badge" id="due-badge">0 due</div>
+      <div class="fcard-badge" id="due-badge">0 pendentes</div>
     </a>
     <a href="/stories" class="fcard purple-edge">
       <div class="fcard-icon purple">&#x1f4d6;</div>
       <div class="fcard-title">Historias</div>
       <div class="fcard-desc">Narrativas graduadas 10 min</div>
-      <div class="fcard-badge" id="stories-badge">0 stories</div>
+      <div class="fcard-badge" id="stories-badge">0 historias</div>
     </a>
     <a href="/drill?mode=weak" class="fcard red-edge">
       <div class="fcard-icon red">&#x26a0;&#xfe0f;</div>
@@ -394,7 +402,7 @@ HOME_HTML = r"""<!DOCTYPE html>
 </nav>
 
 <script>
-var tierNames={1:'Survival',2:'Daily Core',3:'Conversational',4:'Fluency',5:'Nuanced',6:'Near-Native'};
+var tierNames={1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
 fetch('/api/home-stats').then(r=>r.json()).then(d=>{
   document.getElementById('tier-label').textContent='Tier '+d.tier;
   document.getElementById('tier-name').textContent=tierNames[d.tier]||'';
@@ -403,8 +411,8 @@ fetch('/api/home-stats').then(r=>r.json()).then(d=>{
   document.getElementById('mastery-pct').textContent=d.mastery_pct+'%';
   document.getElementById('streak').textContent=d.streak||0;
   document.getElementById('story-count').textContent=d.story_count;
-  document.getElementById('due-badge').textContent=d.due+' due';
-  document.getElementById('stories-badge').textContent=d.story_count+' stories';
+  document.getElementById('due-badge').textContent=d.due+' pendentes';
+  document.getElementById('stories-badge').textContent=d.story_count+' historias';
   document.getElementById('weak-badge').textContent=(d.weak_count||0)+' fracas';
   // Progress ring (r=34, circumference=2*pi*34=213.63)
   var circumference=213.63;
@@ -676,6 +684,427 @@ addMsg('E ai, parceiro! Bora jogar conversa fora?', 'ai');
 </body></html>"""
 
 
+# ── Search / Dictionary HTML ──────────────────────────────────
+
+SEARCH_HTML = r"""<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Oxe — Dicionário</title>
+<style>
+  @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+    min-height: 100vh; min-height: 100dvh; -webkit-user-select: none; user-select: none;
+    padding-bottom: 76px;
+  }
+  .search-bar {
+    position: sticky; top: 0; z-index: 20; padding: 14px 16px;
+    background: rgba(10,10,11,0.92); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+    border-bottom: 2px solid transparent; border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
+  }
+  .search-wrap {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px; padding: 12px 16px;
+    backdrop-filter: blur(10px);
+  }
+  .search-wrap svg { width: 20px; height: 20px; fill: #60a5fa; flex-shrink: 0; }
+  .search-wrap input {
+    flex: 1; background: none; border: none; outline: none; color: #fafafa;
+    font-size: 1em; font-family: inherit; -webkit-appearance: none;
+  }
+  .search-wrap input::placeholder { color: #525263; }
+  .search-clear {
+    width: 24px; height: 24px; border-radius: 50%; border: none;
+    background: rgba(255,255,255,0.08); color: #9ca3af; font-size: 0.8em;
+    cursor: pointer; display: none; align-items: center; justify-content: center;
+  }
+  .autocomplete {
+    position: absolute; left: 16px; right: 16px; top: 100%;
+    background: rgba(20,20,22,0.98); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px; overflow: hidden; display: none; z-index: 30;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    max-height: 300px; overflow-y: auto;
+  }
+  .autocomplete.visible { display: block; }
+  .ac-item {
+    padding: 14px 18px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex; justify-content: space-between; align-items: center;
+    transition: background 0.15s;
+  }
+  .ac-item:active { background: rgba(59,130,246,0.1); }
+  .ac-item:last-child { border-bottom: none; }
+  .ac-word { font-weight: 600; }
+  .ac-tier { font-size: 0.7em; color: #525263; }
+
+  .page { padding: 20px 16px; }
+
+  /* ── Result Card ── */
+  .result-card {
+    display: none; animation: fadeUp 0.4s ease-out;
+  }
+  .result-card.visible { display: block; }
+  .result-word {
+    font-size: 1.8em; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 4px;
+  }
+  .result-meta { font-size: 0.78em; color: #7a7a8e; margin-bottom: 20px; }
+  .result-audio-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+    background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 20px; color: #60a5fa; font-size: 0.8em; font-weight: 600;
+    cursor: pointer; margin-bottom: 20px; transition: all 0.2s;
+  }
+  .result-audio-btn:active { transform: scale(0.97); }
+  .result-audio-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+  /* ── Tabs ── */
+  .tab-row {
+    display: flex; gap: 0; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 20px;
+  }
+  .tab-btn {
+    flex: 1; padding: 12px 0; text-align: center; font-size: 0.78em; font-weight: 600;
+    color: #525263; cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none;
+  }
+  .tab-btn.active { color: #60a5fa; border-bottom-color: #3B82F6; }
+  .tab-content { display: none; animation: fadeUp 0.3s ease-out; }
+  .tab-content.visible { display: block; }
+
+  /* ── Definition ── */
+  .def-card {
+    background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    margin-bottom: 14px;
+  }
+  .def-text { font-size: 1em; line-height: 1.7; color: #e0e0e5; }
+  .def-regional {
+    display: inline-block; margin-top: 10px; padding: 3px 10px; border-radius: 10px;
+    font-size: 0.7em; font-weight: 600; background: rgba(59,130,246,0.1); color: #60a5fa;
+  }
+  .def-chunk { font-size: 0.9em; color: #7a7a8e; margin-top: 10px; font-style: italic; }
+
+  /* ── Examples ── */
+  .example-item {
+    padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .example-item:last-child { border-bottom: none; }
+  .ex-audio {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(59,130,246,0.1); border: none; color: #60a5fa;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    font-size: 0.9em;
+  }
+  .ex-audio:active { transform: scale(0.95); }
+  .ex-text { font-size: 0.95em; line-height: 1.6; color: #e0e0e5; }
+  .ex-chunk { color: #60a5fa; font-weight: 600; }
+
+  /* ── Pronunciation ── */
+  .pron-section { margin-bottom: 20px; }
+  .pron-label { font-size: 0.7em; color: #525263; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .pron-value { font-size: 1.1em; color: #e0e0e5; letter-spacing: 1px; }
+  .pron-guide { font-size: 0.9em; color: #7a7a8e; line-height: 1.6; margin-top: 12px; }
+
+  /* ── Expressions ── */
+  .expr-item {
+    background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px;
+    margin-bottom: 10px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .expr-phrase { font-size: 1em; font-weight: 600; color: #fafafa; margin-bottom: 4px; }
+  .expr-meaning { font-size: 0.85em; color: #7a7a8e; line-height: 1.5; }
+
+  /* ── Add to SRS button ── */
+  .add-srs-btn {
+    width: 100%; padding: 16px; margin-top: 24px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+    border: none; border-radius: 16px; font-size: 1em; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.25);
+  }
+  .add-srs-btn:active { transform: scale(0.98); opacity: 0.9; }
+  .add-srs-btn:disabled { background: rgba(255,255,255,0.04); color: #333; box-shadow: none; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 60px 20px; color: #525263; }
+  .empty-state .icon { font-size: 3em; margin-bottom: 16px; opacity: 0.3; }
+  .empty-state p { font-size: 0.9em; line-height: 1.5; }
+
+  /* ── Loading ── */
+  .loading { text-align: center; padding: 40px; color: #525263; font-size: 0.9em; }
+
+  /* ── Tab Bar ── */
+  .nav-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    display: flex; justify-content: space-around; align-items: center;
+    height: 72px; padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(10,10,11,0.94); border-top: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  }
+  .nav-tab {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
+    -webkit-tap-highlight-color: transparent; padding: 6px 10px; transition: color 0.2s;
+  }
+  .nav-tab.active { color: #60a5fa; }
+  .nav-tab svg { width: 22px; height: 22px; fill: currentColor; }
+</style>
+</head><body>
+
+<div class="search-bar">
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    <input type="text" id="search-input" placeholder="Buscar palavra..." autocomplete="off" autocorrect="off" spellcheck="false">
+    <button class="search-clear" id="search-clear" onclick="clearSearch()">&times;</button>
+  </div>
+  <div class="autocomplete" id="autocomplete"></div>
+</div>
+
+<div class="page">
+  <!-- Empty state -->
+  <div class="empty-state" id="empty-state">
+    <div class="icon">&#x1F50D;</div>
+    <p>Busca uma palavra pra ver<br>definição, exemplos e pronúncia</p>
+  </div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading" style="display:none">Carregando...</div>
+
+  <!-- Result card -->
+  <div class="result-card" id="result-card">
+    <div class="result-word" id="r-word"></div>
+    <div class="result-meta" id="r-meta"></div>
+    <button class="result-audio-btn" id="r-audio-btn" onclick="playWordAudio()">
+      <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+      Ouvir
+    </button>
+
+    <!-- Tabs -->
+    <div class="tab-row">
+      <button class="tab-btn active" onclick="showTab(0)">Dicionário</button>
+      <button class="tab-btn" onclick="showTab(1)">Exemplos</button>
+      <button class="tab-btn" onclick="showTab(2)">Pronúncia</button>
+      <button class="tab-btn" onclick="showTab(3)">Expressões</button>
+    </div>
+
+    <!-- Tab: Dicionário -->
+    <div class="tab-content visible" id="tab-0">
+      <div class="def-card">
+        <div class="def-text" id="def-text"></div>
+        <div class="def-regional" id="def-regional"></div>
+        <div class="def-chunk" id="def-chunk"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Exemplos -->
+    <div class="tab-content" id="tab-1">
+      <div id="examples-list"></div>
+    </div>
+
+    <!-- Tab: Pronúncia -->
+    <div class="tab-content" id="tab-2">
+      <div class="pron-section">
+        <div class="pron-label">Sílabas</div>
+        <div class="pron-value" id="pron-silabas"></div>
+      </div>
+      <div class="pron-section">
+        <div class="pron-label">Guia fonético</div>
+        <div class="pron-guide" id="pron-guide"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Expressões -->
+    <div class="tab-content" id="tab-3">
+      <div id="expressions-list"></div>
+    </div>
+
+    <button class="add-srs-btn" id="add-srs-btn" onclick="addToSRS()">Adicionar ao treino</button>
+  </div>
+</div>
+
+<audio id="player" preload="auto"></audio>
+
+<!-- Bottom Tab Bar -->
+<nav class="nav-bar">
+  <a href="/" class="nav-tab">
+    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+    <span>Início</span>
+  </a>
+  <a href="/search" class="nav-tab active">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    <span>Buscar</span>
+  </a>
+  <a href="/drill" class="nav-tab">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+    <span>Treinar</span>
+  </a>
+  <a href="/library" class="nav-tab">
+    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
+    <span>Biblioteca</span>
+  </a>
+  <a href="/conversa" class="nav-tab">
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+    <span>Conversa</span>
+  </a>
+</nav>
+
+<script>
+const searchInput = document.getElementById('search-input');
+const acBox = document.getElementById('autocomplete');
+const clearBtn = document.getElementById('search-clear');
+const player = document.getElementById('player');
+let debounceTimer = null;
+let currentData = null;
+let currentWordId = null;
+
+searchInput.addEventListener('input', function() {
+  clearTimeout(debounceTimer);
+  const q = this.value.trim();
+  clearBtn.style.display = q ? 'flex' : 'none';
+  if (q.length < 2) { acBox.classList.remove('visible'); return; }
+  debounceTimer = setTimeout(() => fetchSearch(q), 300);
+});
+
+searchInput.addEventListener('focus', function() {
+  if (this.value.trim().length >= 2) acBox.classList.add('visible');
+});
+
+function clearSearch() {
+  searchInput.value = '';
+  clearBtn.style.display = 'none';
+  acBox.classList.remove('visible');
+  document.getElementById('result-card').classList.remove('visible');
+  document.getElementById('empty-state').style.display = '';
+}
+
+async function fetchSearch(q) {
+  try {
+    const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) {
+      acBox.innerHTML = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
+    } else {
+      acBox.innerHTML = data.results.map(r =>
+        '<div class="ac-item" onclick="selectWord(' + r.word_id + ',\'' + r.word.replace(/'/g, "\\'") + '\')">' +
+        '<span class="ac-word">' + r.word + '</span>' +
+        '<span class="ac-tier">Tier ' + r.difficulty_tier + '</span></div>'
+      ).join('');
+    }
+    acBox.classList.add('visible');
+  } catch(e) { acBox.classList.remove('visible'); }
+}
+
+async function selectWord(wordId, word) {
+  acBox.classList.remove('visible');
+  searchInput.value = word;
+  currentWordId = wordId;
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('loading').style.display = '';
+  document.getElementById('result-card').classList.remove('visible');
+
+  try {
+    const res = await fetch('/api/search/word/' + wordId);
+    currentData = await res.json();
+    renderResult(currentData);
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('empty-state').style.display = '';
+  }
+}
+
+function renderResult(d) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('r-word').textContent = d.word || '';
+  const tierNames = {1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
+  document.getElementById('r-meta').textContent = 'Tier ' + (d.tier||1) + ' — ' + (tierNames[d.tier]||'') + ' · #' + (d.frequency_rank||'');
+
+  // Definition tab
+  const def = d.definition || {};
+  document.getElementById('def-text').textContent = def.definicao || 'Sem definição disponível';
+  document.getElementById('def-regional').textContent = (def.uso_regional || 'geral');
+  document.getElementById('def-chunk').textContent = def.exemplo_chunk ? '"' + def.exemplo_chunk + '"' : '';
+
+  // Examples tab
+  const exList = document.getElementById('examples-list');
+  exList.innerHTML = '';
+  (d.examples || []).forEach(function(ex) {
+    const div = document.createElement('div');
+    div.className = 'example-item';
+    div.innerHTML = '<button class="ex-audio" onclick="playExAudio(this)">&#x1F50A;</button>' +
+      '<div class="ex-text">' + (ex.texto || '').replace(new RegExp('(' + (d.word||'') + ')', 'gi'), '<span class="ex-chunk">$1</span>') + '</div>';
+    exList.appendChild(div);
+  });
+
+  // Pronunciation tab
+  const pron = d.pronunciation || {};
+  document.getElementById('pron-silabas').textContent = pron.silabas || '';
+  document.getElementById('pron-guide').textContent = pron.guia_fonetico || '';
+
+  // Expressions tab
+  const exprList = document.getElementById('expressions-list');
+  exprList.innerHTML = '';
+  (d.expressions || []).forEach(function(expr) {
+    const div = document.createElement('div');
+    div.className = 'expr-item';
+    div.innerHTML = '<div class="expr-phrase">' + (expr.expressao || '') + '</div>' +
+      '<div class="expr-meaning">' + (expr.significado || '') + '</div>';
+    exprList.appendChild(div);
+  });
+
+  // Show first tab
+  showTab(0);
+  document.getElementById('result-card').classList.add('visible');
+  document.getElementById('add-srs-btn').disabled = false;
+  document.getElementById('add-srs-btn').textContent = 'Adicionar ao treino';
+}
+
+function showTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+  document.querySelectorAll('.tab-content').forEach((c,i) => c.classList.toggle('visible', i===idx));
+}
+
+function playWordAudio() {
+  if (currentData && currentData.audio_file) {
+    player.src = '/audio/' + currentData.audio_file;
+    player.play().catch(()=>{});
+  }
+}
+
+function playExAudio(btn) {
+  // For now just play the main word audio
+  playWordAudio();
+}
+
+async function addToSRS() {
+  if (!currentData || !currentWordId) return;
+  const btn = document.getElementById('add-srs-btn');
+  btn.disabled = true;
+  btn.textContent = 'Adicionando...';
+  try {
+    const def = currentData.definition || {};
+    const chunk = def.exemplo_chunk || currentData.word || '';
+    const carrier = (currentData.examples && currentData.examples[0]) ? currentData.examples[0].texto : chunk;
+    await fetch('/api/search/add-to-srs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ word_id: currentWordId, chunk: chunk, carrier: carrier }),
+    });
+    btn.textContent = 'Adicionado ✓';
+  } catch(e) {
+    btn.textContent = 'Erro';
+    btn.disabled = false;
+  }
+}
+</script>
+</body></html>"""
+
+
 # ── Unified Handler ────────────────────────────────────────────
 
 class OxeHandler(http.server.BaseHTTPRequestHandler):
@@ -689,19 +1118,37 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         if path == "/":
             self._html(HOME_HTML)
 
+        # ── Search / Dictionary ──
+        elif path == "/search":
+            self._html(SEARCH_HTML)
+        elif path == "/api/search":
+            q = query.get("q", [""])[0]
+            self._dict_search(q)
+        elif path.startswith("/api/search/word/"):
+            word_id = int(path.split("/")[4])
+            self._dict_word(word_id)
+        elif path == "/api/search/history":
+            self._dict_history()
+
         # ── Drill ──
         elif path == "/drill":
             self._html(DRILL_HTML)
         elif path == "/api/next":
             self._drill_next(query)
+        elif path == "/api/drill/next":
+            self._drill_next_chunk()
 
         # ── Conversa ──
         elif path == "/conversa":
             self._html(CONVERSA_HTML)
 
-        # ── Stories ──
+        # ── Library (Stories + Podcasts + Review) ──
+        elif path == "/library":
+            self._html(STORY_HTML)
         elif path == "/stories":
             self._html(STORY_HTML)
+        elif path == "/api/library/review-feed":
+            self._review_feed()
         elif path == "/api/levels":
             self._story_get_levels()
         elif path == "/api/stories":
@@ -728,8 +1175,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
 
         # Multipart routes (audio upload)
-        if path in ("/api/score-pronunciation", "/api/shadow-score"):
+        if path in ("/api/score-pronunciation", "/api/shadow-score", "/api/drill/score"):
             if path == "/api/score-pronunciation":
+                self._score_pronunciation()
+            elif path == "/api/drill/score":
                 self._score_pronunciation()
             else:
                 self._shadow_score()
@@ -737,8 +1186,21 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         body = self._read_body()
 
-        # ── Drill ──
-        if path == "/api/respond":
+        # ── Dictionary ──
+        if path == "/api/search/add-to-srs":
+            self._dict_add_to_srs(body)
+            return
+
+        # ── New Drill (5-Pass) ──
+        elif path == "/api/drill/advance":
+            self._drill_advance_pass(body)
+            return
+        elif path == "/api/drill/complete":
+            self._drill_complete(body)
+            return
+
+        # ── Legacy Drill ──
+        elif path == "/api/respond":
             self._drill_respond(body)
         elif path == "/api/explain":
             self._drill_explain(body)
@@ -816,7 +1278,148 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "streak": get_streak(),
         })
 
-    # ── Drill Endpoints ────────────────────────────────────
+    # ── Dictionary Endpoints ──────────────────────────────
+
+    def _dict_search(self, q):
+        if not q:
+            self._json({"results": [], "query": ""})
+            return
+        results = search_word(q)
+        self._json({"results": results, "query": q})
+
+    def _dict_word(self, word_id):
+        try:
+            data = get_full_word_data(word_id)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_add_to_srs(self, body):
+        word_id = body.get("word_id")
+        chunk = body.get("chunk", "")
+        carrier = body.get("carrier", "")
+        if not word_id or not chunk:
+            self._json({"error": "word_id e chunk obrigatorios"}, status=400)
+            return
+        chunk_id = add_chunk(word_id, chunk, carrier, "dictionary")
+        self._json({"chunk_id": chunk_id, "status": "adicionado" if chunk_id else "ja existe"})
+
+    def _dict_history(self):
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT * FROM search_history ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+        conn.close()
+        self._json({"history": [dict(r) for r in rows]})
+
+    # ── 5-Pass Drill Endpoints ─────────────────────────────
+
+    def _drill_next_chunk(self):
+        chunk = get_next_chunk()
+        if chunk is None:
+            # Cold start: auto-seed from word_bank Tier 1
+            conn = get_conn()
+            words = conn.execute(
+                "SELECT id, word FROM word_bank WHERE difficulty_tier = 1 ORDER BY frequency_rank LIMIT 10"
+            ).fetchall()
+            conn.close()
+            for w in words:
+                carrier = build_carrier(w["word"])
+                add_chunk(w["id"], w["word"], carrier, "corpus")
+            chunk = get_next_chunk()
+
+        if chunk is None:
+            self._json({"error": "Nenhum chunk disponivel"}, status=404)
+            return
+
+        # Generate audio + image
+        audio_file = generate_tts(chunk["carrier_sentence"])
+        image_file = None
+        try:
+            image_file = generate_image(chunk["word"])
+        except Exception:
+            pass
+
+        due_count = len(get_due_chunks())
+        self._json({
+            "chunk_id": chunk["id"],
+            "word": chunk["word"],
+            "word_id": chunk["word_id"],
+            "target_chunk": chunk["target_chunk"],
+            "carrier_sentence": chunk["carrier_sentence"],
+            "current_pass": chunk["current_pass"],
+            "audio_file": audio_file,
+            "image_file": image_file,
+            "tier": chunk["difficulty_tier"],
+            "due_count": due_count,
+        })
+
+    def _drill_advance_pass(self, body):
+        chunk_id = body.get("chunk_id")
+        current_pass = body.get("current_pass", 1)
+        if not chunk_id:
+            self._json({"error": "chunk_id obrigatorio"}, status=400)
+            return
+        new_pass = min(current_pass + 1, 5)
+        update_chunk_pass(chunk_id, new_pass)
+        self._json({"chunk_id": chunk_id, "new_pass": new_pass})
+
+    def _drill_complete(self, body):
+        chunk_id = body.get("chunk_id")
+        latency_ms = body.get("latency_ms")
+        retries = body.get("retries", 0)
+        biometric = body.get("biometric_score")
+
+        if not chunk_id:
+            self._json({"error": "chunk_id obrigatorio"}, status=400)
+            return
+
+        # Determine rating
+        if retries >= 3:
+            rating = Rating.Again
+        elif latency_ms and latency_ms > LATENCY_THRESHOLD_MS:
+            rating = Rating.Hard
+        elif biometric and biometric < 85:
+            rating = Rating.Hard
+        elif latency_ms and latency_ms <= 600 and retries == 0:
+            rating = Rating.Easy
+        else:
+            rating = Rating.Good
+
+        new_card, mastery, downgraded = record_chunk_review(
+            chunk_id, rating, latency_ms, biometric
+        )
+
+        rating_names = {
+            Rating.Again: "De novo",
+            Rating.Hard: "Difícil",
+            Rating.Good: "Bom",
+            Rating.Easy: "Fácil",
+        }
+        self._json({
+            "rating": rating.value,
+            "rating_name": rating_names.get(rating, ""),
+            "new_mastery": mastery,
+            "latency_downgraded": downgraded,
+        })
+
+    def _review_feed(self):
+        chunks = get_review_feed()
+        self._json({
+            "chunks": [
+                {
+                    "chunk_id": c["id"],
+                    "word": c["word"],
+                    "target_chunk": c["target_chunk"],
+                    "source": c["source"],
+                    "current_pass": c["current_pass"],
+                    "mastery_level": c["mastery_level"],
+                }
+                for c in chunks
+            ]
+        })
+
+    # ── Legacy Drill Endpoints ─────────────────────────────
 
     def _drill_next(self, query=None):
         global _laranjada_remaining
@@ -1384,8 +1987,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content.encode())
 
-    def _json(self, data):
-        self.send_response(200)
+    def _json(self, data, status=200):
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
