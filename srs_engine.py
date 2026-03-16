@@ -40,12 +40,12 @@ CREATE TABLE IF NOT EXISTS word_bank (
 """
 
 TIER_LABELS = {
-    1: "Survival",
-    2: "Daily Core",
-    3: "Conversational",
-    4: "Fluency",
-    5: "Nuanced",
-    6: "Near-Native",
+    1: "Sobrevivência",
+    2: "Cotidiano",
+    3: "Conversação",
+    4: "Fluência",
+    5: "Nuance",
+    6: "Quase Nativo",
 }
 
 TIER_RANGES = {
@@ -272,6 +272,68 @@ def migrate_db(db_path=DB_PATH):
             session_end TEXT
         )
     """)
+    # Create chunk_queue table — the active review layer
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chunk_queue (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_id                INTEGER REFERENCES word_bank(id),
+            target_chunk           TEXT NOT NULL,
+            carrier_sentence       TEXT NOT NULL,
+            source                 TEXT NOT NULL CHECK(source IN ('dictionary','story','podcast','corpus','manual')),
+            current_pass           INTEGER NOT NULL DEFAULT 1 CHECK(current_pass BETWEEN 1 AND 5),
+            srs_state              TEXT NOT NULL,
+            mastery_level          INTEGER NOT NULL DEFAULT 0,
+            times_failed           INTEGER NOT NULL DEFAULT 0,
+            last_retrieval_latency REAL,
+            biometric_score        REAL,
+            golden_audio_path      TEXT,
+            native_audio_path      TEXT,
+            image_path             TEXT,
+            created_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            last_reviewed          TEXT,
+            UNIQUE(word_id, target_chunk)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_chunk_queue_due
+            ON chunk_queue(json_extract(srs_state, '$.due'))
+    """)
+    # Voice clone registry for Neural Mapping (ElevenLabs STS)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS voice_clone (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            voice_id     TEXT NOT NULL,
+            name         TEXT NOT NULL,
+            created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        )
+    """)
+    # Search history for Dictionary Engine
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS search_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            query      TEXT NOT NULL,
+            word_id    INTEGER,
+            chunk_id   INTEGER,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        )
+    """)
+    # Podcast library
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS podcast_library (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            title                 TEXT NOT NULL,
+            difficulty            INTEGER NOT NULL DEFAULT 80,
+            total_segments        INTEGER NOT NULL DEFAULT 12,
+            body                  TEXT NOT NULL,
+            focus_words           TEXT NOT NULL DEFAULT '[]',
+            word_count            INTEGER,
+            audio_segments        TEXT,
+            times_played          INTEGER NOT NULL DEFAULT 0,
+            last_played           TEXT,
+            comprehension_results TEXT NOT NULL DEFAULT '[]',
+            created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -342,6 +404,163 @@ def get_weak_words(db_path=DB_PATH):
            WHERE mastery_level = 0 AND times_failed >= 2 AND difficulty_tier <= ?
            ORDER BY times_failed DESC""",
         (max_tier,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Chunk Queue — active review layer (5-Pass Shadowing)
+# ---------------------------------------------------------------------------
+
+
+def add_chunk(word_id, target_chunk, carrier_sentence, source, db_path=DB_PATH):
+    """Insert a chunk into the review queue. Returns chunk_id or None if duplicate."""
+    card = Card()
+    conn = get_connection(db_path)
+    try:
+        cur = conn.execute(
+            """INSERT INTO chunk_queue
+               (word_id, target_chunk, carrier_sentence, source, srs_state)
+               VALUES (?, ?, ?, ?, ?)""",
+            (word_id, target_chunk, carrier_sentence, source, _serialize_card(card)),
+        )
+        chunk_id = cur.lastrowid
+        conn.commit()
+    except sqlite3.IntegrityError:
+        chunk_id = None  # duplicate word_id + target_chunk
+    conn.close()
+    return chunk_id
+
+
+def get_next_chunk(db_path=DB_PATH):
+    """Return the next due chunk from chunk_queue, respecting tier unlocks."""
+    max_tier = get_unlocked_tier(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection(db_path)
+    row = conn.execute(
+        """SELECT cq.*, wb.word, wb.frequency_rank, wb.difficulty_tier
+           FROM chunk_queue cq
+           JOIN word_bank wb ON cq.word_id = wb.id
+           WHERE wb.difficulty_tier <= ?
+             AND json_extract(cq.srs_state, '$.due') <= ?
+           ORDER BY json_extract(cq.srs_state, '$.due') ASC
+           LIMIT 1""",
+        (max_tier, now),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_due_chunks(db_path=DB_PATH):
+    """Return all due chunks from chunk_queue, respecting tier unlocks."""
+    max_tier = get_unlocked_tier(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """SELECT cq.*, wb.word, wb.frequency_rank, wb.difficulty_tier
+           FROM chunk_queue cq
+           JOIN word_bank wb ON cq.word_id = wb.id
+           WHERE wb.difficulty_tier <= ?
+             AND json_extract(cq.srs_state, '$.due') <= ?
+           ORDER BY json_extract(cq.srs_state, '$.due') ASC""",
+        (max_tier, now),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def update_chunk_pass(chunk_id, new_pass, db_path=DB_PATH):
+    """Advance a chunk's shadowing pass (1→5). No FSRS update until pass 5 completion."""
+    conn = get_connection(db_path)
+    conn.execute(
+        "UPDATE chunk_queue SET current_pass = ? WHERE id = ?",
+        (new_pass, chunk_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None, db_path=DB_PATH):
+    """Record a completed review (pass 5 done). Updates FSRS and propagates mastery to word_bank."""
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM chunk_queue WHERE id = ?", (chunk_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise ValueError(f"Chunk {chunk_id} not found")
+
+    latency_downgraded = False
+    if latency_ms is not None and latency_ms > LATENCY_THRESHOLD_MS:
+        if rating.value > Rating.Hard.value:
+            rating = Rating.Hard
+            latency_downgraded = True
+
+    old_mastery = row["mastery_level"]
+    card = _deserialize_card(row["srs_state"])
+    f = FSRS()
+    scheduling = f.repeat(card)
+    new_card = scheduling[rating].card
+
+    mastery = min(new_card.reps, 5)
+    if rating == Rating.Again:
+        mastery = max(old_mastery - 1, 0)
+
+    now = datetime.now(timezone.utc).isoformat()
+    times_failed_inc = ", times_failed = times_failed + 1" if rating == Rating.Again else ""
+
+    conn.execute(
+        f"""UPDATE chunk_queue
+           SET srs_state = ?, mastery_level = ?, last_retrieval_latency = ?,
+               biometric_score = ?, current_pass = 1, last_reviewed = ?{times_failed_inc}
+           WHERE id = ?""",
+        (_serialize_card(new_card), mastery, latency_ms, biometric_score, now, chunk_id),
+    )
+
+    # Propagate mastery to parent word in word_bank
+    word_id = row["word_id"]
+    if word_id is not None:
+        conn.execute(
+            "UPDATE word_bank SET mastery_level = MAX(mastery_level, ?) WHERE id = ?",
+            (mastery, word_id),
+        )
+
+    conn.commit()
+    conn.close()
+
+    was_mastered = mastery >= 3 and old_mastery < 3
+    record_daily_activity(was_mastered=was_mastered, db_path=db_path)
+
+    return new_card, mastery, latency_downgraded
+
+
+def get_chunk_by_id(chunk_id, db_path=DB_PATH):
+    """Return a single chunk by ID, joined with word_bank."""
+    conn = get_connection(db_path)
+    row = conn.execute(
+        """SELECT cq.*, wb.word, wb.frequency_rank, wb.difficulty_tier
+           FROM chunk_queue cq
+           JOIN word_bank wb ON cq.word_id = wb.id
+           WHERE cq.id = ?""",
+        (chunk_id,),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_review_feed(db_path=DB_PATH):
+    """Return chunk_queue items from dictionary/story/podcast sources, due for review."""
+    max_tier = get_unlocked_tier(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """SELECT cq.*, wb.word, wb.frequency_rank, wb.difficulty_tier
+           FROM chunk_queue cq
+           JOIN word_bank wb ON cq.word_id = wb.id
+           WHERE wb.difficulty_tier <= ?
+             AND cq.source IN ('dictionary', 'story', 'podcast')
+             AND json_extract(cq.srs_state, '$.due') <= ?
+           ORDER BY json_extract(cq.srs_state, '$.due') ASC""",
+        (max_tier, now),
     ).fetchall()
     conn.close()
     return rows
