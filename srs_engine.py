@@ -338,6 +338,156 @@ def migrate_db(db_path=DB_PATH):
     conn.close()
 
 
+def migrate_v2(db_path=DB_PATH):
+    """Create tables for the acquisition engine brain (v2 schema)."""
+    conn = get_connection(db_path)
+    conn.executescript("""
+        -- Automaticity state tracking per word/chunk
+        CREATE TABLE IF NOT EXISTS automaticity_state (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_type             TEXT NOT NULL CHECK(item_type IN ('word','chunk')),
+            item_id               INTEGER NOT NULL,
+            state                 TEXT NOT NULL DEFAULT 'UNKNOWN'
+                CHECK(state IN (
+                    'UNKNOWN','RECOGNIZED','CONTEXT_KNOWN',
+                    'EFFORTFUL_AUDIO','AUTOMATIC_CLEAN',
+                    'AUTOMATIC_NATIVE','AVAILABLE_OUTPUT'
+                )),
+            confidence            REAL NOT NULL DEFAULT 0.0,
+            exposure_count        INTEGER NOT NULL DEFAULT 0,
+            correct_streak        INTEGER NOT NULL DEFAULT 0,
+            latency_history       TEXT NOT NULL DEFAULT '[]',
+            avg_latency_ms        REAL,
+            latency_trend         REAL DEFAULT 0.0,
+            clean_audio_success   REAL NOT NULL DEFAULT 0.0,
+            native_audio_success  REAL NOT NULL DEFAULT 0.0,
+            clean_attempts        INTEGER NOT NULL DEFAULT 0,
+            native_attempts       INTEGER NOT NULL DEFAULT 0,
+            output_success        REAL NOT NULL DEFAULT 0.0,
+            output_attempts       INTEGER NOT NULL DEFAULT 0,
+            last_biometric        REAL,
+            last_state_change     TEXT,
+            last_reviewed         TEXT,
+            created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(item_type, item_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_auto_state ON automaticity_state(state);
+        CREATE INDEX IF NOT EXISTS idx_auto_item ON automaticity_state(item_type, item_id);
+
+        -- Fragile item detection
+        CREATE TABLE IF NOT EXISTS fragile_items (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_type       TEXT NOT NULL CHECK(item_type IN ('word','chunk')),
+            item_id         INTEGER NOT NULL,
+            fragility_type  TEXT NOT NULL CHECK(fragility_type IN (
+                'familiar_but_fragile','known_but_slow','text_only',
+                'clean_audio_only','blocked_by_prosody'
+            )),
+            fragility_score REAL NOT NULL DEFAULT 0.0,
+            detected_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            resolved_at     TEXT,
+            UNIQUE(item_type, item_id, fragility_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_fragile_active ON fragile_items(fragility_type) WHERE resolved_at IS NULL;
+
+        -- Chunk families and variants
+        CREATE TABLE IF NOT EXISTS chunk_families (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            root_form         TEXT NOT NULL UNIQUE,
+            word_count        INTEGER NOT NULL,
+            frequency_score   REAL NOT NULL DEFAULT 0.0,
+            naturalness_score REAL NOT NULL DEFAULT 0.0,
+            bahia_relevance   REAL NOT NULL DEFAULT 0.0,
+            composite_rank    REAL NOT NULL DEFAULT 0.0,
+            created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+        CREATE TABLE IF NOT EXISTS chunk_variants (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id      INTEGER NOT NULL REFERENCES chunk_families(id),
+            variant_form   TEXT NOT NULL,
+            source         TEXT NOT NULL CHECK(source IN ('story','podcast','conversation','corpus','manual','llm')),
+            source_id      INTEGER,
+            occurrence_count INTEGER NOT NULL DEFAULT 1,
+            created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(family_id, variant_form)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chunk_family_rank ON chunk_families(composite_rank DESC);
+
+        -- Daily planning and session tracking
+        CREATE TABLE IF NOT EXISTS daily_plan (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL UNIQUE,
+            plan_json       TEXT NOT NULL,
+            generated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            completed_pct   REAL NOT NULL DEFAULT 0.0,
+            actual_json     TEXT
+        );
+        CREATE TABLE IF NOT EXISTS session_events (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL,
+            event_type      TEXT NOT NULL,
+            event_data      TEXT NOT NULL DEFAULT '{}',
+            timestamp       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+        CREATE TABLE IF NOT EXISTS fatigue_snapshots (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL,
+            minute_offset   INTEGER NOT NULL,
+            accuracy_5min   REAL,
+            avg_latency_5min REAL,
+            replay_freq     REAL,
+            items_per_minute REAL,
+            fatigue_score   REAL NOT NULL,
+            action_taken    TEXT,
+            timestamp       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+
+        -- Content metadata for stories, podcasts, conversations
+        CREATE TABLE IF NOT EXISTS content_metadata (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type      TEXT NOT NULL CHECK(content_type IN ('story','podcast','conversation')),
+            content_id        INTEGER NOT NULL,
+            difficulty_level  TEXT NOT NULL,
+            accent            TEXT NOT NULL DEFAULT 'baiano',
+            clarity           REAL NOT NULL DEFAULT 100.0,
+            speech_rate_wpm   REAL,
+            lexical_density   REAL NOT NULL DEFAULT 0.0,
+            chunk_overlap_pct REAL NOT NULL DEFAULT 0.0,
+            compression_pct   REAL,
+            created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(content_type, content_id)
+        );
+
+        -- Speech unlock stages and conversation sessions
+        CREATE TABLE IF NOT EXISTS speech_unlock (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            stage           INTEGER NOT NULL DEFAULT 1 CHECK(stage BETWEEN 1 AND 6),
+            stage_name      TEXT NOT NULL DEFAULT 'echo',
+            entered_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            criteria_met    TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(stage)
+        );
+        CREATE TABLE IF NOT EXISTS conversa_sessions (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL,
+            speech_stage    INTEGER NOT NULL,
+            mode            TEXT NOT NULL,
+            prompt_type     TEXT,
+            prompt_data     TEXT,
+            messages        TEXT NOT NULL DEFAULT '[]',
+            chunks_used     TEXT NOT NULL DEFAULT '[]',
+            chunks_introduced TEXT NOT NULL DEFAULT '[]',
+            post_extraction TEXT,
+            duration_seconds INTEGER,
+            created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+
+        -- Seed stage 1
+        INSERT OR IGNORE INTO speech_unlock (stage, stage_name) VALUES (1, 'echo');
+    """)
+    conn.close()
+
+
 def record_daily_activity(was_mastered=False, db_path=DB_PATH):
     """Upsert today's row in daily_stats."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
