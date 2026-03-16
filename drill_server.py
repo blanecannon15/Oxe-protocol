@@ -509,6 +509,100 @@ DRILL_HTML = r"""<!DOCTYPE html>
   }
   .biometric-score.visible { display: block; animation: fadeUp 0.4s ease-out; }
 
+  /* ── Latency Trend ── */
+  @keyframes fadeOutDown { from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(8px)} }
+  .latency-trend {
+    font-size: 0.8em; font-weight: 600; text-align: center; min-height: 1.2em;
+    display: none; gap: 6px; align-items: center; justify-content: center;
+  }
+  .latency-trend.visible { display: flex; animation: fadeUp 0.3s ease-out; }
+  .latency-trend.fading { animation: fadeOutDown 0.5s ease-in forwards; }
+  .latency-trend .trend-arrow { font-size: 1.2em; }
+  .latency-trend .trend-ms { opacity: 0.8; }
+
+  /* ── State Celebration Overlay ── */
+  @keyframes celebGlow { 0%{box-shadow:0 0 30px rgba(52,211,153,0.3)} 50%{box-shadow:0 0 60px rgba(52,211,153,0.6)} 100%{box-shadow:0 0 30px rgba(52,211,153,0.3)} }
+  @keyframes celebSlideIn { from{opacity:0;transform:translateY(-30px) scale(0.9)} to{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes celebSlideOut { from{opacity:1;transform:translateY(0) scale(1)} to{opacity:0;transform:translateY(30px) scale(0.9)} }
+  .state-celebration {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 24px 20px; text-align: center;
+    background: rgba(52,211,153,0.12);
+    border-bottom: 2px solid rgba(52,211,153,0.4);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    animation: celebSlideIn 0.4s ease-out, celebGlow 1.5s ease-in-out infinite;
+    display: none;
+  }
+  .state-celebration.visible { display: block; }
+  .state-celebration.dismissing { animation: celebSlideOut 0.5s ease-in forwards; }
+  .state-celebration .celeb-state { font-size: 1.4em; font-weight: 800; color: #34d399; }
+  .state-celebration .celeb-label { font-size: 0.85em; color: #a7f3d0; margin-top: 4px; }
+
+  /* ── Fragile Tags ── */
+  .fragile-tags {
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+    min-height: 0; padding: 0 16px;
+  }
+  .fragile-tag {
+    font-size: 0.68em; font-weight: 600; padding: 3px 10px;
+    border-radius: 999px; letter-spacing: 0.3px;
+  }
+  .fragile-tag.known_but_slow { background: rgba(250,204,21,0.2); color: #fbbf24; }
+  .fragile-tag.familiar_but_fragile { background: rgba(251,146,60,0.2); color: #fb923c; }
+  .fragile-tag.text_only { background: rgba(248,113,113,0.2); color: #f87171; }
+  .fragile-tag.clean_audio_only { background: rgba(96,165,250,0.2); color: #60a5fa; }
+  .fragile-tag.blocked_by_prosody { background: rgba(168,85,247,0.2); color: #a855f7; }
+
+  /* ── Prosody Pills ── */
+  .prosody-pills {
+    display: flex; flex-direction: column; gap: 4px; width: 100%; max-width: 340px;
+    margin-top: 6px; display: none;
+  }
+  .prosody-pills.visible { display: flex; animation: fadeUp 0.3s ease-out; }
+  .prosody-pills.fading { animation: fadeOutDown 0.5s ease-in forwards; }
+  .prosody-pill {
+    font-size: 0.7em; padding: 6px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.04); border-left: 3px solid #5E6AD2;
+    color: #d1d5db;
+  }
+  .prosody-pill .pill-dim { color: #fbbf24; font-weight: 600; }
+  .prosody-pill .pill-score { color: #7a7a8e; margin-left: 4px; }
+
+  /* ── Fatigue Banner / Modal ── */
+  .fatigue-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 90;
+    padding: 14px 20px; text-align: center;
+    background: rgba(251,191,36,0.12);
+    border-bottom: 1px solid rgba(251,191,36,0.3);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    display: none; font-size: 0.85em; color: #fbbf24;
+  }
+  .fatigue-banner.visible { display: flex; align-items: center; justify-content: center; gap: 10px; animation: fadeUp 0.3s ease-out; }
+  .fatigue-banner .fatigue-dismiss {
+    background: none; border: 1px solid rgba(251,191,36,0.4); color: #fbbf24;
+    padding: 4px 12px; border-radius: 8px; font-size: 0.85em; cursor: pointer;
+  }
+  .fatigue-banner .fatigue-action {
+    background: rgba(251,191,36,0.2); border: none; color: #fbbf24;
+    padding: 6px 14px; border-radius: 8px; font-size: 0.85em; font-weight: 600; cursor: pointer;
+  }
+  .fatigue-modal {
+    position: fixed; inset: 0; z-index: 110;
+    background: rgba(10,10,11,0.92);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  }
+  .fatigue-modal.visible { display: flex; animation: fadeUp 0.4s ease-out; }
+  .fatigue-modal .modal-icon { font-size: 3em; }
+  .fatigue-modal .modal-text { font-size: 1.2em; font-weight: 700; color: #fbbf24; text-align: center; }
+  .fatigue-modal .modal-sub { font-size: 0.9em; color: #9ca3af; }
+  .fatigue-modal .modal-timer { font-size: 2em; font-weight: 800; color: #fbbf24; font-variant-numeric: tabular-nums; }
+  .fatigue-modal .modal-btn {
+    padding: 14px 32px; font-size: 1.1em; font-weight: 700; border: none; border-radius: 16px;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #0a0a0b; cursor: pointer;
+    margin-top: 8px;
+  }
+
   /* ── Tab Bar — injected by TAB_BAR_HTML ── */
 </style>
 </head><body>
@@ -521,7 +615,21 @@ DRILL_HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<div class="fatigue-banner" id="fatigue-banner"></div>
+<div class="state-celebration" id="state-celebration">
+  <div class="celeb-state" id="celeb-state"></div>
+  <div class="celeb-label" id="celeb-label"></div>
+</div>
+<div class="fatigue-modal" id="fatigue-modal">
+  <div class="modal-icon" id="modal-icon"></div>
+  <div class="modal-text" id="modal-text"></div>
+  <div class="modal-sub" id="modal-sub"></div>
+  <div class="modal-timer" id="modal-timer"></div>
+  <button class="modal-btn" id="modal-btn" style="display:none"></button>
+</div>
+
 <div class="mode-banner hidden" id="mode-banner"></div>
+<div class="fragile-tags" id="fragile-tags"></div>
 
 <div class="progress-dots">
   <div class="dots-row">
@@ -543,6 +651,11 @@ DRILL_HTML = r"""<!DOCTYPE html>
   <div class="countdown-bar" id="countdown-bar"><div class="countdown-fill" id="countdown-fill"></div></div>
   <div class="countdown-label" id="countdown-label"></div>
   <div class="biometric-score" id="biometric-score"></div>
+  <div class="prosody-pills" id="prosody-pills"></div>
+  <div class="latency-trend" id="latency-trend">
+    <span class="trend-arrow" id="trend-arrow"></span>
+    <span class="trend-ms" id="trend-ms"></span>
+  </div>
 
   <div class="action-area" id="action-area"></div>
 
@@ -578,6 +691,36 @@ let sessionCount = 0;
 let sessionCorrect = 0;
 let retries = 0;
 let drillStartTime = 0;
+
+// ── New feature state ────────────────────────────────────
+let previousState = null;         // track state before drill for transition detection
+let fatigueCheckCounter = 0;      // count drills for fatigue check every 5th
+let fatigueTimerInterval = null;  // fatigue break countdown
+
+const STATE_ORDER = ['UNKNOWN','RECOGNIZED','CONTEXT_KNOWN','EFFORTFUL_AUDIO','AUTOMATIC_CLEAN','AUTOMATIC_NATIVE','AVAILABLE_OUTPUT'];
+const STATE_LABELS_PT = {
+  UNKNOWN: 'Desconhecido', RECOGNIZED: 'Reconhecido', CONTEXT_KNOWN: 'Contexto',
+  EFFORTFUL_AUDIO: 'Esfor\u00E7o Auditivo', AUTOMATIC_CLEAN: 'Autom\u00E1tico Limpo',
+  AUTOMATIC_NATIVE: 'Autom\u00E1tico Nativo', AVAILABLE_OUTPUT: 'Pronto pra Falar',
+};
+const FRAGILE_LABELS = {
+  known_but_slow: '\u26A1 Lento', familiar_but_fragile: '\u26A0\uFE0F Fr\u00E1gil',
+  text_only: '\uD83D\uDC41\uFE0F S\u00F3 Texto', clean_audio_only: '\uD83D\uDD0A S\u00F3 Limpo',
+  blocked_by_prosody: '\uD83D\uDDE3\uFE0F Pros\u00F3dia',
+};
+const FRAGILE_CLASSES = {
+  known_but_slow: 'known_but_slow', familiar_but_fragile: 'familiar_but_fragile',
+  text_only: 'text_only', clean_audio_only: 'clean_audio_only',
+  blocked_by_prosody: 'blocked_by_prosody',
+};
+const PROSODY_TIPS = {
+  isochrony: 'Ritmo: mant\u00E9m as s\u00EDlabas no mesmo tempo',
+  pitch_contour: 'Entona\u00E7\u00E3o: segue a melodia baiana',
+  nasalization: 'Nasaliza\u00E7\u00E3o: exagera o \u00E3o/\u00E3',
+  vowel_length: 'Vogais: alonga as t\u00F4nicas',
+  speech_rate: 'Velocidade: mais perto do nativo',
+  syllable_reduction: 'Redu\u00E7\u00E3o: encurta as \u00E1tonas',
+};
 
 // ── Mode awareness ────────────────────────────────────────
 let modeConfig = null;       // current drill config from /api/modes/config
@@ -628,6 +771,7 @@ async function fetchNext() {
     masteryReps = 0;
     retries = 0;
     drillStartTime = performance.now();
+    previousState = data.current_state || null;
 
     // Apply mode config from the chunk response or existing block config
     if (data.mode_config) {
@@ -636,6 +780,9 @@ async function fetchNext() {
 
     // Update mode banner
     applyModeUI();
+
+    // Show fragile tags
+    showFragileTags(data.fragility_types || []);
 
     $('tier-label').textContent = data.tier_label || ('Tier ' + data.tier);
     $('due-label').textContent = (data.due_count || 0) + ' pendentes';
@@ -880,6 +1027,26 @@ async function completeDrill() {
     if (modeConfig && modeConfig.measures_biometric && data.biometric_score != null) {
       showBiometricScore(data.biometric_score);
     }
+
+    // ── Feature 1: Latency Trend Indicator ──
+    if (data.state_info) {
+      showLatencyTrend(data.state_info.avg_latency_ms, data.state_info.latency_trend);
+    }
+
+    // ── Feature 2: State Transition Celebration ──
+    if (data.state_info && previousState) {
+      const oldIdx = STATE_ORDER.indexOf(previousState);
+      const newIdx = STATE_ORDER.indexOf(data.state_info.state);
+      if (newIdx > oldIdx && oldIdx >= 0) {
+        showStateCelebration(data.state_info.state);
+      }
+    }
+
+    // ── Feature 4: Prosody Dimension Feedback ──
+    if (modeConfig && modeConfig.measures_biometric && data.biometric_score != null) {
+      showProsodyFeedback(data);
+    }
+
   } catch (e) {
     sessionCount++;
     updateSessionStats();
@@ -903,6 +1070,12 @@ async function completeDrill() {
       // Fetch next block info for mode config
       await fetchBlockInfo();
     } catch (e) {}
+  }
+
+  // ── Feature 5: Fatigue-Reactive Flow (every 5th drill) ──
+  fatigueCheckCounter++;
+  if (fatigueCheckCounter % 5 === 0) {
+    checkFatigueStatus();
   }
 
   setTimeout(fetchNext, 1800);
@@ -969,6 +1142,156 @@ function showLoading() {
   for (let i = 1; i <= 5; i++) $('dot-' + i).className = 'dot';
   stopCountdown();
   $('biometric-score').classList.remove('visible');
+  $('latency-trend').classList.remove('visible');
+  $('latency-trend').classList.remove('fading');
+  $('prosody-pills').classList.remove('visible');
+  $('prosody-pills').classList.remove('fading');
+  $('prosody-pills').innerHTML = '';
+  $('fragile-tags').innerHTML = '';
+}
+
+// ── Feature 1: Latency Trend Indicator ───────────────────
+function showLatencyTrend(avgMs, trend) {
+  const el = $('latency-trend');
+  const arrow = $('trend-arrow');
+  const ms = $('trend-ms');
+  if (avgMs == null) { el.classList.remove('visible'); return; }
+
+  const rounded = Math.round(avgMs);
+  ms.textContent = rounded + 'ms';
+
+  if (trend < -0.1) {
+    arrow.textContent = '\u2193';
+    arrow.style.color = '#34d399';
+    ms.style.color = '#34d399';
+  } else if (trend > 0.1) {
+    arrow.textContent = '\u2191';
+    arrow.style.color = '#f87171';
+    ms.style.color = '#f87171';
+  } else {
+    arrow.textContent = '\u2192';
+    arrow.style.color = '#7a7a8e';
+    ms.style.color = '#7a7a8e';
+  }
+
+  el.classList.remove('fading');
+  el.classList.add('visible');
+  setTimeout(() => { el.classList.add('fading'); }, 2000);
+  setTimeout(() => { el.classList.remove('visible'); el.classList.remove('fading'); }, 2500);
+}
+
+// ── Feature 2: State Transition Celebration ──────────────
+function showStateCelebration(newState) {
+  const el = $('state-celebration');
+  const label = STATE_LABELS_PT[newState] || newState;
+  $('celeb-state').textContent = label + '! \uD83C\uDFAF';
+  $('celeb-label').textContent = 'Subiu de n\u00EDvel de aquisi\u00E7\u00E3o';
+  el.classList.remove('dismissing');
+  el.classList.add('visible');
+  setTimeout(() => { el.classList.add('dismissing'); }, 2000);
+  setTimeout(() => { el.classList.remove('visible'); el.classList.remove('dismissing'); }, 2500);
+}
+
+// ── Feature 3: Fragile Item Tags ─────────────────────────
+function showFragileTags(types) {
+  const container = $('fragile-tags');
+  container.innerHTML = '';
+  if (!types || types.length === 0) return;
+  types.forEach(t => {
+    const tag = document.createElement('span');
+    tag.className = 'fragile-tag ' + (FRAGILE_CLASSES[t] || '');
+    tag.textContent = FRAGILE_LABELS[t] || t;
+    container.appendChild(tag);
+  });
+}
+
+// ── Feature 4: Prosody Dimension Feedback ────────────────
+function showProsodyFeedback(data) {
+  const container = $('prosody-pills');
+  container.innerHTML = '';
+  // Try to get prosody dimensions from the drill score endpoint
+  // The biometric data may contain dimension scores
+  try {
+    fetch('/api/drill/score', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chunk_id: currentChunk.chunk_id || currentChunk.word_id,
+        audio_file: currentChunk.audio_file,
+      }),
+    }).then(r => r.json()).then(scoreData => {
+      if (!scoreData || !scoreData.dimensions) return;
+      const dims = scoreData.dimensions;
+      // Find dimensions scoring below 60, take worst 3
+      const weak = Object.entries(dims)
+        .filter(([k, v]) => v < 60 && PROSODY_TIPS[k])
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, 3);
+      if (weak.length === 0) return;
+      weak.forEach(([dim, score]) => {
+        const pill = document.createElement('div');
+        pill.className = 'prosody-pill';
+        pill.innerHTML = '<span class="pill-dim">' + PROSODY_TIPS[dim] + '</span><span class="pill-score"> (' + Math.round(score) + '/100)</span>';
+        container.appendChild(pill);
+      });
+      container.classList.add('visible');
+      setTimeout(() => { container.classList.add('fading'); }, 4000);
+      setTimeout(() => { container.classList.remove('visible'); container.classList.remove('fading'); container.innerHTML = ''; }, 4500);
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+// ── Feature 5: Fatigue-Reactive Flow ─────────────────────
+async function checkFatigueStatus() {
+  try {
+    const res = await fetch('/api/fatigue/status');
+    const data = await res.json();
+    const banner = $('fatigue-banner');
+    const modal = $('fatigue-modal');
+
+    // Clear previous fatigue UI
+    banner.classList.remove('visible');
+    banner.innerHTML = '';
+    modal.classList.remove('visible');
+    if (fatigueTimerInterval) { clearInterval(fatigueTimerInterval); fatigueTimerInterval = null; }
+
+    if (data.recommendation === 'switch_mode') {
+      banner.innerHTML = '\uD83D\uDCA4 Cansou? Troca pra escuta passiva ' +
+        '<button class="fatigue-action" onclick="window.location.href=\'/library\'">Biblioteca</button>' +
+        '<button class="fatigue-dismiss" onclick="this.parentElement.classList.remove(\'visible\')">\u2715</button>';
+      banner.classList.add('visible');
+    } else if (data.recommendation === 'take_break') {
+      $('modal-icon').textContent = '\u2615';
+      $('modal-text').textContent = 'Pausa de 5 minutos';
+      $('modal-sub').textContent = 'Descansa os olhos e volta com tudo';
+      $('modal-btn').style.display = 'none';
+      modal.classList.add('visible');
+      let remaining = 300;
+      $('modal-timer').textContent = '5:00';
+      fatigueTimerInterval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(fatigueTimerInterval);
+          fatigueTimerInterval = null;
+          modal.classList.remove('visible');
+          return;
+        }
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        $('modal-timer').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+      }, 1000);
+    } else if (data.recommendation === 'end_session') {
+      $('modal-icon').textContent = '\uD83C\uDF19';
+      $('modal-text').textContent = 'Melhor parar por hoje';
+      $('modal-sub').textContent = (data.minutes_active || 0) + ' minutos de treino';
+      $('modal-timer').textContent = '';
+      $('modal-btn').textContent = 'Voltar pro in\u00EDcio';
+      $('modal-btn').style.display = 'block';
+      $('modal-btn').onclick = () => { window.location.href = '/'; };
+      modal.classList.add('visible');
+    }
+    // 'continue' => do nothing, UI already cleared
+  } catch (e) {}
 }
 
 function updateTime() {
