@@ -54,7 +54,7 @@ STORY_HTML = r"""<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Oxe Protocol — Histórias</title>
+<title>Oxe Protocol — Biblioteca</title>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
@@ -84,6 +84,25 @@ STORY_HTML = r"""<!DOCTYPE html>
     cursor: pointer; display: none; backdrop-filter: blur(10px); transition: all 0.2s;
   }
   .back-btn:active { background: rgba(255,255,255,0.1); }
+
+  /* ── Sub-tabs ── */
+  .sub-tabs {
+    display: flex; gap: 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: sticky; top: 52px; z-index: 9;
+    background: rgba(10,10,11,0.95); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .sub-tab {
+    flex: 1; padding: 14px 0; text-align: center; font-size: 0.8em; font-weight: 700;
+    color: #525263; cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sub-tab.active { color: #60a5fa; border-bottom-color: #3B82F6; }
+
+  /* ── Sub-tab content panels ── */
+  .tab-panel { display: none; padding: 20px; animation: fadeUp 0.4s ease-out; }
+  .tab-panel.active { display: block; }
+
   .screen { display: none; padding: 20px; animation: fadeUp 0.4s ease-out; }
   .screen.active { display: block; }
 
@@ -230,60 +249,136 @@ STORY_HTML = r"""<!DOCTYPE html>
 
   .loading-spinner { color: #525263; font-size: 1.1em; }
   .pulsing { animation: pulse 1.5s infinite; }
+
+  /* ── Podcast styles ── */
+  .podcast-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .podcast-item {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; padding: 16px 18px; cursor: pointer; transition: all 0.2s;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .podcast-item:active { border-color: rgba(59,130,246,0.4); transform: scale(0.99); }
+  .podcast-info { flex: 1; }
+  .podcast-title { font-size: 1em; font-weight: 600; color: #fafafa; }
+  .podcast-meta { font-size: 0.75em; color: #525263; margin-top: 4px; }
+  .diff-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 0.65em;
+    font-weight: 700; margin-left: 6px;
+  }
+  .diff-badge.easy { background: rgba(52,211,153,0.15); color: #34d399; }
+  .diff-badge.medium { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .diff-badge.hard { background: rgba(248,113,113,0.15); color: #f87171; }
+  .podcast-play-icon {
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(124,92,252,0.15));
+    border: 1px solid rgba(59,130,246,0.2);
+    display: flex; align-items: center; justify-content: center;
+    color: #60a5fa; font-size: 1.2em;
+  }
+
+  /* ── Review feed styles ── */
+  .review-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .review-item {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; padding: 16px 18px; transition: all 0.2s;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .review-word { font-size: 1.05em; font-weight: 700; color: #60a5fa; }
+  .review-chunk { font-size: 0.9em; color: #9ca3af; margin-top: 4px; font-style: italic; }
+  .review-meta { font-size: 0.7em; color: #525263; margin-top: 6px; display: flex; gap: 10px; }
+  .source-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.7em; font-weight: 600;
+  }
+  .source-badge.corpus { background: rgba(59,130,246,0.1); color: #60a5fa; }
+  .source-badge.dictionary { background: rgba(124,92,252,0.1); color: #a78bfa; }
+  .source-badge.story { background: rgba(52,211,153,0.1); color: #34d399; }
+  .source-badge.podcast { background: rgba(248,113,113,0.1); color: #f87171; }
+  .empty-msg { color: #525263; text-align: center; padding: 40px 20px; font-size: 0.95em; }
 </style>
 </head><body>
 
 <div class="header">
-  <h1>HISTÓRIAS BAIANAS</h1>
+  <h1>BIBLIOTECA</h1>
   <button class="back-btn" id="back-btn" onclick="goBack()">Voltar</button>
 </div>
 
-<!-- Screen 1: Level Select -->
-<div class="screen active" id="screen-levels">
-  <div class="level-grid" id="level-grid"></div>
+<!-- Sub-tabs: Historias | Podcasts | Revisao -->
+<div class="sub-tabs" id="sub-tabs">
+  <button class="sub-tab active" onclick="switchTab('historias')">Historias</button>
+  <button class="sub-tab" onclick="switchTab('podcasts')">Podcasts</button>
+  <button class="sub-tab" onclick="switchTab('revisao')">Revisao</button>
 </div>
 
-<!-- Screen 2: Story List -->
-<div class="screen" id="screen-stories">
-  <h2 id="stories-heading" style="font-size:1.1em;color:#60a5fa"></h2>
-  <div class="story-list" id="story-list"></div>
-  <button class="gen-btn" id="gen-btn" onclick="generateStory()">Gerar nova história</button>
-</div>
+<!-- ═══ TAB PANEL: Historias ═══ -->
+<div class="tab-panel active" id="panel-historias">
+  <!-- Screen 1: Level Select -->
+  <div class="screen active" id="screen-levels">
+    <div class="level-grid" id="level-grid"></div>
+  </div>
 
-<!-- Screen 3: Player -->
-<div class="screen" id="screen-player">
-  <div class="player-wrap">
-    <div class="chunk-dots" id="chunk-dots"></div>
-    <div class="player-status" id="player-status">Preparando...</div>
-    <button class="player-btn" id="play-btn" onclick="togglePlay()">&#9654;</button>
-    <button class="show-text-btn" id="show-text-btn" onclick="toggleText()">Mostrar texto</button>
-    <div class="speed-controls">
-      <button class="speed-btn" onclick="setSpeed(0.85)">0.85x</button>
-      <button class="speed-btn active" onclick="setSpeed(1.0)">1.0x</button>
-      <button class="speed-btn" onclick="setSpeed(1.25)">1.25x</button>
-      <button class="speed-btn" onclick="setSpeed(1.5)">1.5x</button>
+  <!-- Screen 2: Story List -->
+  <div class="screen" id="screen-stories">
+    <h2 id="stories-heading" style="font-size:1.1em;color:#60a5fa"></h2>
+    <div class="story-list" id="story-list"></div>
+    <button class="gen-btn" id="gen-btn" onclick="generateStory()">Gerar nova historia</button>
+  </div>
+
+  <!-- Screen 3: Player -->
+  <div class="screen" id="screen-player">
+    <div class="player-wrap">
+      <div class="chunk-dots" id="chunk-dots"></div>
+      <div class="player-status" id="player-status">Preparando...</div>
+      <button class="player-btn" id="play-btn" onclick="togglePlay()">&#9654;</button>
+      <button class="show-text-btn" id="show-text-btn" onclick="toggleText()">Mostrar texto</button>
+      <div class="speed-controls">
+        <button class="speed-btn" onclick="setSpeed(0.85)">0.85x</button>
+        <button class="speed-btn active" onclick="setSpeed(1.0)">1.0x</button>
+        <button class="speed-btn" onclick="setSpeed(1.25)">1.25x</button>
+        <button class="speed-btn" onclick="setSpeed(1.5)">1.5x</button>
+      </div>
+      <div class="story-text" id="story-text"></div>
     </div>
-    <div class="story-text" id="story-text"></div>
+  </div>
+
+  <!-- Screen 4: Questions -->
+  <div class="screen" id="screen-questions">
+    <div class="q-wrap">
+      <div class="q-number" id="q-number"></div>
+      <div class="q-text" id="q-text"></div>
+      <audio id="q-player" preload="auto"></audio>
+      <div class="q-options" id="q-options"></div>
+    </div>
+  </div>
+
+  <!-- Screen 5: Results -->
+  <div class="screen" id="screen-results">
+    <div class="result-wrap">
+      <div class="result-score" id="result-score"></div>
+      <div class="result-label" id="result-label"></div>
+      <button class="result-btn" onclick="goToLevels()">Voltar</button>
+    </div>
   </div>
 </div>
 
-<!-- Screen 4: Questions -->
-<div class="screen" id="screen-questions">
-  <div class="q-wrap">
-    <div class="q-number" id="q-number"></div>
-    <div class="q-text" id="q-text"></div>
-    <audio id="q-player" preload="auto"></audio>
-    <div class="q-options" id="q-options"></div>
+<!-- ═══ TAB PANEL: Podcasts ═══ -->
+<div class="tab-panel" id="panel-podcasts">
+  <div class="podcast-list" id="podcast-list"></div>
+  <button class="gen-btn" id="podcast-gen-btn" onclick="generatePodcast()">Gerar novo podcast</button>
+
+  <!-- Podcast detail/reader screen (hidden by default) -->
+  <div class="screen" id="screen-podcast-detail" style="display:none">
+    <h2 id="podcast-detail-title" style="font-size:1.15em;color:#60a5fa;margin-bottom:12px"></h2>
+    <div id="podcast-detail-meta" style="font-size:0.8em;color:#525263;margin-bottom:16px"></div>
+    <div id="podcast-segments" style="line-height:1.8;color:#c0c0ca;font-size:0.95em"></div>
   </div>
 </div>
 
-<!-- Screen 5: Results -->
-<div class="screen" id="screen-results">
-  <div class="result-wrap">
-    <div class="result-score" id="result-score"></div>
-    <div class="result-label" id="result-label"></div>
-    <button class="result-btn" onclick="goToLevels()">Voltar</button>
-  </div>
+<!-- ═══ TAB PANEL: Revisao ═══ -->
+<div class="tab-panel" id="panel-revisao">
+  <div class="review-list" id="review-list"></div>
 </div>
 
 <audio id="audio-player" preload="auto"></audio>
@@ -292,6 +387,29 @@ STORY_HTML = r"""<!DOCTYPE html>
 const $ = id => document.getElementById(id);
 const player = $('audio-player');
 const qPlayer = $('q-player');
+
+// ── Sub-tab switching (no page reload) ──────────────────
+let activeTab = 'historias';
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.sub-tab').forEach((t, i) => {
+    t.classList.toggle('active', ['historias','podcasts','revisao'][i] === tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  $('panel-' + tab).classList.add('active');
+  // Hide back btn and sub-tabs detail
+  $('back-btn').style.display = 'none';
+  $('sub-tabs').style.display = 'flex';
+
+  if (tab === 'historias') { loadLevels(); resetStoryScreens(); }
+  if (tab === 'podcasts') { loadPodcasts(); }
+  if (tab === 'revisao') { loadReviewFeed(); }
+}
+
+function resetStoryScreens() {
+  document.querySelectorAll('#panel-historias .screen').forEach(s => s.classList.remove('active'));
+  $('screen-levels').classList.add('active');
+}
 
 let currentSpeed = 1.0;
 function setSpeed(speed) {
@@ -316,12 +434,24 @@ let listenedOnce = false;
 
 // ── Navigation ──────────────────────────────────────────
 function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('#panel-historias .screen').forEach(s => s.classList.remove('active'));
   $(id).classList.add('active');
-  $('back-btn').style.display = id === 'screen-levels' ? 'none' : 'block';
+  const isDeep = (id !== 'screen-levels');
+  $('back-btn').style.display = isDeep ? 'block' : 'none';
+  if (isDeep) $('sub-tabs').style.display = 'none';
+  else $('sub-tabs').style.display = 'flex';
 }
 
 function goBack() {
+  if (activeTab === 'podcasts') {
+    // Back from podcast detail
+    $('screen-podcast-detail').style.display = 'none';
+    $('podcast-list').style.display = '';
+    $('podcast-gen-btn').style.display = '';
+    $('back-btn').style.display = 'none';
+    $('sub-tabs').style.display = 'flex';
+    return;
+  }
   if ($('screen-questions').classList.contains('active') ||
       $('screen-player').classList.contains('active')) {
     player.pause();
@@ -354,8 +484,8 @@ async function loadLevels() {
       <div class="level-tag">${lv.key} — ${lv.label}</div>
       <div class="level-name">${lv.description}</div>
       <div class="level-stats">
-        ${locked ? '<span class="lock-icon">🔒 Locked</span>' :
-          lv.story_count + ' histórias | ~10 min cada | ' + (lv.avg_score !== null ? lv.avg_score + '% avg' : 'sem pontuação')}
+        ${locked ? '<span class="lock-icon">Bloqueado</span>' :
+          lv.story_count + ' historias | ~10 min cada | ' + (lv.avg_score !== null ? lv.avg_score + '% media' : 'sem pontuacao')}
       </div>
     `;
     if (!locked) {
@@ -377,7 +507,7 @@ async function selectLevel(key, label) {
   list.innerHTML = '';
 
   if (data.stories.length === 0) {
-    list.innerHTML = '<p style="color:#8b949e;text-align:center;padding:20px">Nenhuma história ainda. Gere uma!</p>';
+    list.innerHTML = '<p class="empty-msg">Nenhuma historia ainda. Gere uma!</p>';
   }
 
   for (const st of data.stories) {
@@ -385,7 +515,7 @@ async function selectLevel(key, label) {
     item.className = 'story-item';
     item.innerHTML = `
       <div class="story-title">${st.title}</div>
-      <div class="story-meta">${st.word_count} palavras | ${st.has_audio ? '🔊' : '📝'} | Ouviu ${st.times_played}x</div>
+      <div class="story-meta">${st.word_count} palavras | Ouviu ${st.times_played}x</div>
     `;
     item.onclick = () => loadStory(st.id);
     list.appendChild(item);
@@ -395,7 +525,7 @@ async function selectLevel(key, label) {
 async function generateStory() {
   const btn = $('gen-btn');
   btn.disabled = true;
-  btn.textContent = 'Gerando história (~1-2 min)...';
+  btn.textContent = 'Gerando historia (~1-2 min)...';
 
   try {
     const res = await fetch('/api/generate', {
@@ -407,20 +537,20 @@ async function generateStory() {
     if (data.id) {
       await selectLevel(currentLevel, currentLevel);
     } else {
-      alert(data.error || 'Erro ao gerar história');
+      alert(data.error || 'Erro ao gerar historia');
     }
   } catch(e) {
     alert('Erro: ' + e.message);
   }
 
   btn.disabled = false;
-  btn.textContent = 'Gerar nova história';
+  btn.textContent = 'Gerar nova historia';
 }
 
 // ── Player ──────────────────────────────────────────────
 async function loadStory(id) {
   showScreen('screen-player');
-  $('player-status').innerHTML = '<span class="loading-spinner pulsing">Carregando áudio...</span>';
+  $('player-status').innerHTML = '<span class="loading-spinner pulsing">Carregando audio...</span>';
   $('chunk-dots').innerHTML = '';
   $('show-text-btn').style.display = 'inline-block';
   $('story-text').classList.remove('visible');
@@ -438,7 +568,7 @@ async function loadStory(id) {
 
   // If no audio yet, generate it
   if (storyChunks.length === 0) {
-    $('player-status').innerHTML = '<span class="loading-spinner pulsing">Gerando áudio...</span>';
+    $('player-status').innerHTML = '<span class="loading-spinner pulsing">Gerando audio...</span>';
     const ares = await fetch('/api/story/' + id + '/audio', {method:'POST'});
     const adata = await ares.json();
     storyChunks = adata.audio?.story_chunks || [];
@@ -447,7 +577,7 @@ async function loadStory(id) {
   }
 
   if (storyChunks.length === 0) {
-    $('player-status').textContent = 'Erro: sem áudio.';
+    $('player-status').textContent = 'Erro: sem audio.';
     return;
   }
 
@@ -469,7 +599,6 @@ async function loadStory(id) {
       const span = document.createElement('span');
       span.className = 'chunk-span';
       span.id = 'chunk-text-' + i;
-      // Split into words, preserve whitespace
       const words = text.split(/(\s+)/);
       words.forEach(w => {
         if (/^\s+$/.test(w)) {
@@ -481,7 +610,6 @@ async function loadStory(id) {
           span.appendChild(ws);
         }
       });
-      // Add space between chunks
       if (i < chunkTexts.length - 1) {
         span.appendChild(document.createTextNode(' '));
       }
@@ -508,17 +636,15 @@ function togglePlay() {
 }
 
 function playChunk(idx) {
-  // Clear any previous highlight timer
   if (highlightTimer) { clearInterval(highlightTimer); highlightTimer = null; }
 
   if (idx >= storyChunks.length) {
-    // Mark last chunk as played
     document.querySelectorAll('.chunk-span').forEach(s => {
       s.classList.remove('active');
       s.classList.add('played');
     });
     listenedOnce = true;
-    $('player-status').textContent = 'Fim da história';
+    $('player-status').textContent = 'Fim da historia';
     $('play-btn').innerHTML = '&#9654;';
 
     if (questions.length > 0) {
@@ -534,15 +660,13 @@ function playChunk(idx) {
   });
   player.playbackRate = currentSpeed;
 
-  $('play-btn').innerHTML = '⏸';
+  $('play-btn').innerHTML = '&#x23F8;';
   $('player-status').textContent = (idx + 1) + ' / ' + storyChunks.length;
 
-  // Update dots
   document.querySelectorAll('.chunk-dot').forEach((d, i) => {
     d.className = 'chunk-dot' + (i < idx ? ' played' : '') + (i === idx ? ' current' : '');
   });
 
-  // Update chunk text highlighting
   document.querySelectorAll('.chunk-span').forEach((s, i) => {
     s.classList.remove('active');
     if (i < idx) s.classList.add('played');
@@ -552,11 +676,9 @@ function playChunk(idx) {
     activeChunk.classList.add('active');
     activeChunk.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    // Progressive word highlighting
     const words = activeChunk.querySelectorAll('.word');
     if (words.length > 0) {
       let wordIdx = 0;
-      // Reset word highlights
       words.forEach(w => w.classList.remove('highlight'));
 
       player.ontimeupdate = () => {
@@ -573,7 +695,6 @@ function playChunk(idx) {
   }
 
   player.onended = () => {
-    // Mark all words in chunk as highlighted
     if (activeChunk) {
       activeChunk.querySelectorAll('.word').forEach(w => w.classList.add('highlight'));
       activeChunk.classList.remove('active');
@@ -609,7 +730,6 @@ function showQuestion(idx) {
   $('q-number').textContent = 'Pergunta ' + (idx+1) + ' de ' + questions.length;
   $('q-text').textContent = q.question;
 
-  // Play question audio if available
   if (questionAudio[idx]) {
     qPlayer.src = '/audio/' + questionAudio[idx];
     qPlayer.play().catch(() => {});
@@ -636,7 +756,6 @@ function answerQuestion(qIdx, selected, correct) {
 
   if (selected === correct) qCorrect++;
 
-  // Log answer
   fetch('/api/answer', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
@@ -664,22 +783,151 @@ function showResults() {
   $('result-score').textContent = pct + '%';
   $('result-score').className = 'result-score ' + (pass ? 'pass' : 'fail');
   $('result-label').textContent = pass
-    ? 'Massa! Entendeu a história.'
+    ? 'Massa! Entendeu a historia.'
     : 'Oxe, bora ouvir de novo.';
 
   if (pass && currentSpeed < 1.5) {
     const suggestion = document.createElement('div');
     suggestion.style.cssText = 'font-size:0.9em;color:#60a5fa;margin-top:8px;';
-    suggestion.textContent = 'Tenta mais rápido?';
+    suggestion.textContent = 'Tenta mais rapido?';
     $('result-label').parentNode.insertBefore(suggestion, $('result-label').nextSibling);
   }
 
-  // Log result
   fetch('/api/story/' + currentStory.id + '/result', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({score: pct, correct: qCorrect, total: questions.length}),
   });
+}
+
+// ── Podcasts ────────────────────────────────────────────
+async function loadPodcasts() {
+  const list = $('podcast-list');
+  list.innerHTML = '<p class="empty-msg pulsing">Carregando...</p>';
+
+  try {
+    const res = await fetch('/api/library/podcasts');
+    const data = await res.json();
+
+    list.innerHTML = '';
+    if (!data.length) {
+      list.innerHTML = '<p class="empty-msg">Nenhum podcast ainda. Gere o primeiro!</p>';
+      return;
+    }
+
+    for (const p of data) {
+      const diffClass = p.difficulty <= 60 ? 'easy' : p.difficulty <= 80 ? 'medium' : 'hard';
+      const diffLabel = p.difficulty <= 60 ? 'Iniciante' : p.difficulty <= 80 ? 'Intermediario' : 'Avancado';
+      const item = document.createElement('div');
+      item.className = 'podcast-item';
+      item.innerHTML = `
+        <div class="podcast-info">
+          <div class="podcast-title">${p.title} <span class="diff-badge ${diffClass}">${diffLabel}</span></div>
+          <div class="podcast-meta">${p.word_count} palavras | ${p.total_segments} segmentos | Ouviu ${p.times_played}x</div>
+        </div>
+        <div class="podcast-play-icon">&#9654;</div>
+      `;
+      item.onclick = () => openPodcast(p.id);
+      list.appendChild(item);
+    }
+  } catch(e) {
+    list.innerHTML = '<p class="empty-msg">Erro ao carregar podcasts.</p>';
+  }
+}
+
+async function openPodcast(id) {
+  $('podcast-list').style.display = 'none';
+  $('podcast-gen-btn').style.display = 'none';
+  $('screen-podcast-detail').style.display = 'block';
+  $('back-btn').style.display = 'block';
+  $('sub-tabs').style.display = 'none';
+
+  $('podcast-detail-title').textContent = 'Carregando...';
+  $('podcast-detail-meta').textContent = '';
+  $('podcast-segments').innerHTML = '';
+
+  try {
+    const res = await fetch('/api/library/podcast/' + id);
+    const data = await res.json();
+
+    const diffLabel = data.difficulty <= 60 ? 'Iniciante' : data.difficulty <= 80 ? 'Intermediario' : 'Avancado';
+    $('podcast-detail-title').textContent = data.title;
+    $('podcast-detail-meta').textContent = diffLabel + ' | ' + data.word_count + ' palavras | ' + (data.segments?.length || 0) + ' segmentos';
+
+    const segs = $('podcast-segments');
+    segs.innerHTML = '';
+    (data.segments || []).forEach((seg, i) => {
+      const div = document.createElement('div');
+      div.style.cssText = 'margin-bottom:24px;';
+      div.innerHTML = '<div style="font-size:0.7em;color:#60a5fa;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Segmento ' + (i+1) + '</div>' +
+        '<div style="white-space:pre-wrap">' + (seg.text || '') + '</div>';
+      segs.appendChild(div);
+    });
+  } catch(e) {
+    $('podcast-detail-title').textContent = 'Erro ao carregar podcast';
+  }
+}
+
+async function generatePodcast() {
+  const btn = $('podcast-gen-btn');
+  btn.disabled = true;
+  btn.textContent = 'Gerando podcast (~2-3 min)...';
+
+  try {
+    const res = await fetch('/api/library/podcast/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({difficulty: 80, focus_words: []}),
+    });
+    const data = await res.json();
+    if (data.id) {
+      await loadPodcasts();
+    } else {
+      alert(data.error || 'Erro ao gerar podcast');
+    }
+  } catch(e) {
+    alert('Erro: ' + e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Gerar novo podcast';
+}
+
+// ── Review Feed ─────────────────────────────────────────
+async function loadReviewFeed() {
+  const list = $('review-list');
+  list.innerHTML = '<p class="empty-msg pulsing">Carregando...</p>';
+
+  try {
+    const res = await fetch('/api/library/review-feed');
+    const data = await res.json();
+    const chunks = data.chunks || [];
+
+    list.innerHTML = '';
+    if (!chunks.length) {
+      list.innerHTML = '<p class="empty-msg">Nenhum chunk pra revisar agora. Bora treinar!</p>';
+      return;
+    }
+
+    for (const c of chunks) {
+      const item = document.createElement('div');
+      item.className = 'review-item';
+      const srcClass = c.source || 'corpus';
+      const srcLabel = {corpus:'Corpus',dictionary:'Dicionario',story:'Historia',podcast:'Podcast'}[srcClass] || srcClass;
+      item.innerHTML = `
+        <div class="review-word">${c.word}</div>
+        <div class="review-chunk">"${c.target_chunk}"</div>
+        <div class="review-meta">
+          <span class="source-badge ${srcClass}">${srcLabel}</span>
+          <span>Passo ${c.current_pass}/5</span>
+          <span>Dominio ${c.mastery_level}</span>
+        </div>
+      `;
+      list.appendChild(item);
+    }
+  } catch(e) {
+    list.innerHTML = '<p class="empty-msg">Erro ao carregar revisao.</p>';
+  }
 }
 
 // ── Init ────────────────────────────────────────────────
@@ -691,14 +939,14 @@ loadLevels();
   .tab-bar {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
     display: flex; justify-content: space-around; align-items: center;
-    height: 68px; padding-bottom: env(safe-area-inset-bottom, 0);
-    background: rgba(10,10,11,0.92); border-top: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    height: 72px; padding-bottom: env(safe-area-inset-bottom, 0);
+    background: rgba(10,10,11,0.94); border-top: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
   }
   .tab {
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
-    -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
+    -webkit-tap-highlight-color: transparent; padding: 6px 10px; transition: color 0.15s;
   }
   .tab.active { color: #60a5fa; }
   .tab svg { width: 22px; height: 22px; fill: currentColor; }
@@ -708,13 +956,17 @@ loadLevels();
     <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
     <span>Inicio</span>
   </a>
+  <a href="/search" class="tab">
+    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+    <span>Buscar</span>
+  </a>
   <a href="/drill" class="tab">
     <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
     <span>Treinar</span>
   </a>
-  <a href="/stories" class="tab active">
+  <a href="/library" class="tab active">
     <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
-    <span>Historias</span>
+    <span>Biblioteca</span>
   </a>
   <a href="/conversa" class="tab">
     <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>

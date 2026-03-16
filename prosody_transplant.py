@@ -26,8 +26,90 @@ import sys
 import time
 from pathlib import Path
 
+from srs_engine import DB_PATH, get_connection
+
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 CLONE_VOICE_NAME = "oxe-protocol-minha-voz"
+
+
+# ── DB-based voice clone management ──────────────────────────
+
+
+def ensure_clone_exists(db_path=DB_PATH):
+    """Check voice_clone table for an active clone. Returns voice_id or None."""
+    conn = get_connection(db_path)
+    row = conn.execute(
+        "SELECT voice_id FROM voice_clone ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    if row:
+        return row["voice_id"]
+    return None
+
+
+def register_clone(voice_name, voice_id, db_path=DB_PATH):
+    """Insert a voice clone into the DB. Returns the row id."""
+    conn = get_connection(db_path)
+    cur = conn.execute(
+        "INSERT INTO voice_clone (voice_id, name) VALUES (?, ?)",
+        (voice_id, voice_name),
+    )
+    row_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_or_generate_golden(word_id, native_audio_path, db_path=DB_PATH):
+    """
+    Check cache for golden_{word_id}.mp3. If miss, call ElevenLabs STS
+    with the user's clone voice to transplant prosody from native audio.
+    Updates chunk_queue.golden_audio_path. Returns filename or None.
+    """
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    cached = AUDIO_DIR / f"golden_{word_id}.mp3"
+    if cached.exists():
+        return cached.name
+
+    # Need a clone voice
+    voice_id = ensure_clone_exists(db_path)
+    if voice_id is None:
+        return None
+
+    native_path = Path(native_audio_path)
+    if not native_path.exists():
+        return None
+
+    # Call ElevenLabs STS
+    try:
+        client = get_client()
+        with open(native_path, "rb") as audio_file:
+            result = client.speech_to_speech.convert(
+                voice_id=voice_id,
+                audio=audio_file,
+                model_id="eleven_multilingual_sts_v2",
+                output_format="mp3_44100_128",
+            )
+        with open(cached, "wb") as f:
+            for chunk in result:
+                f.write(chunk)
+    except Exception as e:
+        print(f"ERROR: Golden generation failed for word_id={word_id}: {e}")
+        return None
+
+    # Update chunk_queue if a row exists for this word
+    conn = get_connection(db_path)
+    conn.execute(
+        "UPDATE chunk_queue SET golden_audio_path = ? WHERE word_id = ?",
+        (cached.name, word_id),
+    )
+    conn.commit()
+    conn.close()
+
+    return cached.name
+
+
+# ── ElevenLabs client ────────────────────────────────────────
 
 
 def get_client():
