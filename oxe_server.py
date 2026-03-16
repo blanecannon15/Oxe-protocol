@@ -58,8 +58,9 @@ from training_modes import (
     TRAINING_MODES,
 )
 from chunk_engine import (
-    extract_chunks_from_story, extract_chunks_from_podcast,
-    rank_chunk_families, get_next_chunks_for_srs, add_chunks_to_queue,
+    extract_chunks_from_text, extract_chunks_from_story,
+    extract_chunks_from_podcast, rank_chunk_families,
+    get_next_chunks_for_srs, add_chunks_to_queue,
     get_family_variants,
 )
 from content_ladder import (
@@ -148,6 +149,7 @@ _laranjada_remaining = 0
 _conversa_history = []
 _conversa_system_prompt = ""
 _conversa_session_id = None
+_conversa_chunks_vocab = []  # known chunks injected at session start
 
 
 # ── Levenshtein edit distance ──────────────────────────────────
@@ -2049,7 +2051,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     # ── Conversa (Stage-Scaffolded) ─────────────────────────
 
     def _conversa_start(self, body):
-        """Start a new stage-scaffolded conversa session."""
+        """Start a new stage-scaffolded conversa session.
+
+        For stages 3-6, fetches known chunks at AUTOMATIC_CLEAN or above
+        and injects 3-5 as vocabulary into the system prompt.  For stage 4+
+        a specific prompt/question is generated based on the stage type.
+        """
         try:
             stage = get_current_stage()
             stage_info = get_activities_for_stage(stage)
@@ -2076,13 +2083,80 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             if recent_words:
                 system_prompt += f" Tenta usar estas palavras: {', '.join(recent_words)}"
 
+            # ── Stages 3-6: inject known chunks as vocabulary ──
+            global _conversa_chunks_vocab
+            _conversa_chunks_vocab = []
+            chunks_used_list = []
+
+            if stage >= 3:
+                try:
+                    known_items = get_items_in_state('AUTOMATIC_CLEAN', 'chunk', limit=20)
+                    # Also pull from higher states
+                    for higher_state in ('AUTOMATIC_NATIVE', 'AVAILABLE_OUTPUT'):
+                        known_items.extend(get_items_in_state(higher_state, 'chunk', limit=10))
+
+                    if known_items:
+                        # Look up the actual chunk text from chunk_queue
+                        conn = get_conn()
+                        vocab_chunks = []
+                        for item in known_items:
+                            row = conn.execute(
+                                "SELECT target_chunk FROM chunk_queue WHERE id = ?",
+                                (item['item_id'],),
+                            ).fetchone()
+                            if row:
+                                vocab_chunks.append(row['target_chunk'])
+                        conn.close()
+
+                        # Pick 3-5 random chunks
+                        sample_size = min(max(3, len(vocab_chunks)), 5)
+                        if vocab_chunks:
+                            selected = random.sample(vocab_chunks, min(sample_size, len(vocab_chunks)))
+                            _conversa_chunks_vocab = selected
+                            chunks_used_list = selected
+                            system_prompt += (
+                                f" Vocabulário que o aprendiz já domina (tenta usar na conversa): "
+                                f"{', '.join(selected)}"
+                            )
+                except Exception as e:
+                    print(f"[Conversa Start] Chunk fetch warning: {e}")
+
+            # ── Stage 4+: generate a specific prompt based on stage type ──
+            prompt_data = None
+            if stage >= 4:
+                prompt_templates = {
+                    4: [
+                        "Pergunta pro aprendiz: 'O que tu fez hoje de manhã?'",
+                        "Pergunta pro aprendiz: 'Como é teu final de semana em Salvador?'",
+                        "Pergunta pro aprendiz: 'O que tu gosta de comer no almoço?'",
+                        "Pergunta pro aprendiz: 'Qual teu lugar favorito em Salvador?'",
+                    ],
+                    5: [
+                        "Tema pra conversa: vida noturna em Salvador",
+                        "Tema pra conversa: comida baiana — acarajé, vatapá, moqueca",
+                        "Tema pra conversa: praias da Bahia",
+                        "Tema pra conversa: festas e Carnaval de Salvador",
+                    ],
+                    6: [
+                        "Conversa livre — qualquer assunto que surgir",
+                        "Conversa livre — deixa o aprendiz escolher o tema",
+                    ],
+                }
+                templates = prompt_templates.get(stage, prompt_templates[6])
+                prompt_data = random.choice(templates)
+                if not topic:
+                    topic = prompt_data
+
             # Store session in DB
             conn = get_conn()
             now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             today = datetime.utcnow().strftime("%Y-%m-%d")
             conn.execute(
-                "INSERT INTO conversa_sessions (date, speech_stage, mode, prompt_type, messages) VALUES (?, ?, ?, ?, ?)",
-                (today, stage, "stage_scaffolded", f"stage_{stage}", json.dumps([])),
+                """INSERT INTO conversa_sessions
+                   (date, speech_stage, mode, prompt_type, prompt_data, messages, chunks_used)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (today, stage, "stage_scaffolded", f"stage_{stage}",
+                 prompt_data, json.dumps([]), json.dumps(chunks_used_list)),
             )
             session_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.commit()
@@ -2120,26 +2194,52 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 "stage": stage,
                 "reply": reply,
                 "audio_file": audio_fname,
+                "chunks_vocab": _conversa_chunks_vocab,
             })
         except Exception as e:
             print(f"[Conversa Start] Error: {e}")
             self._json({"error": str(e), "stage": 1})
 
     def _conversa_turn(self, body):
-        """Handle a turn in the stage-scaffolded conversa."""
-        global _conversa_history, _conversa_system_prompt
+        """Handle a turn in the stage-scaffolded conversa.
+
+        Tracks which vocabulary chunks the learner uses and encourages
+        full-chunk responses for stages 2+ when messages are too short.
+        """
+        global _conversa_history, _conversa_system_prompt, _conversa_chunks_vocab
         message = body.get("message", "").strip()
         if not message:
             self._json({"reply": "Fala alguma coisa, parceiro!", "audio_file": None})
             return
 
         try:
+            # ── Track which vocab chunks the learner used ──
+            chunks_hit = []
+            if _conversa_chunks_vocab:
+                msg_lower = message.lower()
+                for chunk in _conversa_chunks_vocab:
+                    if chunk.lower() in msg_lower:
+                        chunks_hit.append(chunk)
+
+            # ── Stage 2+: encourage full chunks if message is very short ──
+            stage = get_current_stage()
+            encouragement = ""
+            word_count = len(message.split())
+            if stage >= 2 and word_count < 3:
+                encouragement = (
+                    " (O aprendiz respondeu com poucas palavras. "
+                    "Incentiva ele a usar frases completas com chunks. "
+                    "Dá um exemplo curto pra ele repetir ou completar.)"
+                )
+
             _conversa_history.append({"role": "user", "content": message})
             if len(_conversa_history) > 20:
                 _conversa_history = _conversa_history[-20:]
 
             system_prompt = getattr(self, '_conversa_system_prompt', None) or _conversa_system_prompt
-            messages = [{"role": "system", "content": system_prompt}] + _conversa_history
+            # Inject encouragement into a transient system message if needed
+            effective_system = system_prompt + encouragement
+            messages = [{"role": "system", "content": effective_system}] + _conversa_history
 
             import openai
             client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
@@ -2157,18 +2257,33 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             # Record fatigue event (conversa is low-stress but still active)
             record_review_event(latency_ms=0, rating=3, replays=0)
 
-            self._json({"reply": reply, "audio_file": audio_fname})
+            self._json({
+                "reply": reply,
+                "audio_file": audio_fname,
+                "chunks_hit": chunks_hit,
+            })
         except Exception as e:
             print(f"[Conversa Turn] Error: {e}")
             self._json({"reply": "Oxe, deu erro aqui. Tenta de novo.", "audio_file": None})
 
     def _conversa_end(self, body):
-        """End a conversa session and extract chunks."""
-        global _conversa_history, _conversa_session_id
+        """End a conversa session with full post-session chunk extraction.
+
+        1. Collects all learner messages from the session.
+        2. Calls chunk_engine.extract_chunks_from_text() to find new chunks.
+        3. Seeds each extracted chunk into the SRS queue via srs_engine.add_chunk().
+        4. Updates the conversa_sessions row with post_extraction and chunks_introduced.
+        5. Returns a summary: turns, chunks extracted, vocab chunks used.
+        """
+        global _conversa_history, _conversa_session_id, _conversa_chunks_vocab
         session_id = body.get("session_id") or getattr(self.__class__, '_conversa_session_id', None) or globals().get('_conversa_session_id')
 
         try:
-            # Save messages to DB
+            # ── 1. Collect learner messages ──
+            learner_msgs = [m["content"] for m in _conversa_history if m["role"] == "user"]
+            turn_count = len(learner_msgs)
+
+            # ── Save full message history to DB ──
             if session_id and _conversa_history:
                 conn = get_conn()
                 conn.execute(
@@ -2178,21 +2293,81 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 conn.commit()
                 conn.close()
 
-            # Extract learner messages for chunk analysis
-            learner_msgs = [m["content"] for m in _conversa_history if m["role"] == "user"]
-            chunks_used = []
+            # ── 2. Track which vocabulary chunks were actually used ──
+            vocab_chunks_used = []
+            if _conversa_chunks_vocab and learner_msgs:
+                combined_lower = " ".join(learner_msgs).lower()
+                for chunk in _conversa_chunks_vocab:
+                    if chunk.lower() in combined_lower:
+                        vocab_chunks_used.append(chunk)
+
+            # ── 3. Extract new chunks from learner text via GPT-4o ──
+            extracted_chunks = []
+            chunks_introduced = []
             if learner_msgs:
                 full_text = " ".join(learner_msgs)
-                # Simple extraction: save full text for later chunk_engine processing
-                chunks_used = full_text.split(".")[:5]
+                try:
+                    raw_chunks = extract_chunks_from_text(full_text, min_words=2, max_words=5)
+                    extracted_chunks = raw_chunks if raw_chunks else []
+                except Exception as e:
+                    print(f"[Conversa End] Chunk extraction error: {e}")
+                    extracted_chunks = []
 
+                # ── 4. Seed extracted chunks into SRS queue ──
+                conn = get_conn()
+                for chunk_data in extracted_chunks:
+                    chunk_text = chunk_data.get("chunk", "")
+                    root_form = chunk_data.get("root_form", chunk_text)
+                    if not chunk_text:
+                        continue
+
+                    # Try to find a matching word_id from root_form words
+                    word_id = None
+                    for token in root_form.split():
+                        row = conn.execute(
+                            "SELECT id FROM word_bank WHERE word = ? LIMIT 1", (token,)
+                        ).fetchone()
+                        if row:
+                            word_id = row["id"]
+                            break
+
+                    carrier = f"Oxe, {chunk_text} — é mermo!"
+                    chunk_id = add_chunk(word_id, chunk_text, carrier, "conversation")
+                    if chunk_id is not None:
+                        chunks_introduced.append(chunk_text)
+                conn.close()
+
+            # ── 5. Update the conversa_sessions row ──
+            post_extraction = {
+                "raw_chunks": [c.get("chunk", "") for c in extracted_chunks],
+                "chunks_introduced": chunks_introduced,
+                "vocab_chunks_used": vocab_chunks_used,
+            }
+            if session_id:
+                conn = get_conn()
+                conn.execute(
+                    """UPDATE conversa_sessions
+                       SET post_extraction = ?, chunks_introduced = ?
+                       WHERE id = ?""",
+                    (json.dumps(post_extraction), json.dumps(chunks_introduced), session_id),
+                )
+                conn.commit()
+                conn.close()
+
+            # ── Clean up session globals ──
+            history_copy = list(_conversa_history)
             _conversa_history = []
+            _conversa_chunks_vocab = []
 
             self._json({
                 "ok": True,
                 "session_id": session_id,
-                "turns": len(learner_msgs) if learner_msgs else 0,
-                "chunks_used": len(chunks_used),
+                "turns": turn_count,
+                "chunks_extracted": len(extracted_chunks),
+                "chunks_introduced": len(chunks_introduced),
+                "chunks_introduced_list": chunks_introduced,
+                "vocab_chunks_used": vocab_chunks_used,
+                "vocab_chunks_used_count": len(vocab_chunks_used),
             })
         except Exception as e:
             print(f"[Conversa End] Error: {e}")
