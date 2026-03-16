@@ -43,6 +43,25 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
+from srs_engine import migrate_v2
+from acquisition_engine import (
+    get_or_create_state, update_state_after_review,
+    get_state_distribution, run_fragility_scan, get_fragile_queue,
+    get_fragile_summary, get_items_in_state, resolve_fragility,
+)
+from daily_router import (
+    get_today_plan, get_next_block, record_block_completion,
+    adjust_plan_mid_session, get_plan_progress,
+)
+from training_modes import (
+    select_mode_for_item, get_drill_config, get_available_modes,
+    TRAINING_MODES,
+)
+from chunk_engine import (
+    extract_chunks_from_story, extract_chunks_from_podcast,
+    rank_chunk_families, get_next_chunks_for_srs, add_chunks_to_queue,
+    get_family_variants,
+)
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
@@ -1106,6 +1125,56 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             word_id = int(path.split("/")[4])
             self._neural_golden(word_id)
 
+        # ── Acquisition Engine ──
+        elif path == "/api/dashboard":
+            self._dashboard()
+        elif path == "/api/acquisition/distribution":
+            self._json(get_state_distribution())
+        elif path == "/api/acquisition/items":
+            state = query.get("state", ["UNKNOWN"])[0]
+            limit = int(query.get("limit", ["100"])[0])
+            item_type = query.get("item_type", [None])[0]
+            self._json(get_items_in_state(state, item_type, limit))
+        elif path == "/api/fragile":
+            ft = query.get("type", ["known_but_slow"])[0]
+            limit = int(query.get("limit", ["20"])[0])
+            self._json(get_fragile_queue(ft, limit))
+        elif path == "/api/fragile/summary":
+            self._json(get_fragile_summary())
+
+        # ── Daily Plan ──
+        elif path == "/api/plan/today":
+            self._json(get_today_plan())
+        elif path == "/api/plan/next-block":
+            block = get_next_block()
+            self._json(block if block else {"done": True})
+        elif path == "/api/plan/progress":
+            self._json(get_plan_progress())
+
+        # ── Chunks ──
+        elif path == "/api/chunks/families":
+            limit = int(query.get("limit", ["50"])[0])
+            self._chunk_families(limit)
+        elif path.startswith("/api/chunks/family/") and path.endswith("/variants"):
+            family_id = int(path.split("/")[4])
+            self._json(get_family_variants(family_id))
+
+        # ── Training Modes ──
+        elif path == "/api/modes/available":
+            stage = int(query.get("stage", ["1"])[0])
+            self._json({"modes": get_available_modes(stage)})
+        elif path == "/api/modes/config":
+            mode = query.get("mode", ["audio_meaning_recognition"])[0]
+            self._json(get_drill_config(mode))
+
+        # ── Speech Stage ──
+        elif path == "/api/speech/stage":
+            self._speech_stage()
+
+        # ── Fatigue ──
+        elif path == "/api/fatigue/status":
+            self._json({"fatigue_score": 0, "recommendation": "continue", "minutes_active": 0})
+
         # ── Shared ──
         elif path == "/api/daily-stats":
             self._daily_stats()
@@ -1174,6 +1243,34 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/neural/clone":
             self._neural_register_clone(body)
 
+        # ── Acquisition Engine POST ──
+        elif path == "/api/fragile/scan":
+            result = run_fragility_scan()
+            self._json(result)
+        elif path == "/api/plan/block/complete":
+            block_id = body.get("block_id", 0)
+            actual = body.get("actual_data", {})
+            record_block_completion(block_id, actual)
+            self._json({"ok": True})
+        elif path == "/api/plan/adjust":
+            fatigue = body.get("fatigue_score", 50)
+            plan = adjust_plan_mid_session(fatigue)
+            self._json(plan)
+        elif path == "/api/chunks/extract":
+            src = body.get("source", "story")
+            src_id = body.get("source_id", 0)
+            if src == "story":
+                count = extract_chunks_from_story(src_id)
+            else:
+                count = extract_chunks_from_podcast(src_id)
+            rank_chunk_families()
+            self._json({"extracted": count})
+        elif path == "/api/chunks/seed":
+            limit = body.get("limit", 10)
+            chunks = get_next_chunks_for_srs(limit)
+            added = add_chunks_to_queue(chunks)
+            self._json({"seeded": added})
+
         else:
             self.send_error(404)
 
@@ -1202,6 +1299,56 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         self._json(podcast_data)
 
     # ── Home Stats ─────────────────────────────────────────
+
+    # ── Acquisition Engine Endpoints ─────────────────────
+
+    def _dashboard(self):
+        """Full dashboard data combining acquisition state, plan progress, and stats."""
+        dist = get_state_distribution()
+        tier = get_unlocked_tier()
+        progress = tier_progress()
+        current_pct = 0
+        for t, label, mastered, total, pct in progress:
+            if t == tier:
+                current_pct = round(pct)
+                break
+        streak = get_streak()
+        fragile = get_fragile_summary()
+        plan_prog = get_plan_progress()
+
+        acquired = dist.get("AUTOMATIC_CLEAN", 0) + dist.get("AUTOMATIC_NATIVE", 0) + dist.get("AVAILABLE_OUTPUT", 0)
+        automatic = dist.get("AUTOMATIC_NATIVE", 0) + dist.get("AVAILABLE_OUTPUT", 0)
+
+        self._json({
+            "acquisition_state": {
+                "distribution": dist,
+                "acquired_count": acquired,
+                "automatic_count": automatic,
+                "available_count": dist.get("AVAILABLE_OUTPUT", 0),
+            },
+            "today": plan_prog,
+            "fragile_summary": fragile,
+            "tier": {"current": tier, "mastery_pct": current_pct, "label": TIER_LABELS.get(tier, "")},
+            "streak": streak,
+        })
+
+    def _chunk_families(self, limit):
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT * FROM chunk_families ORDER BY composite_rank DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        self._json([dict(r) for r in rows])
+
+    def _speech_stage(self):
+        conn = get_conn()
+        row = conn.execute("SELECT * FROM speech_unlock ORDER BY stage DESC LIMIT 1").fetchone()
+        conn.close()
+        if row:
+            self._json({"stage": row["stage"], "stage_name": row["stage_name"]})
+        else:
+            self._json({"stage": 1, "stage_name": "echo"})
 
     def _home_stats(self):
         tier = get_unlocked_tier()
@@ -1360,6 +1507,22 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         new_card, mastery, downgraded = record_chunk_review(
             chunk_id, rating, latency_ms, biometric
         )
+
+        # Update automaticity state
+        try:
+            chunk_row = get_chunk_by_id(chunk_id)
+            if chunk_row:
+                update_state_after_review(
+                    'chunk', chunk_id, rating, latency_ms or 0,
+                    'clean', biometric,
+                )
+                if chunk_row['word_id']:
+                    update_state_after_review(
+                        'word', chunk_row['word_id'], rating, latency_ms or 0,
+                        'clean', biometric,
+                    )
+        except Exception:
+            pass  # never crash drill for state tracking
 
         rating_names = {
             Rating.Again: "De novo",
@@ -2020,6 +2183,7 @@ def main():
 
     init_story_db()
     migrate_db()
+    migrate_v2()
     ip = get_local_ip()
     server = http.server.HTTPServer(("0.0.0.0", port), OxeHandler)
 
