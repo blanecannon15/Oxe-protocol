@@ -36,7 +36,11 @@ from fsrs import Rating
 from srs_engine import (
     get_next_word, get_due_words, record_review,
     get_unlocked_tier, tier_progress, TIER_LABELS,
+    get_next_chunk, get_due_chunks, update_chunk_pass,
+    record_chunk_review, get_chunk_by_id, add_chunk,
 )
+from training_modes import select_mode_for_item, get_drill_config, TRAINING_MODES
+from daily_router import get_next_block, record_block_completion
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 IMAGE_DIR = Path(__file__).parent / "voca_vault" / "images"
@@ -299,6 +303,31 @@ def log_drill(word_id, word, rating, latency_ms, drill_type="drill"):
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def get_mode_for_next_item():
+    """Determine the training mode for the next drill item.
+
+    Checks daily_router.get_next_block() first for the block-level mode.
+    Falls back to training_modes.select_mode_for_item() for individual items.
+
+    Returns:
+        Mode key string (e.g. 'audio_meaning_recognition').
+    """
+    try:
+        block = get_next_block()
+        if block and block.get("mode") and block["mode"] in TRAINING_MODES:
+            return block["mode"]
+        # If block has target items, use the first item to select mode
+        if block and block.get("target_items"):
+            first = block["target_items"][0]
+            item_type = first.get("item_type", "word")
+            item_id = first.get("item_id") or first.get("id")
+            if item_id:
+                return select_mode_for_item(item_type, item_id)
+    except Exception:
+        pass
+    return "audio_meaning_recognition"
+
+
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -445,6 +474,41 @@ DRILL_HTML = r"""<!DOCTYPE html>
   }
   .loading-text { color: #525263; font-size: 1.2em; }
 
+  /* ── Mode Banner ── */
+  .mode-banner {
+    text-align: center; padding: 6px 16px;
+    font-size: 0.72em; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: #5E6AD2;
+    background: rgba(94,106,210,0.06);
+    border-bottom: 1px solid rgba(94,106,210,0.12);
+    min-height: 1.6em; transition: opacity 0.3s;
+  }
+  .mode-banner.hidden { opacity: 0; min-height: 0; padding: 0; overflow: hidden; }
+
+  /* ── Countdown Timer ── */
+  .countdown-bar {
+    width: 100%; max-width: 340px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.06); overflow: hidden; display: none;
+  }
+  .countdown-bar.visible { display: block; }
+  .countdown-fill {
+    height: 100%; background: linear-gradient(90deg, #5E6AD2, #3B82F6);
+    border-radius: 2px; transition: width 0.1s linear;
+    width: 100%;
+  }
+  .countdown-label {
+    font-size: 0.7em; color: #6b7280; text-align: center;
+    min-height: 1em; display: none;
+  }
+  .countdown-label.visible { display: block; }
+
+  /* ── Biometric Score ── */
+  .biometric-score {
+    font-size: 0.85em; font-weight: 600; text-align: center;
+    color: #5E6AD2; min-height: 1em; display: none;
+  }
+  .biometric-score.visible { display: block; animation: fadeUp 0.4s ease-out; }
+
   /* ── Tab Bar — injected by TAB_BAR_HTML ── */
 </style>
 </head><body>
@@ -456,6 +520,8 @@ DRILL_HTML = r"""<!DOCTYPE html>
     <div><span id="session-accuracy">0</span>% acertos</div>
   </div>
 </div>
+
+<div class="mode-banner hidden" id="mode-banner"></div>
 
 <div class="progress-dots">
   <div class="dots-row">
@@ -474,6 +540,9 @@ DRILL_HTML = r"""<!DOCTYPE html>
   <div class="pass-instruction" id="pass-instruction"></div>
   <div class="rep-counter" id="rep-counter"></div>
   <div class="rating-feedback" id="rating-feedback"></div>
+  <div class="countdown-bar" id="countdown-bar"><div class="countdown-fill" id="countdown-fill"></div></div>
+  <div class="countdown-label" id="countdown-label"></div>
+  <div class="biometric-score" id="biometric-score"></div>
 
   <div class="action-area" id="action-area"></div>
 
@@ -510,6 +579,35 @@ let sessionCorrect = 0;
 let retries = 0;
 let drillStartTime = 0;
 
+// ── Mode awareness ────────────────────────────────────────
+let modeConfig = null;       // current drill config from /api/modes/config
+let currentBlockId = null;   // block_id from daily plan
+let blockItemsDone = 0;      // items completed in current block
+let blockItemsTotal = 0;     // total items in current block
+let countdownTimer = null;   // interval ID for countdown
+
+// ── Fetch current block info ──────────────────────────────
+async function fetchBlockInfo() {
+  try {
+    const res = await fetch('/api/plan/next-block');
+    const block = await res.json();
+    if (block && !block.done) {
+      currentBlockId = block.block_id;
+      blockItemsTotal = (block.target_items || []).length;
+      blockItemsDone = 0;
+      // Fetch mode config for this block's mode
+      if (block.mode && block.mode !== 'break') {
+        try {
+          const mRes = await fetch('/api/modes/config?mode=' + encodeURIComponent(block.mode));
+          modeConfig = await mRes.json();
+        } catch (e) { modeConfig = null; }
+      }
+    }
+  } catch (e) {
+    // Non-fatal — drill still works without block info
+  }
+}
+
 // ── Fetch next chunk ──────────────────────────────────────
 async function fetchNext() {
   showLoading();
@@ -521,6 +619,7 @@ async function fetchNext() {
       $('pass-label').textContent = '';
       $('pass-instruction').textContent = 'Todas revisadas. Descansa, parceiro.';
       $('action-area').innerHTML = '';
+      $('mode-banner').classList.add('hidden');
       return;
     }
 
@@ -530,11 +629,21 @@ async function fetchNext() {
     retries = 0;
     drillStartTime = performance.now();
 
+    // Apply mode config from the chunk response or existing block config
+    if (data.mode_config) {
+      modeConfig = data.mode_config;
+    }
+
+    // Update mode banner
+    applyModeUI();
+
     $('tier-label').textContent = data.tier_label || ('Tier ' + data.tier);
     $('due-label').textContent = (data.due_count || 0) + ' pendentes';
 
+    // Image: respect mode config show_image flag
     const img = $('drill-image');
-    if (data.image_file) {
+    const showImage = !modeConfig || modeConfig.show_image !== false;
+    if (data.image_file && showImage) {
       img.src = '/image/' + data.image_file;
       img.classList.add('visible');
     } else {
@@ -548,6 +657,73 @@ async function fetchNext() {
   }
 }
 
+// ── Mode UI Helpers ───────────────────────────────────────
+function applyModeUI() {
+  const banner = $('mode-banner');
+  if (modeConfig && modeConfig.label) {
+    banner.textContent = modeConfig.label;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+  // Reset countdown and biometric
+  stopCountdown();
+  $('biometric-score').classList.remove('visible');
+}
+
+function startCountdown(maxMs) {
+  stopCountdown();
+  const bar = $('countdown-bar');
+  const fill = $('countdown-fill');
+  const label = $('countdown-label');
+  bar.classList.add('visible');
+  label.classList.add('visible');
+  fill.style.width = '100%';
+
+  const startTime = performance.now();
+  countdownTimer = setInterval(() => {
+    const elapsed = performance.now() - startTime;
+    const remaining = Math.max(0, maxMs - elapsed);
+    const pct = (remaining / maxMs) * 100;
+    fill.style.width = pct + '%';
+    label.textContent = (remaining / 1000).toFixed(1) + 's';
+
+    if (pct <= 25) {
+      fill.style.background = 'linear-gradient(90deg, #ef4444, #f59e0b)';
+    } else if (pct <= 50) {
+      fill.style.background = 'linear-gradient(90deg, #f59e0b, #5E6AD2)';
+    } else {
+      fill.style.background = 'linear-gradient(90deg, #5E6AD2, #3B82F6)';
+    }
+
+    if (remaining <= 0) {
+      stopCountdown();
+    }
+  }, 100);
+}
+
+function stopCountdown() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  $('countdown-bar').classList.remove('visible');
+  $('countdown-label').classList.remove('visible');
+  $('countdown-fill').style.width = '100%';
+  $('countdown-fill').style.background = 'linear-gradient(90deg, #5E6AD2, #3B82F6)';
+}
+
+function showBiometricScore(score) {
+  const el = $('biometric-score');
+  if (score != null) {
+    el.textContent = 'Biometria: ' + score + '/100';
+    el.style.color = score >= 85 ? '#34d399' : score >= 60 ? '#fbbf24' : '#ef4444';
+    el.classList.add('visible');
+  } else {
+    el.classList.remove('visible');
+  }
+}
+
 // ── Pass State Machine ────────────────────────────────────
 function enterPass(passNum) {
   currentPass = passNum;
@@ -557,9 +733,10 @@ function enterPass(passNum) {
   $('rating-feedback').classList.remove('visible');
   $('rep-counter').classList.remove('visible');
 
-  // Carrier text: visible only in pass 3 and 4
+  // Carrier text: visible in pass 3/4, OR if mode config says show_text
   const ct = $('carrier-text');
-  if (passNum === 3 || passNum === 4) {
+  const modeShowText = modeConfig && modeConfig.show_text === true;
+  if (passNum === 3 || passNum === 4 || modeShowText) {
     ct.classList.remove('hidden');
     const sentence = currentChunk.carrier_sentence || '';
     const word = currentChunk.target_chunk || currentChunk.word || '';
@@ -572,6 +749,18 @@ function enterPass(passNum) {
   } else {
     ct.classList.add('hidden');
     ct.innerHTML = '';
+  }
+
+  // Image: hide if mode says no image
+  const img = $('drill-image');
+  if (modeConfig && modeConfig.show_image === false) {
+    img.classList.remove('visible');
+  }
+
+  // Countdown timer: start if mode has max_response_time_ms
+  stopCountdown();
+  if (modeConfig && modeConfig.max_response_time_ms && passNum >= 2 && passNum <= 4) {
+    startCountdown(modeConfig.max_response_time_ms);
   }
 
   // Buttons per pass
@@ -663,6 +852,7 @@ async function completeDrill() {
   const latencyMs = Math.round(performance.now() - drillStartTime);
   $('rep-counter').classList.remove('visible');
   $('action-area').innerHTML = '';
+  stopCountdown();
 
   try {
     const res = await fetch('/api/drill/complete', {
@@ -685,9 +875,34 @@ async function completeDrill() {
     fb.textContent = ratingNames[data.rating] || 'Bom';
     fb.style.color = data.rating >= 3 ? '#34d399' : '#fbbf24';
     fb.classList.add('visible');
+
+    // Show biometric score if mode measures biometric
+    if (modeConfig && modeConfig.measures_biometric && data.biometric_score != null) {
+      showBiometricScore(data.biometric_score);
+    }
   } catch (e) {
     sessionCount++;
     updateSessionStats();
+  }
+
+  // Track block progress and complete block if all items done
+  blockItemsDone++;
+  if (currentBlockId && blockItemsTotal > 0 && blockItemsDone >= blockItemsTotal) {
+    try {
+      await fetch('/api/plan/block/complete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          block_id: currentBlockId,
+          actual_data: {
+            items_reviewed: blockItemsDone,
+            accuracy: sessionCount > 0 ? Math.round(sessionCorrect / sessionCount * 100) : 0,
+          },
+        }),
+      });
+      // Fetch next block info for mode config
+      await fetchBlockInfo();
+    } catch (e) {}
   }
 
   setTimeout(fetchNext, 1800);
@@ -696,10 +911,34 @@ async function completeDrill() {
 // ── Audio ─────────────────────────────────────────────────
 function playAudio() {
   if (!currentChunk || !currentChunk.audio_file) return;
-  player.src = '/audio/' + currentChunk.audio_file;
-  player.onended = null;
-  player.onerror = null;
-  player.play().catch(() => {});
+  const audioType = modeConfig ? modeConfig.audio_type : 'clean';
+
+  if (audioType === 'both' && currentChunk.native_audio_file) {
+    // Play clean first, then native on ended
+    player.src = '/audio/' + currentChunk.audio_file;
+    player.onended = () => {
+      setTimeout(() => {
+        player.src = '/audio/' + currentChunk.native_audio_file;
+        player.onended = null;
+        player.onerror = null;
+        player.play().catch(() => {});
+      }, 600);
+    };
+    player.onerror = null;
+    player.play().catch(() => {});
+  } else if (audioType === 'native' && currentChunk.native_audio_file) {
+    // Play native audio only
+    player.src = '/audio/' + currentChunk.native_audio_file;
+    player.onended = null;
+    player.onerror = null;
+    player.play().catch(() => {});
+  } else {
+    // Default: play clean TTS
+    player.src = '/audio/' + currentChunk.audio_file;
+    player.onended = null;
+    player.onerror = null;
+    player.play().catch(() => {});
+  }
 }
 
 // ── UI Helpers ────────────────────────────────────────────
@@ -728,6 +967,8 @@ function showLoading() {
   $('pass-instruction').textContent = '';
   $('action-area').innerHTML = '<button class="btn-primary" disabled>Carregando...</button>';
   for (let i = 1; i <= 5; i++) $('dot-' + i).className = 'dot';
+  stopCountdown();
+  $('biometric-score').classList.remove('visible');
 }
 
 function updateTime() {
@@ -737,7 +978,10 @@ setInterval(updateTime, 10000);
 updateTime();
 
 // ── Start ─────────────────────────────────────────────────
-fetchNext();
+(async () => {
+  await fetchBlockInfo();
+  fetchNext();
+})();
 </script>
 
 </body></html>"""
@@ -746,13 +990,29 @@ fetchNext();
 class DrillHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
 
         if path == "/" or path == "/drill":
-            self._html(DRILL_HTML)
+            self._html(DRILL_HTML.replace("{tab_bar}", ""))
 
         elif path == "/api/next":
             self._next_word()
+
+        elif path == "/api/drill/next":
+            self._drill_next_chunk()
+
+        elif path == "/api/plan/next-block":
+            block = get_next_block()
+            self._json(block if block else {"done": True})
+
+        elif path == "/api/modes/config":
+            mode = query.get("mode", ["audio_meaning_recognition"])[0]
+            try:
+                self._json(get_drill_config(mode))
+            except KeyError:
+                self._json(get_drill_config("audio_meaning_recognition"))
 
         elif path.startswith("/audio/"):
             self._serve_audio(path[7:])
@@ -775,6 +1035,21 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
 
         elif path == "/api/trap-respond":
             self._handle_trap_respond(body)
+
+        elif path == "/api/drill/advance":
+            self._drill_advance_pass(body)
+
+        elif path == "/api/drill/complete":
+            self._drill_complete(body)
+
+        elif path == "/api/plan/block/complete":
+            block_id = body.get("block_id", 0)
+            actual = body.get("actual_data", {})
+            try:
+                record_block_completion(block_id, actual)
+                self._json({"ok": True})
+            except Exception as e:
+                self._json({"ok": False, "error": str(e)})
 
         else:
             self.send_error(404)
@@ -942,6 +1217,105 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
             "passed": passed,
             "expected": expected,
             "penalty_remaining": _laranjada_remaining,
+        })
+
+    def _drill_next_chunk(self):
+        """Serve the next chunk for 5-pass drilling, with mode config."""
+        chunk = get_next_chunk()
+        if chunk is None:
+            # Cold start: seed from word_bank Tier 1
+            try:
+                from srs_engine import get_connection, DB_PATH as _DB
+                conn = get_connection(_DB)
+                words = conn.execute(
+                    "SELECT id, word FROM word_bank WHERE difficulty_tier = 1 "
+                    "ORDER BY frequency_rank LIMIT 10"
+                ).fetchall()
+                conn.close()
+                for w in words:
+                    carrier = build_carrier(w["word"])
+                    add_chunk(w["id"], w["word"], carrier, "corpus")
+                chunk = get_next_chunk()
+            except Exception:
+                pass
+
+        if chunk is None:
+            self._json({"error": "Nenhum chunk disponivel"})
+            return
+
+        audio_file = generate_tts(chunk["carrier_sentence"])
+        image_file = None
+        try:
+            image_file = generate_image(chunk["word"])
+        except Exception:
+            pass
+
+        # Get mode config for this block/item
+        mode_key = get_mode_for_next_item()
+        try:
+            mode_config = get_drill_config(mode_key)
+        except Exception:
+            mode_config = get_drill_config("audio_meaning_recognition")
+
+        due_count = len(get_due_chunks())
+        tier = get_unlocked_tier()
+
+        self._json({
+            "chunk_id": chunk["id"],
+            "word": chunk["word"],
+            "word_id": chunk.get("word_id"),
+            "target_chunk": chunk["target_chunk"],
+            "carrier_sentence": chunk["carrier_sentence"],
+            "current_pass": chunk["current_pass"],
+            "audio_file": audio_file,
+            "image_file": image_file,
+            "tier": chunk.get("difficulty_tier", 1),
+            "tier_label": TIER_LABELS.get(chunk.get("difficulty_tier", 1), "Tier 1"),
+            "due_count": due_count,
+            "mode_config": mode_config,
+        })
+
+    def _drill_advance_pass(self, body):
+        chunk_id = body.get("chunk_id")
+        current_pass = body.get("current_pass", 1)
+        if not chunk_id:
+            self._json({"error": "chunk_id obrigatorio"})
+            return
+        new_pass = min(current_pass + 1, 5)
+        update_chunk_pass(chunk_id, new_pass)
+        self._json({"chunk_id": chunk_id, "new_pass": new_pass})
+
+    def _drill_complete(self, body):
+        chunk_id = body.get("chunk_id")
+        latency_ms = body.get("latency_ms")
+        retries = body.get("retries", 0)
+        biometric = body.get("biometric_score")
+
+        if not chunk_id:
+            self._json({"error": "chunk_id obrigatorio"})
+            return
+
+        if retries >= 3:
+            rating = Rating.Again
+        elif latency_ms and latency_ms > LATENCY_THRESHOLD_MS:
+            rating = Rating.Hard
+        elif biometric and biometric < 85:
+            rating = Rating.Hard
+        elif latency_ms and latency_ms <= 600 and retries == 0:
+            rating = Rating.Easy
+        else:
+            rating = Rating.Good
+
+        new_card, mastery, downgraded = record_chunk_review(
+            chunk_id, rating, latency_ms, biometric
+        )
+
+        log_drill(chunk_id, str(chunk_id), rating.value, latency_ms, "drill_5pass")
+
+        self._json({
+            "rating": rating.value,
+            "rating_name": {1: "De novo", 2: "Dificil", 3: "Bom", 4: "Facil"}.get(rating.value, "Bom"),
+            "new_mastery": mastery,
         })
 
     def _serve_audio(self, filename):

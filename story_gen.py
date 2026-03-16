@@ -22,6 +22,9 @@ from pathlib import Path
 
 from srs_engine import DB_PATH, get_connection, get_unlocked_tier, get_due_words
 
+# Lazy imports for post-generation hooks (chunk extraction & classification)
+# Actual imports happen inside _run_post_generation_hooks to avoid circular deps.
+
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -123,6 +126,61 @@ LEVELS = {
         "word_count": STORY_WORD_TARGET,
         "min_tier": 5,
         "questions": QUESTIONS_PER_STORY,
+    },
+    "A3": {
+        "label": "Entendendo",
+        "description": "90% Tiers 1-3 — moderate Baiano, some contractions",
+        "tiers": [1, 2, 3],
+        "known_pct": 0.90,
+        "stretch_tiers": [4],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 1,
+        "questions": QUESTIONS_PER_STORY,
+        "style_prompt": "Baiano moderado. Usa contrações naturais (tô, tá, pra, pro, cê) mas mantém clareza. Ritmo de fala médio, sem correr. Sotaque baiano presente mas controlado.",
+    },
+    "A4": {
+        "label": "Fluindo",
+        "description": "88% Tiers 1-4 — natural Baiano, connected speech",
+        "tiers": [1, 2, 3, 4],
+        "known_pct": 0.88,
+        "stretch_tiers": [5],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 2,
+        "questions": QUESTIONS_PER_STORY,
+        "style_prompt": "Baiano natural e fluido. Fala conectada — palavras se juntam como na fala real. Usa gírias comuns (barril, massa, arretado). Contrações e elisões naturais. Ritmo como conversa entre amigos.",
+    },
+    "NATIVE_CLEAR": {
+        "label": "Nativo Claro",
+        "description": "80% Tiers 1-5 — full Baiano but clear articulation",
+        "tiers": [1, 2, 3, 4, 5],
+        "known_pct": 0.80,
+        "stretch_tiers": [6],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 3,
+        "questions": QUESTIONS_PER_STORY,
+        "style_prompt": "Baiano completo com articulação clara. Sotaque forte mas cada palavra é distinguível. Usa todas as gírias e expressões baianas naturalmente. Fala como um soteropolitano educado conversando com alguém de fora.",
+    },
+    "NATIVE_CASUAL": {
+        "label": "Nativo Casual",
+        "description": "70% all tiers — casual speech, gírias, elisions",
+        "tiers": [1, 2, 3, 4, 5, 6],
+        "known_pct": 0.70,
+        "stretch_tiers": [],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 4,
+        "questions": QUESTIONS_PER_STORY,
+        "style_prompt": "Baiano casual total. Gírias pesadas, elisões constantes (falano, comeno, fazeno). Palavras engolidas, ritmo rápido. Fala como dois baianos num bar — sem filtro. Expressões idiomáticas de Salvador sem explicação.",
+    },
+    "NATIVE_CHAOTIC": {
+        "label": "Nativo Caótico",
+        "description": "50% all tiers — fast overlapping speech, heavy slang, real street Baiano",
+        "tiers": [1, 2, 3, 4, 5, 6],
+        "known_pct": 0.50,
+        "stretch_tiers": [],
+        "word_count": STORY_WORD_TARGET,
+        "min_tier": 5,
+        "questions": QUESTIONS_PER_STORY,
+        "style_prompt": "Baiano caótico de rua. Velocidade máxima, gírias obscuras, calão pesado. Frases interrompidas, pensamentos sobrepostos, mudança de assunto sem aviso. Referências culturais profundas de Salvador. Fala como vendedor na Feira de São Joaquim num sábado lotado. Elisões extremas, palavras cortadas, ritmo frenético.",
     },
 }
 
@@ -243,6 +301,10 @@ Usa APENAS estas palavras (as {freq_cap} mais frequentes do português brasileir
 - {known_pct}% das palavras devem ser simples e comuns (frequência alta no português brasileiro)
 - Palavras de foco (DEVEM aparecer naturalmente na história, mais de uma vez): {focus_str}"""
 
+    # Style prompt for levels that specify speech/accent characteristics
+    style_prompt = level.get("style_prompt", "")
+    style_block = f"\nESTILO DE FALA: {style_prompt}" if style_prompt else ""
+
     return f"""Escreve uma história LONGA em primeira pessoa. Isso é pra ouvir durante 10 minutos caminhando.
 
 NÍVEL: {level_key} ({level['label']})
@@ -250,7 +312,7 @@ TEMA: {theme_desc}
 CENÁRIO: {setting}, Salvador, Bahia
 TAMANHO: {min_words}-{max_words} palavras — OBRIGATÓRIO atingir pelo menos {min_words} palavras. Isso é uma história completa, não um resumo.
 
-{vocab_block}
+{vocab_block}{style_block}
 
 ESTRUTURA (história rica, não resumo):
 1. ABERTURA — me situa: onde eu tô, que horas são, o que tá acontecendo ao meu redor, sensações (cheiro, barulho, calor)
@@ -370,7 +432,34 @@ def generate_story(level_key, theme=None, setting=None):
     conn.close()
 
     print(f"  [{level_key}] \"{title}\" — {word_count} words, {len(questions)} questions (ID: {story_id})")
+
+    # Post-generation hooks: chunk extraction & difficulty classification
+    _run_post_generation_hooks(story_id)
+
     return story_id
+
+
+def _run_post_generation_hooks(story_id):
+    """Extract chunks and classify difficulty after story generation.
+
+    Both operations are wrapped in try/except so they never block
+    the story generation pipeline.
+    """
+    # Chunk extraction
+    try:
+        from chunk_engine import extract_chunks_from_story
+        added = extract_chunks_from_story(story_id, DB_PATH)
+        print(f"    -> Extracted {added} chunks from story {story_id}")
+    except Exception as e:
+        print(f"    -> Chunk extraction skipped: {e}")
+
+    # Difficulty classification
+    try:
+        from content_ladder import classify_content
+        level = classify_content("story", story_id, DB_PATH)
+        print(f"    -> Classified story {story_id} as {level}")
+    except Exception as e:
+        print(f"    -> Classification skipped: {e}")
 
 
 # ── TTS chunking ──────────────────────────────────────────────────
