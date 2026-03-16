@@ -69,6 +69,47 @@ from dictionary_engine import (
 # ── Imports from story_server ──────────────────────────────────
 from story_server import STORY_HTML
 
+# ── Shared Tab Bar ─────────────────────────────────────────────
+
+def TAB_BAR_HTML(active_tab):
+    """Generate the 5-tab bottom navigation bar.
+    active_tab is one of: inicio, buscar, treinar, biblioteca, conversa
+    """
+    tabs = [
+        ("inicio", "/", "In\u00edcio",
+         '<svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>'),
+        ("buscar", "/search", "Buscar",
+         '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'),
+        ("treinar", "/drill", "Treinar",
+         '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>'),
+        ("biblioteca", "/library", "Biblioteca",
+         '<svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>'),
+        ("conversa", "/conversa", "Conversa",
+         '<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>'),
+    ]
+    items = []
+    for key, href, label, icon in tabs:
+        cls = "tab active" if key == active_tab else "tab"
+        color = "#3B82F6" if key == active_tab else "rgba(255,255,255,0.4)"
+        items.append(
+            f'<a href="{href}" class="{cls}" style="color:{color}">{icon}<span>{label}</span></a>'
+        )
+    return (
+        '<style>'
+        '.tab-bar{position:fixed;bottom:0;left:0;right:0;z-index:100;'
+        'display:flex;justify-content:space-around;align-items:center;'
+        'height:60px;padding-bottom:env(safe-area-inset-bottom,0);'
+        'background:rgba(10,10,11,0.95);border-top:1px solid rgba(255,255,255,0.06);'
+        'backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}'
+        '.tab{display:flex;flex-direction:column;align-items:center;gap:3px;'
+        'text-decoration:none;font-size:0.62em;font-weight:500;'
+        '-webkit-tap-highlight-color:transparent;padding:6px 12px;transition:color 0.2s}'
+        '.tab svg{width:22px;height:22px;fill:currentColor}'
+        '</style>'
+        '<nav class="tab-bar">' + ''.join(items) + '</nav>'
+    )
+
+
 # Session state
 _laranjada_remaining = 0
 
@@ -263,23 +304,6 @@ HOME_HTML = r"""<!DOCTYPE html>
   .today-val { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
   .today-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
 
-  /* ── Bottom Tab Bar ── */
-  .tab-bar {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    display: flex; justify-content: space-around; align-items: center;
-    height: 72px; padding-bottom: env(safe-area-inset-bottom, 0);
-    background: rgba(10,10,11,0.94); border-top: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-  }
-  .tab {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
-    -webkit-tap-highlight-color: transparent; padding: 6px 12px;
-    transition: color 0.2s;
-  }
-  .tab.active { color: #60a5fa; }
-  .tab svg { width: 22px; height: 22px; fill: currentColor; }
-
   /* ── Gradient def ── */
   .hidden-svg { position: absolute; width: 0; height: 0; }
 </style>
@@ -383,29 +407,7 @@ HOME_HTML = r"""<!DOCTYPE html>
 
 </div>
 
-<!-- Bottom Tab Bar -->
-<nav class="tab-bar">
-  <a href="/" class="tab active">
-    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-    <span>Inicio</span>
-  </a>
-  <a href="/search" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-    <span>Buscar</span>
-  </a>
-  <a href="/drill" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-    <span>Treinar</span>
-  </a>
-  <a href="/library" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
-    <span>Biblioteca</span>
-  </a>
-  <a href="/conversa" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-    <span>Conversa</span>
-  </a>
-</nav>
+{tab_bar}
 
 <script>
 var tierNames={1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
@@ -651,45 +653,7 @@ async function toggleConvMic() {
 addMsg('E ai, parceiro! Bora jogar conversa fora?', 'ai');
 </script>
 
-<!-- Bottom Tab Bar -->
-<style>
-  .tab-bar {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    display: flex; justify-content: space-around; align-items: center;
-    height: 68px; padding-bottom: env(safe-area-inset-bottom, 0);
-    background: rgba(10,10,11,0.92); border-top: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-  }
-  .tab {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
-    -webkit-tap-highlight-color: transparent; padding: 6px 12px; transition: color 0.15s;
-  }
-  .tab.active { color: #60a5fa; }
-  .tab svg { width: 22px; height: 22px; fill: currentColor; }
-</style>
-<nav class="tab-bar">
-  <a href="/" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-    <span>Inicio</span>
-  </a>
-  <a href="/search" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-    <span>Buscar</span>
-  </a>
-  <a href="/drill" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-    <span>Treinar</span>
-  </a>
-  <a href="/library" class="tab">
-    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
-    <span>Biblioteca</span>
-  </a>
-  <a href="/conversa" class="tab active">
-    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-    <span>Conversa</span>
-  </a>
-</nav>
+{tab_bar}
 
 </body></html>"""
 
@@ -849,21 +813,7 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   /* ── Loading ── */
   .loading { text-align: center; padding: 40px; color: #525263; font-size: 0.9em; }
 
-  /* ── Tab Bar ── */
-  .nav-bar {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    display: flex; justify-content: space-around; align-items: center;
-    height: 72px; padding-bottom: env(safe-area-inset-bottom, 0);
-    background: rgba(10,10,11,0.94); border-top: 1px solid rgba(255,255,255,0.06);
-    backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-  }
-  .nav-tab {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    text-decoration: none; color: #525263; font-size: 0.62em; font-weight: 500;
-    -webkit-tap-highlight-color: transparent; padding: 6px 10px; transition: color 0.2s;
-  }
-  .nav-tab.active { color: #60a5fa; }
-  .nav-tab svg { width: 22px; height: 22px; fill: currentColor; }
+  /* ── Tab Bar — injected by TAB_BAR_HTML ── */
 </style>
 </head><body>
 
@@ -940,29 +890,7 @@ SEARCH_HTML = r"""<!DOCTYPE html>
 
 <audio id="player" preload="auto"></audio>
 
-<!-- Bottom Tab Bar -->
-<nav class="nav-bar">
-  <a href="/" class="nav-tab">
-    <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-    <span>Início</span>
-  </a>
-  <a href="/search" class="nav-tab active">
-    <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-    <span>Buscar</span>
-  </a>
-  <a href="/drill" class="nav-tab">
-    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-    <span>Treinar</span>
-  </a>
-  <a href="/library" class="nav-tab">
-    <svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>
-    <span>Biblioteca</span>
-  </a>
-  <a href="/conversa" class="nav-tab">
-    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-    <span>Conversa</span>
-  </a>
-</nav>
+{tab_bar}
 
 <script>
 const searchInput = document.getElementById('search-input');
@@ -1126,11 +1054,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         # ── Home ──
         if path == "/":
-            self._html(HOME_HTML)
+            self._html(HOME_HTML.replace("{tab_bar}", TAB_BAR_HTML("inicio")))
 
         # ── Search / Dictionary ──
         elif path == "/search":
-            self._html(SEARCH_HTML)
+            self._html(SEARCH_HTML.replace("{tab_bar}", TAB_BAR_HTML("buscar")))
         elif path == "/api/search":
             q = query.get("q", [""])[0]
             self._dict_search(q)
@@ -1142,21 +1070,19 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         # ── Drill ──
         elif path == "/drill":
-            self._html(DRILL_HTML)
-        elif path == "/api/next":
-            self._drill_next(query)
+            self._html(DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
         elif path == "/api/drill/next":
             self._drill_next_chunk()
 
         # ── Conversa ──
         elif path == "/conversa":
-            self._html(CONVERSA_HTML)
+            self._html(CONVERSA_HTML.replace("{tab_bar}", TAB_BAR_HTML("conversa")))
 
         # ── Library (Stories + Podcasts + Review) ──
         elif path == "/library":
-            self._html(STORY_HTML)
+            self._html(STORY_HTML.replace("{tab_bar}", TAB_BAR_HTML("biblioteca")))
         elif path == "/stories":
-            self._html(STORY_HTML)
+            self._html(STORY_HTML.replace("{tab_bar}", TAB_BAR_HTML("biblioteca")))
         elif path == "/api/library/review-feed":
             self._review_feed()
         elif path == "/api/library/podcasts":
@@ -1220,16 +1146,6 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/drill/complete":
             self._drill_complete(body)
             return
-
-        # ── Legacy Drill ──
-        elif path == "/api/respond":
-            self._drill_respond(body)
-        elif path == "/api/explain":
-            self._drill_explain(body)
-        elif path == "/api/trap-respond":
-            self._drill_trap_respond(body)
-        elif path == "/api/cloze-respond":
-            self._cloze_respond(body)
 
         # ── Conversa ──
         elif path == "/api/conversa/send":
