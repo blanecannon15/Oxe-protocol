@@ -309,6 +309,354 @@ def detect_open_mid_vowel_issues(user_audio, native_audio):
 
 
 # ---------------------------------------------------------------------------
+# Extended prosody measurements (10-dimension scoring)
+# ---------------------------------------------------------------------------
+
+def measure_vowel_length(user_audio, native_audio):
+    """Compare stressed vowel durations. Baiano has longer open vowels.
+
+    Extract vowel regions via intensity peaks, compare duration ratios.
+    Score: 100 * (1 - abs(user_ratio - native_ratio))
+    Returns float 0-100.
+    """
+    try:
+        user_durs = extract_syllable_durations(user_audio)
+        native_durs = extract_syllable_durations(native_audio)
+        if not user_durs or not native_durs:
+            return 50.0  # neutral score
+
+        # Ratio of longest syllable to mean — proxy for stressed vowel prominence
+        user_ratio = max(user_durs) / (np.mean(user_durs) + 1e-6)
+        native_ratio = max(native_durs) / (np.mean(native_durs) + 1e-6)
+
+        similarity = 1.0 - min(abs(user_ratio - native_ratio) / max(native_ratio, 1e-6), 1.0)
+        return round(similarity * 100, 1)
+    except Exception:
+        return 50.0
+
+
+def measure_airflow(user_audio, native_audio):
+    """Estimate laryngeal relaxation via spectral tilt.
+
+    Baiano speech has relaxed airflow — more energy in lower harmonics.
+    Spectral tilt = difference between first and second harmonic amplitudes.
+    Higher tilt = more relaxed = more Baiano-like.
+    Returns float 0-100.
+    """
+    try:
+        def _spectral_tilt(audio_path):
+            snd = parselmouth.Sound(str(audio_path))
+            spectrum = snd.to_spectrum()
+            freqs = spectrum.xs()
+            power = np.array([spectrum.get_power_in_band(f, f + 50) for f in range(50, 2000, 50)])
+            if len(power) < 10:
+                return 0.0
+            # Fit linear slope to log power vs frequency
+            log_power = np.log10(power + 1e-10)
+            x = np.arange(len(log_power))
+            slope = np.polyfit(x, log_power, 1)[0]
+            return slope  # more negative = steeper rolloff = more relaxed
+
+        user_tilt = _spectral_tilt(user_audio)
+        native_tilt = _spectral_tilt(native_audio)
+
+        if native_tilt == 0:
+            return 50.0
+
+        # Score based on how similar the tilts are
+        diff = abs(user_tilt - native_tilt) / (abs(native_tilt) + 1e-6)
+        score = max(0, 1.0 - diff) * 100
+        return round(score, 1)
+    except Exception:
+        return 50.0
+
+
+def measure_sentence_final_contour(user_audio, native_audio):
+    """Compare F0 contour in the last 500ms of the utterance.
+
+    Baiano declaratives have gradual fall. Questions have sharp rise.
+    Uses DTW on the final pitch segment.
+    Returns float 0-100.
+    """
+    try:
+        from tslearn.metrics import dtw as ts_dtw
+
+        def _final_f0(audio_path, duration_ms=500):
+            f0 = extract_f0(audio_path)
+            if len(f0) == 0:
+                return np.array([])
+            # Take last portion proportional to 500ms
+            n_frames = max(1, int(len(f0) * 0.3))  # approx last 30% ~ 500ms
+            segment = f0[-n_frames:]
+            # Remove zeros (unvoiced)
+            voiced = segment[segment > 0]
+            if len(voiced) < 3:
+                return np.array([])
+            # Normalize
+            mean_f0 = np.mean(voiced)
+            if mean_f0 == 0:
+                return voiced
+            return (voiced - mean_f0) / (np.std(voiced) + 1e-6)
+
+        user_final = _final_f0(user_audio)
+        native_final = _final_f0(native_audio)
+
+        if len(user_final) < 3 or len(native_final) < 3:
+            return 50.0
+
+        dist = ts_dtw(user_final.reshape(-1, 1), native_final.reshape(-1, 1))
+        score = 100.0 / (1.0 + dist * 2.0)
+        return round(min(score, 100.0), 1)
+    except Exception:
+        return 50.0
+
+
+def measure_nasalization(user_audio, native_audio):
+    """Detect nasalization depth on ão/ã segments.
+
+    Nasalization shows as wider F1 bandwidth and anti-formant presence.
+    Compare spectral characteristics in the 800-1200 Hz range.
+    Returns float 0-100.
+    """
+    try:
+        def _nasal_energy_ratio(audio_path):
+            snd = parselmouth.Sound(str(audio_path))
+            # Get power in nasal frequency band (800-1200 Hz) vs total
+            spectrum = snd.to_spectrum()
+            total_power = spectrum.get_band_energy(50, 4000)
+            nasal_power = spectrum.get_band_energy(800, 1200)
+            if total_power == 0:
+                return 0.0
+            return nasal_power / total_power
+
+        user_ratio = _nasal_energy_ratio(user_audio)
+        native_ratio = _nasal_energy_ratio(native_audio)
+
+        if native_ratio == 0:
+            return 50.0
+
+        similarity = 1.0 - min(abs(user_ratio - native_ratio) / native_ratio, 1.0)
+        return round(similarity * 100, 1)
+    except Exception:
+        return 50.0
+
+
+def measure_syllable_reduction(user_audio, native_audio):
+    """Compare unstressed vowel duration ratios.
+
+    Baiano reduces unstressed vowels moderately (less than Paulista).
+    Compare the ratio of shortest to longest syllable durations.
+    Returns float 0-100.
+    """
+    try:
+        user_durs = extract_syllable_durations(user_audio)
+        native_durs = extract_syllable_durations(native_audio)
+
+        if len(user_durs) < 3 or len(native_durs) < 3:
+            return 50.0
+
+        def _reduction_ratio(durs):
+            sorted_d = sorted(durs)
+            # Ratio of bottom quartile mean to top quartile mean
+            q = max(1, len(sorted_d) // 4)
+            short_mean = np.mean(sorted_d[:q])
+            long_mean = np.mean(sorted_d[-q:])
+            if long_mean == 0:
+                return 1.0
+            return short_mean / long_mean
+
+        user_ratio = _reduction_ratio(user_durs)
+        native_ratio = _reduction_ratio(native_durs)
+
+        diff = abs(user_ratio - native_ratio)
+        score = max(0, 1.0 - diff / max(native_ratio, 0.1)) * 100
+        return round(score, 1)
+    except Exception:
+        return 50.0
+
+
+def measure_cadence(user_audio, native_audio):
+    """Detect Baiano melodic 'swing' via F0 autocorrelation.
+
+    Baiano has a distinctive musical cadence — rhythmic pitch modulation.
+    Compare F0 autocorrelation patterns between user and native.
+    Returns float 0-100.
+    """
+    try:
+        def _f0_autocorr(audio_path):
+            f0 = extract_f0(audio_path)
+            voiced = f0[f0 > 0]
+            if len(voiced) < 10:
+                return np.array([])
+            # Normalize
+            v = voiced - np.mean(voiced)
+            v = v / (np.std(v) + 1e-6)
+            # Autocorrelation via FFT
+            n = len(v)
+            fft = np.fft.fft(v, n=2*n)
+            acf = np.fft.ifft(fft * np.conj(fft))[:n].real
+            acf = acf / acf[0] if acf[0] != 0 else acf
+            return acf[:min(n, 20)]  # first 20 lags
+
+        user_acf = _f0_autocorr(user_audio)
+        native_acf = _f0_autocorr(native_audio)
+
+        if len(user_acf) < 5 or len(native_acf) < 5:
+            return 50.0
+
+        # Truncate to same length
+        min_len = min(len(user_acf), len(native_acf))
+        user_acf = user_acf[:min_len]
+        native_acf = native_acf[:min_len]
+
+        # Correlation between autocorrelation patterns
+        corr = np.corrcoef(user_acf, native_acf)[0, 1]
+        if np.isnan(corr):
+            return 50.0
+
+        score = (corr + 1.0) / 2.0 * 100  # map [-1,1] to [0,100]
+        return round(score, 1)
+    except Exception:
+        return 50.0
+
+
+def enhanced_nativeness_score(user_audio, native_audio):
+    """10-dimension Baiano prosody scoring.
+
+    Weights:
+        isochrony: 0.35, pitch: 0.15, rate: 0.10, rhythm: 0.10,
+        vowel_length: 0.08, airflow: 0.05, sentence_final: 0.07,
+        nasalization: 0.08, syllable_reduction: 0.07, cadence: 0.05
+
+    Returns dict with total_score, per-dimension scores, and diagnostics.
+    """
+    # Existing dimensions — isochrony DTW → convert distance to 0-100 score
+    iso_dtw, _, _, _, _ = isochrony_dtw(user_audio, native_audio)
+    iso_score = 100.0 / (1.0 + iso_dtw * 2.0)
+
+    # Pitch DTW
+    try:
+        from tslearn.metrics import dtw as ts_dtw
+        user_f0 = extract_f0(user_audio)
+        native_f0 = extract_f0(native_audio)
+        user_voiced = user_f0[user_f0 > 0]
+        native_voiced = native_f0[native_f0 > 0]
+        if len(user_voiced) > 3 and len(native_voiced) > 3:
+            u_norm = (user_voiced - np.mean(user_voiced)) / (np.std(user_voiced) + 1e-6)
+            n_norm = (native_voiced - np.mean(native_voiced)) / (np.std(native_voiced) + 1e-6)
+            dist = ts_dtw(u_norm.reshape(-1, 1), n_norm.reshape(-1, 1))
+            pitch_score = 100.0 / (1.0 + dist * 0.5)
+        else:
+            pitch_score = 50.0
+    except Exception:
+        pitch_score = 50.0
+
+    # Speech rate
+    try:
+        user_durs = extract_syllable_durations(user_audio)
+        native_durs = extract_syllable_durations(native_audio)
+        if user_durs and native_durs:
+            user_rate = len(user_durs) / (sum(user_durs) + 1e-6)
+            native_rate = len(native_durs) / (sum(native_durs) + 1e-6)
+            rate_diff = abs(user_rate - native_rate) / (native_rate + 1e-6)
+            rate_score = max(0, (1.0 - rate_diff)) * 100
+        else:
+            rate_score = 50.0
+    except Exception:
+        rate_score = 50.0
+
+    # Rhythm (nPVI)
+    try:
+        user_durs_r = extract_syllable_durations(user_audio)
+        native_durs_r = extract_syllable_durations(native_audio)
+        if len(user_durs_r) >= 2 and len(native_durs_r) >= 2:
+            user_npvi = compute_npvi(user_durs_r)
+            native_npvi = compute_npvi(native_durs_r)
+            npvi_diff = abs(user_npvi - native_npvi)
+            npvi_score = max(0, (1.0 - npvi_diff / 50)) * 100
+        else:
+            npvi_score = 50.0
+    except Exception:
+        npvi_score = 50.0
+
+    # New dimensions
+    vowel_score = measure_vowel_length(user_audio, native_audio)
+    airflow_score = measure_airflow(user_audio, native_audio)
+    final_score = measure_sentence_final_contour(user_audio, native_audio)
+    nasal_score = measure_nasalization(user_audio, native_audio)
+    reduction_score = measure_syllable_reduction(user_audio, native_audio)
+    cadence_score = measure_cadence(user_audio, native_audio)
+
+    # Weighted total
+    total = (
+        0.35 * iso_score
+      + 0.15 * pitch_score
+      + 0.10 * rate_score
+      + 0.10 * npvi_score
+      + 0.08 * vowel_score
+      + 0.05 * airflow_score
+      + 0.07 * final_score
+      + 0.08 * nasal_score
+      + 0.07 * reduction_score
+      + 0.05 * cadence_score
+    )
+
+    # Stress-timed penalty
+    stress_timed = False
+    try:
+        user_durs_st = extract_syllable_durations(user_audio)
+        if user_durs_st:
+            st, npvi_val, _ = is_stress_timed(user_durs_st)
+            stress_timed = st
+            if stress_timed:
+                total = min(total, 65.0)
+    except Exception:
+        pass
+
+    total = round(min(max(total, 0), 100), 1)
+
+    dimensions = {
+        "isochrony": round(iso_score, 1),
+        "pitch_contour": round(pitch_score, 1),
+        "speech_rate": round(rate_score, 1),
+        "rhythm_npvi": round(npvi_score, 1),
+        "vowel_length": round(vowel_score, 1),
+        "airflow": round(airflow_score, 1),
+        "sentence_final": round(final_score, 1),
+        "nasalization": round(nasal_score, 1),
+        "syllable_reduction": round(reduction_score, 1),
+        "cadence": round(cadence_score, 1),
+    }
+
+    # Generate feedback for dimensions below 60
+    feedback = []
+    feedback_map = {
+        "isochrony": "Ritmo tá stress-timed — precisa ser mais silábico",
+        "pitch_contour": "Melodia tá diferente do baiano — ouve mais o nativo",
+        "speech_rate": "Velocidade tá diferente — tenta igualar o ritmo",
+        "rhythm_npvi": "Variação rítmica tá alta — mantém sílabas mais iguais",
+        "vowel_length": "Vogais tônicas tão curtas — abre mais, como baiano",
+        "airflow": "Voz tá tensa — relaxa mais a garganta, deixa o ar fluir",
+        "sentence_final": "Final da frase tá errado — presta atenção na descida/subida",
+        "nasalization": "Nasalização fraca no ão/ã — puxa mais pelo nariz",
+        "syllable_reduction": "Redução de sílaba tá diferente — ouve como o nativo reduz",
+        "cadence": "Falta a ginga baiana — ouve a melodia e imita o swing",
+    }
+    for dim, score in dimensions.items():
+        if score < 60:
+            feedback.append(feedback_map.get(dim, f"{dim} precisa melhorar"))
+
+    return {
+        "total_score": total,
+        "dimensions": dimensions,
+        "stress_timed": stress_timed,
+        "needs_chorusing": total < 85,
+        "force_redrill": stress_timed,
+        "dimension_feedback": feedback,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main scoring function
 # ---------------------------------------------------------------------------
 

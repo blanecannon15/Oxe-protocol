@@ -62,6 +62,18 @@ from chunk_engine import (
     rank_chunk_families, get_next_chunks_for_srs, add_chunks_to_queue,
     get_family_variants,
 )
+from content_ladder import (
+    get_learner_level, classify_content, select_content_for_mode,
+    compute_compression_pct, classify_all_content,
+)
+from fatigue_monitor import (
+    check_fatigue, record_review_event, design_session_blocks,
+    get_fatigue_history, reset_session as reset_fatigue_session,
+)
+from speech_ladder import (
+    get_current_stage, evaluate_gates, advance_stage,
+    check_regression, get_activities_for_stage,
+)
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
@@ -134,6 +146,8 @@ _laranjada_remaining = 0
 
 # Conversation history for Conversa mode
 _conversa_history = []
+_conversa_system_prompt = ""
+_conversa_session_id = None
 
 
 # ── Levenshtein edit distance ──────────────────────────────────
@@ -1170,10 +1184,28 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Speech Stage ──
         elif path == "/api/speech/stage":
             self._speech_stage()
+        elif path == "/api/speech/gates":
+            self._json(evaluate_gates())
+        elif path == "/api/speech/activities":
+            stage = int(query.get("stage", ["0"])[0])
+            if stage == 0:
+                stage = get_current_stage()
+            self._json({"stage": stage, "activities": get_activities_for_stage(stage)})
 
         # ── Fatigue ──
         elif path == "/api/fatigue/status":
-            self._json({"fatigue_score": 0, "recommendation": "continue", "minutes_active": 0})
+            self._json(check_fatigue())
+        elif path == "/api/fatigue/history":
+            date = query.get("date", [None])[0]
+            self._json(get_fatigue_history(date))
+
+        # ── Content Ladder ──
+        elif path == "/api/content/level":
+            self._json({"level": get_learner_level()})
+        elif path == "/api/content/recommend":
+            mode = query.get("mode", ["compression"])[0]
+            limit = int(query.get("limit", ["10"])[0])
+            self._json(select_content_for_mode(mode, limit=limit))
 
         # ── Shared ──
         elif path == "/api/daily-stats":
@@ -1271,6 +1303,37 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             added = add_chunks_to_queue(chunks)
             self._json({"seeded": added})
 
+        # ── Speech Ladder POST ──
+        elif path == "/api/speech/advance":
+            result = advance_stage()
+            self._json(result)
+        elif path == "/api/speech/check-regression":
+            result = check_regression()
+            self._json(result)
+
+        # ── Content Ladder POST ──
+        elif path == "/api/content/classify":
+            ct = body.get("content_type", "story")
+            cid = body.get("content_id", 0)
+            level = classify_content(ct, cid)
+            self._json({"content_type": ct, "content_id": cid, "level": level})
+        elif path == "/api/content/classify-all":
+            results = classify_all_content()
+            self._json(results)
+
+        # ── Fatigue POST ──
+        elif path == "/api/fatigue/reset":
+            reset_fatigue_session()
+            self._json({"ok": True})
+
+        # ── Conversa (stage-scaffolded) ──
+        elif path == "/api/conversa/start":
+            self._conversa_start(body)
+        elif path == "/api/conversa/turn":
+            self._conversa_turn(body)
+        elif path == "/api/conversa/end":
+            self._conversa_end(body)
+
         else:
             self.send_error(404)
 
@@ -1319,6 +1382,22 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         acquired = dist.get("AUTOMATIC_CLEAN", 0) + dist.get("AUTOMATIC_NATIVE", 0) + dist.get("AVAILABLE_OUTPUT", 0)
         automatic = dist.get("AUTOMATIC_NATIVE", 0) + dist.get("AVAILABLE_OUTPUT", 0)
 
+        # Phase B enrichment
+        try:
+            content_level = get_learner_level()
+        except Exception:
+            content_level = "P1"
+        try:
+            fatigue = check_fatigue()
+        except Exception:
+            fatigue = {"fatigue_score": 0, "recommendation": "start_session"}
+        try:
+            speech_stage = get_current_stage()
+            speech_gates = evaluate_gates()
+        except Exception:
+            speech_stage = 1
+            speech_gates = {}
+
         self._json({
             "acquisition_state": {
                 "distribution": dist,
@@ -1330,6 +1409,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "fragile_summary": fragile,
             "tier": {"current": tier, "mastery_pct": current_pct, "label": TIER_LABELS.get(tier, "")},
             "streak": streak,
+            "content_level": content_level,
+            "fatigue": fatigue,
+            "speech": {"stage": speech_stage, "gates": speech_gates},
         })
 
     def _chunk_families(self, limit):
@@ -1342,13 +1424,17 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         self._json([dict(r) for r in rows])
 
     def _speech_stage(self):
-        conn = get_conn()
-        row = conn.execute("SELECT * FROM speech_unlock ORDER BY stage DESC LIMIT 1").fetchone()
-        conn.close()
-        if row:
-            self._json({"stage": row["stage"], "stage_name": row["stage_name"]})
-        else:
-            self._json({"stage": 1, "stage_name": "echo"})
+        try:
+            stage = get_current_stage()
+            gates = evaluate_gates()
+            activities = get_activities_for_stage(stage)
+            self._json({
+                "stage": stage,
+                "gates": gates,
+                "activities": activities,
+            })
+        except Exception:
+            self._json({"stage": 1, "gates": {}, "activities": []})
 
     def _home_stats(self):
         tier = get_unlocked_tier()
@@ -1523,6 +1609,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                     )
         except Exception:
             pass  # never crash drill for state tracking
+
+        # Record fatigue event
+        try:
+            record_review_event(latency_ms or 0, rating.value, retries)
+        except Exception:
+            pass
 
         rating_names = {
             Rating.Again: "De novo",
@@ -1953,6 +2045,158 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             return words
         except Exception:
             return []
+
+    # ── Conversa (Stage-Scaffolded) ─────────────────────────
+
+    def _conversa_start(self, body):
+        """Start a new stage-scaffolded conversa session."""
+        try:
+            stage = get_current_stage()
+            stage_info = get_activities_for_stage(stage)
+            topic = body.get("topic", "")
+            recent_words = self._get_recent_words()
+
+            # Build stage-appropriate system prompt
+            base = (
+                "Tu é um parceiro soteropolitano de Salvador. "
+                "Conversa naturalmente em português baiano — usa oxe, vixe, massa, arretado. "
+                "NUNCA use inglês. Respostas curtas, 2-3 frases máximo."
+            )
+
+            stage_instructions = {
+                1: " O aprendiz está no nível Eco. Fala frases curtas e simples pra ele repetir. Máximo 5 palavras por frase.",
+                2: " O aprendiz está no nível Troca de Chunk. Dá uma frase modelo e pede pra trocar um chunk. Ex: 'Diz a mesma frase mas troca X por Y.'",
+                3: " O aprendiz está no nível Reconto Guiado. Conta uma mini-história (3 frases) e pede pra recontar com as próprias palavras.",
+                4: " O aprendiz está no nível Expressão Guiada. Faz perguntas simples sobre o dia-a-dia pra ele responder usando chunks conhecidos.",
+                5: " O aprendiz está no nível Semi-Livre. Conversa sobre um tópico definido mas deixa ele falar mais. Corrige sutilmente se precisar.",
+                6: " O aprendiz está no nível Livre. Conversa natural sobre qualquer assunto. Não simplifica demais.",
+            }
+
+            system_prompt = base + stage_instructions.get(stage, stage_instructions[1])
+            if recent_words:
+                system_prompt += f" Tenta usar estas palavras: {', '.join(recent_words)}"
+
+            # Store session in DB
+            conn = get_conn()
+            now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            conn.execute(
+                "INSERT INTO conversa_sessions (date, speech_stage, mode, prompt_type, messages) VALUES (?, ?, ?, ?, ?)",
+                (today, stage, "stage_scaffolded", f"stage_{stage}", json.dumps([])),
+            )
+            session_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.commit()
+            conn.close()
+
+            # Store system prompt in global for this session
+            global _conversa_history, _conversa_system_prompt, _conversa_session_id
+            _conversa_history = []
+            _conversa_system_prompt = system_prompt
+            _conversa_session_id = session_id
+
+            # Generate opening message
+            import openai
+            client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            opener_prompt = "Começa a conversa com uma saudação curta baiana e inicia a atividade do nível."
+            if topic:
+                opener_prompt += f" Tema: {topic}"
+
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=150,
+                temperature=0.8,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": opener_prompt},
+                ],
+            )
+            reply = resp.choices[0].message.content.strip()
+            _conversa_history.append({"role": "assistant", "content": reply})
+
+            audio_fname = generate_tts(reply)
+
+            self._json({
+                "session_id": session_id,
+                "stage": stage,
+                "reply": reply,
+                "audio_file": audio_fname,
+            })
+        except Exception as e:
+            print(f"[Conversa Start] Error: {e}")
+            self._json({"error": str(e), "stage": 1})
+
+    def _conversa_turn(self, body):
+        """Handle a turn in the stage-scaffolded conversa."""
+        global _conversa_history, _conversa_system_prompt
+        message = body.get("message", "").strip()
+        if not message:
+            self._json({"reply": "Fala alguma coisa, parceiro!", "audio_file": None})
+            return
+
+        try:
+            _conversa_history.append({"role": "user", "content": message})
+            if len(_conversa_history) > 20:
+                _conversa_history = _conversa_history[-20:]
+
+            system_prompt = getattr(self, '_conversa_system_prompt', None) or _conversa_system_prompt
+            messages = [{"role": "system", "content": system_prompt}] + _conversa_history
+
+            import openai
+            client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=150,
+                temperature=0.8,
+                messages=messages,
+            )
+            reply = resp.choices[0].message.content.strip()
+            _conversa_history.append({"role": "assistant", "content": reply})
+
+            audio_fname = generate_tts(reply)
+
+            # Record fatigue event (conversa is low-stress but still active)
+            record_review_event(latency_ms=0, rating=3, replays=0)
+
+            self._json({"reply": reply, "audio_file": audio_fname})
+        except Exception as e:
+            print(f"[Conversa Turn] Error: {e}")
+            self._json({"reply": "Oxe, deu erro aqui. Tenta de novo.", "audio_file": None})
+
+    def _conversa_end(self, body):
+        """End a conversa session and extract chunks."""
+        global _conversa_history, _conversa_session_id
+        session_id = body.get("session_id") or getattr(self.__class__, '_conversa_session_id', None) or globals().get('_conversa_session_id')
+
+        try:
+            # Save messages to DB
+            if session_id and _conversa_history:
+                conn = get_conn()
+                conn.execute(
+                    "UPDATE conversa_sessions SET messages = ?, duration_seconds = ? WHERE id = ?",
+                    (json.dumps(_conversa_history), body.get("duration_seconds", 0), session_id),
+                )
+                conn.commit()
+                conn.close()
+
+            # Extract learner messages for chunk analysis
+            learner_msgs = [m["content"] for m in _conversa_history if m["role"] == "user"]
+            chunks_used = []
+            if learner_msgs:
+                full_text = " ".join(learner_msgs)
+                # Simple extraction: save full text for later chunk_engine processing
+                chunks_used = full_text.split(".")[:5]
+
+            _conversa_history = []
+
+            self._json({
+                "ok": True,
+                "session_id": session_id,
+                "turns": len(learner_msgs) if learner_msgs else 0,
+                "chunks_used": len(chunks_used),
+            })
+        except Exception as e:
+            print(f"[Conversa End] Error: {e}")
+            self._json({"ok": False, "error": str(e)})
 
     # ── Story Endpoints ────────────────────────────────────
 
