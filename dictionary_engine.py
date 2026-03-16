@@ -152,17 +152,27 @@ def search_word(query, db_path=DB_PATH):
 
     conn.close()
 
-    # Sort final results by frequency_rank
-    results = [
-        {
+    # Build results preserving match-type priority:
+    # exact (0) → prefix (1) → contains (2), then frequency within each group
+    results = []
+    for r in rows:
+        w = r["word"].lower()
+        if w == query:
+            match_type = 0
+        elif w.startswith(query):
+            match_type = 1
+        else:
+            match_type = 2
+        results.append({
             "word_id": r["id"],
             "word": r["word"],
             "frequency_rank": r["frequency_rank"],
             "difficulty_tier": r["difficulty_tier"],
-        }
-        for r in rows
-    ]
-    results.sort(key=lambda x: x["frequency_rank"])
+            "_match_type": match_type,
+        })
+    results.sort(key=lambda x: (x["_match_type"], x["frequency_rank"]))
+    for r in results:
+        del r["_match_type"]
     return results[:10]
 
 
