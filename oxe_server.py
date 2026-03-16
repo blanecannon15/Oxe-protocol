@@ -224,59 +224,151 @@ HOME_HTML = r"""<!DOCTYPE html>
   /* ── Scroll content ── */
   .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; }
 
-  /* ── Progress Card ── */
-  .progress-card {
-    background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(124,92,252,0.06));
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: 20px;
-    padding: 28px; margin-bottom: 32px; animation: fadeIn 0.4s ease-out;
-    transition: transform 0.2s, box-shadow 0.2s;
+  /* ── Glass Card base ── */
+  .glass-card {
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; transition: transform 0.2s, box-shadow 0.2s;
   }
-  .progress-row { display: flex; justify-content: space-between; align-items: center; }
-  .progress-left { display: flex; flex-direction: column; gap: 4px; }
-  .progress-left h2 { font-size: 1.2em; font-weight: 700; color: #fafafa; }
-  .progress-tier-name { font-size: 0.85em; color: #60a5fa; font-weight: 600; }
-  .progress-due { font-size: 0.78em; color: #7a7a8e; margin-top: 2px; }
-  .progress-ring { position: relative; width: 80px; height: 80px; }
-  .progress-ring svg { transform: rotate(-90deg); animation: ringPulse 3s ease-in-out infinite; }
-  .progress-ring .bg { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 5; }
-  .progress-ring .fg { fill: none; stroke: url(#grad); stroke-width: 5; stroke-linecap: round;
-    transition: stroke-dashoffset 0.8s ease; }
-  .progress-tier-num {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-  }
-  .progress-tier-num .tier-big { font-size: 1.4em; font-weight: 800; color: #fafafa; line-height: 1; }
-  .progress-tier-num .tier-sub { font-size: 0.55em; color: #7a7a8e; font-weight: 500; margin-top: 1px; }
-  .stats-row {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 22px;
-    border-top: 1px solid rgba(255,255,255,0.06); padding-top: 18px;
-  }
-  .sstat { text-align: center; }
-  .sstat-val { font-size: 1.3em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
-  .sstat-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
 
-  /* ── Palavra do Dia ── */
+  /* ── Acquisition Pipeline ── */
+  .pipeline-card {
+    background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(124,92,252,0.06));
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; padding: 24px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out;
+  }
+  .pipeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .pipeline-header h2 { font-size: 1.05em; font-weight: 700; }
+  .tier-badge {
+    display: flex; align-items: center; gap: 6px; padding: 5px 12px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(124,92,252,0.15));
+    border: 1px solid rgba(124,92,252,0.2); border-radius: 14px;
+    font-size: 0.72em; font-weight: 700; color: #a78bfa;
+  }
+  .tier-badge .tier-num { font-size: 1.1em; color: #fafafa; }
+  .pipeline-bar {
+    display: flex; height: 28px; border-radius: 8px; overflow: hidden;
+    background: rgba(255,255,255,0.04); margin-bottom: 10px;
+  }
+  .pipeline-seg {
+    height: 100%; min-width: 2px; position: relative; transition: width 0.6s ease;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pipeline-seg span {
+    font-size: 0.55em; font-weight: 700; color: rgba(0,0,0,0.7); opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .pipeline-seg:hover span, .pipeline-seg.show-label span { opacity: 1; }
+  .pipeline-legend {
+    display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px;
+  }
+  .pipeline-legend-item {
+    display: flex; align-items: center; gap: 4px; font-size: 0.6em; color: #7a7a8e;
+  }
+  .pipeline-legend-dot {
+    width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0;
+  }
+
+  /* ── Quick Stats Row ── */
+  .quick-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.05s both;
+  }
+  .qstat {
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06); border-radius: 14px;
+    padding: 14px 8px; text-align: center;
+  }
+  .qstat-val { font-size: 1.2em; font-weight: 800; font-variant-numeric: tabular-nums; color: #fafafa; }
+  .qstat-lbl { font-size: 0.55em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 3px; line-height: 1.3; }
+
+  /* ── Today's Plan ── */
+  .plan-card {
+    padding: 20px 24px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.1s both;
+  }
+  .plan-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .plan-header h3 { font-size: 0.95em; font-weight: 700; }
+  .plan-block-label { font-size: 0.72em; color: #7a7a8e; }
+  .plan-progress-track {
+    height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; margin-bottom: 14px;
+  }
+  .plan-progress-fill {
+    height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3B82F6, #7C5CFC);
+    transition: width 0.6s ease; min-width: 0;
+  }
+  .plan-footer { display: flex; justify-content: space-between; align-items: center; }
+  .plan-pct { font-size: 0.78em; color: #60a5fa; font-weight: 600; }
+  .btn-treinar {
+    display: inline-flex; align-items: center; gap: 6px; padding: 10px 22px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+    border: none; border-radius: 14px; font-size: 0.85em; font-weight: 700;
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 2px 12px rgba(59,130,246,0.3);
+  }
+  .btn-treinar:active { transform: scale(0.96); }
+
+  /* ── Fatigue & Speech Row ── */
+  .status-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.15s both;
+  }
+  .status-item {
+    padding: 16px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .status-label { font-size: 0.6em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .status-value { display: flex; align-items: center; gap: 8px; }
+  .fatigue-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .fatigue-num { font-size: 1.3em; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .fatigue-rec { font-size: 0.65em; color: #7a7a8e; }
+  .fatigue-warn {
+    font-size: 0.68em; color: #f87171; font-weight: 600;
+    padding: 4px 10px; background: rgba(248,113,113,0.1); border-radius: 8px;
+    margin-top: 2px; display: none;
+  }
+  .speech-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(124,92,252,0.12));
+    border: 1px solid rgba(124,92,252,0.15); border-radius: 12px;
+    font-size: 0.85em; font-weight: 700; color: #a78bfa;
+  }
+  .speech-stage-num { font-size: 1.1em; color: #fafafa; }
+
+  /* ── Fragile Items ── */
+  .fragile-card {
+    padding: 20px 24px; margin-bottom: 16px; border-top: 2px solid #f87171;
+    animation: fadeIn 0.4s ease-out 0.2s both; display: none;
+  }
+  .fragile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .fragile-header h3 { font-size: 0.95em; font-weight: 700; color: #f87171; }
+  .fragile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 14px; }
+  .fragile-item { display: flex; align-items: center; gap: 6px; font-size: 0.78em; color: #7a7a8e; }
+  .fragile-item .fcount { color: #fafafa; font-weight: 700; min-width: 20px; }
+  .btn-resgatar {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px;
+    background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.2);
+    border-radius: 12px; font-size: 0.78em; font-weight: 700;
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s;
+  }
+  .btn-resgatar:active { transform: scale(0.96); }
+
+  /* ── Palavra do Dia (compact) ── */
   .wod-card {
-    background: rgba(255,255,255,0.03);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: 20px; padding: 24px 28px; margin-bottom: 32px;
-    animation: fadeIn 0.4s ease-out 0.08s both;
+    padding: 18px 24px; margin-bottom: 16px;
+    animation: fadeIn 0.4s ease-out 0.25s both;
     border-top: 2px solid #7C5CFC;
-    transition: transform 0.2s, box-shadow 0.2s;
   }
   .wod-header {
-    font-size: 0.7em; font-weight: 600; color: #7C5CFC; text-transform: uppercase;
-    letter-spacing: 1.5px; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+    font-size: 0.65em; font-weight: 600; color: #7C5CFC; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
   }
   .wod-header::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #7C5CFC; }
-  .wod-word {
-    font-size: 1.6em; font-weight: 800; color: #fafafa; letter-spacing: -0.5px;
-    margin-bottom: 8px;
-  }
-  .wod-sentence {
-    font-size: 0.88em; color: #7a7a8e; line-height: 1.6; font-style: italic;
-  }
+  .wod-word { font-size: 1.3em; font-weight: 800; color: #fafafa; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .wod-sentence { font-size: 0.8em; color: #7a7a8e; line-height: 1.5; font-style: italic; }
 
   /* ── Section Headers ── */
   .section-hdr {
@@ -285,19 +377,17 @@ HOME_HTML = r"""<!DOCTYPE html>
   }
 
   /* ── Feature Grid ── */
-  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 32px; }
+  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
   .fcard {
-    background: rgba(255,255,255,0.03);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
     border-radius: 20px; padding: 22px 18px; text-decoration: none; color: inherit;
     -webkit-tap-highlight-color: transparent;
     transition: transform 0.2s, box-shadow 0.2s;
     display: flex; flex-direction: column; gap: 12px;
     position: relative; overflow: hidden;
   }
-  .fcard::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  }
+  .fcard::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
   .fcard.blue-edge::before { background: linear-gradient(90deg, #3B82F6, #60a5fa); }
   .fcard.purple-edge::before { background: linear-gradient(90deg, #7C5CFC, #a78bfa); }
   .fcard.red-edge::before { background: linear-gradient(90deg, #f87171, #fca5a5); }
@@ -320,24 +410,18 @@ HOME_HTML = r"""<!DOCTYPE html>
   }
   .fcard-badge.red { background: rgba(248,113,113,0.10); color: #f87171; }
 
-  /* ── Today Stats ── */
+  /* ── Today Stats (compact) ── */
   .today-card {
-    background: rgba(255,255,255,0.03);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: 20px; padding: 20px 0; margin-bottom: 32px;
-    display: flex; align-items: center;
-    animation: fadeIn 0.4s ease-out 0.15s both;
-    transition: transform 0.2s, box-shadow 0.2s;
+    padding: 16px 0; margin-bottom: 16px; display: flex; align-items: center;
+    animation: fadeIn 0.4s ease-out 0.3s both;
   }
-  .today-stat {
-    flex: 1; text-align: center; position: relative;
-  }
+  .today-stat { flex: 1; text-align: center; position: relative; }
   .today-stat + .today-stat::before {
     content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-    width: 1px; height: 36px; background: rgba(255,255,255,0.06);
+    width: 1px; height: 32px; background: rgba(255,255,255,0.06);
   }
-  .today-val { font-size: 1.6em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
-  .today-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+  .today-val { font-size: 1.4em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
+  .today-lbl { font-size: 0.55em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
 
   /* ── Gradient def ── */
   .hidden-svg { position: absolute; width: 0; height: 0; }
@@ -361,43 +445,97 @@ HOME_HTML = r"""<!DOCTYPE html>
 
 <div class="page">
 
-  <!-- Progress Card -->
-  <div class="progress-card">
-    <div class="progress-row">
-      <div class="progress-left">
-        <h2 id="tier-label">Tier 1</h2>
-        <div class="progress-tier-name" id="tier-name">Sobrevivência</div>
-        <div class="progress-due"><span id="due">0</span> palavras pra revisar</div>
-      </div>
-      <div class="progress-ring">
-        <svg width="80" height="80" viewBox="0 0 80 80">
-          <circle class="bg" cx="40" cy="40" r="34"/>
-          <circle class="fg" id="ring-fg" cx="40" cy="40" r="34"
-            stroke-dasharray="213.63" stroke-dashoffset="213.63"/>
-        </svg>
-        <div class="progress-tier-num">
-          <span class="tier-big" id="tier-num">1</span>
-          <span class="tier-sub" id="mastery-pct">0%</span>
-        </div>
+  <!-- Acquisition Pipeline Card -->
+  <div class="pipeline-card">
+    <div class="pipeline-header">
+      <h2>Pipeline de Aquisicao</h2>
+      <div class="tier-badge">
+        <span class="tier-num" id="tier-num">1</span>
+        <span id="tier-label">Sobrevivencia</span>
+        <span style="color:#7a7a8e">&#183;</span>
+        <span id="mastery-pct">0%</span>
       </div>
     </div>
-    <div class="stats-row">
-      <div class="sstat"><div class="sstat-val" id="today-reviewed">0</div><div class="sstat-lbl">Hoje</div></div>
-      <div class="sstat"><div class="sstat-val" id="today-mastered">0</div><div class="sstat-lbl">Dominadas</div></div>
-      <div class="sstat"><div class="sstat-val" id="story-count">0</div><div class="sstat-lbl">Historias</div></div>
+    <div class="pipeline-bar" id="pipeline-bar"></div>
+    <div class="pipeline-legend" id="pipeline-legend"></div>
+  </div>
+
+  <!-- Quick Stats Row -->
+  <div class="quick-stats">
+    <div class="qstat">
+      <div class="qstat-val" id="qs-acquired">0</div>
+      <div class="qstat-lbl">Adquiridas</div>
+    </div>
+    <div class="qstat">
+      <div class="qstat-val" id="qs-automatic">0</div>
+      <div class="qstat-lbl">Automaticas</div>
+    </div>
+    <div class="qstat">
+      <div class="qstat-val" id="qs-output">0</div>
+      <div class="qstat-lbl">Producao</div>
+    </div>
+    <div class="qstat">
+      <div class="qstat-val" id="qs-fragile">0</div>
+      <div class="qstat-lbl">Frageis</div>
     </div>
   </div>
 
+  <!-- Today's Plan -->
+  <a href="/plan" style="text-decoration:none;color:inherit;display:block">
+  <div class="plan-card glass-card">
+    <div class="plan-header">
+      <h3>Plano de Hoje</h3>
+      <div class="plan-block-label" id="plan-block-label">Bloco 0 de 0</div>
+    </div>
+    <div class="plan-progress-track">
+      <div class="plan-progress-fill" id="plan-fill" style="width:0%"></div>
+    </div>
+    <div class="plan-footer">
+      <div class="plan-pct" id="plan-pct">0%</div>
+      <a href="/drill" class="btn-treinar" onclick="event.stopPropagation()">&#x1f3af; Treinar</a>
+    </div>
+  </div>
+  </a>
+
+  <!-- Fatigue & Speech Row -->
+  <div class="status-row">
+    <div class="status-item glass-card">
+      <div class="status-label">Fadiga</div>
+      <div class="status-value">
+        <div class="fatigue-dot" id="fatigue-dot" style="background:#34d399"></div>
+        <div class="fatigue-num" id="fatigue-score">0</div>
+        <div class="fatigue-rec" id="fatigue-rec"></div>
+      </div>
+      <div class="fatigue-warn" id="fatigue-warn">Hora de descansar</div>
+    </div>
+    <a href="/speech" class="status-item glass-card" style="text-decoration:none;color:inherit;-webkit-tap-highlight-color:transparent">
+      <div class="status-label">Fala</div>
+      <div class="speech-badge" id="speech-badge">
+        <span class="speech-stage-num" id="speech-stage">1</span>
+        <span id="speech-name">Eco</span>
+      </div>
+    </a>
+  </div>
+
+  <!-- Fragile Items Card -->
+  <div class="fragile-card glass-card" id="fragile-card">
+    <div class="fragile-header">
+      <h3>Itens Frageis</h3>
+      <a href="/drill?mode=fragile" class="btn-resgatar">&#x1f6df; Resgatar</a>
+    </div>
+    <div class="fragile-grid" id="fragile-grid"></div>
+  </div>
+
   <!-- Palavra do Dia -->
-  <div class="wod-card" id="wod-card" style="display:none">
+  <div class="wod-card glass-card" id="wod-card" style="display:none">
     <div class="wod-header">Palavra do Dia</div>
     <div class="wod-word" id="wod-word"></div>
     <div class="wod-sentence" id="wod-sentence"></div>
   </div>
 
   <!-- Practice -->
-  <div class="section-hdr">Praticar</div>
-  <div class="feature-grid" style="animation:fadeIn 0.4s ease-out 0.1s both">
+  <div class="section-hdr" style="animation:fadeIn 0.4s ease-out 0.28s both">Praticar</div>
+  <div class="feature-grid" style="animation:fadeIn 0.4s ease-out 0.3s both">
     <a href="/drill" class="fcard blue-edge">
       <div class="fcard-icon blue">&#x1f3af;</div>
       <div class="fcard-title">Treinar</div>
@@ -421,11 +559,16 @@ HOME_HTML = r"""<!DOCTYPE html>
       <div class="fcard-title">Conversa</div>
       <div class="fcard-desc">Papo livre com IA baiana</div>
     </a>
+    <a href="/chunks" class="fcard purple-edge">
+      <div class="fcard-icon purple">&#x1f9e9;</div>
+      <div class="fcard-title">Chunks</div>
+      <div class="fcard-desc">Familias de collocations</div>
+    </a>
   </div>
 
   <!-- Today -->
-  <div class="section-hdr">Hoje</div>
-  <div class="today-card">
+  <div class="section-hdr" style="animation:fadeIn 0.4s ease-out 0.32s both">Hoje</div>
+  <div class="today-card glass-card">
     <div class="today-stat">
       <div class="today-val" id="today-mins">0</div>
       <div class="today-lbl">Minutos</div>
@@ -445,38 +588,626 @@ HOME_HTML = r"""<!DOCTYPE html>
 {tab_bar}
 
 <script>
-var tierNames={1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
-fetch('/api/home-stats').then(r=>r.json()).then(d=>{
-  document.getElementById('tier-label').textContent='Tier '+d.tier;
-  document.getElementById('tier-name').textContent=tierNames[d.tier]||'';
-  document.getElementById('tier-num').textContent=d.tier;
-  document.getElementById('due').textContent=d.due;
-  document.getElementById('mastery-pct').textContent=d.mastery_pct+'%';
-  document.getElementById('streak').textContent=d.streak||0;
-  document.getElementById('story-count').textContent=d.story_count;
-  document.getElementById('due-badge').textContent=d.due+' pendentes';
-  document.getElementById('stories-badge').textContent=d.story_count+' historias';
-  document.getElementById('weak-badge').textContent=(d.weak_count||0)+' fracas';
-  // Progress ring (r=34, circumference=2*pi*34=213.63)
-  var circumference=213.63;
-  var offset=circumference-(d.mastery_pct/100)*circumference;
-  document.getElementById('ring-fg').style.strokeDashoffset=offset;
-  // Word of the Day
+var PIPE_STATES = [
+  {key:'UNKNOWN',       label:'Desconhecida', color:'#525263'},
+  {key:'RECOGNIZED',    label:'Reconhecida',  color:'#f87171'},
+  {key:'CONTEXT_KNOWN', label:'Contexto',     color:'#fb923c'},
+  {key:'EFFORTFUL_AUDIO',label:'Audio Lento', color:'#facc15'},
+  {key:'AUTOMATIC_CLEAN',label:'Automatica',  color:'#34d399'},
+  {key:'AUTOMATIC_NATIVE',label:'Nativa',     color:'#3B82F6'},
+  {key:'AVAILABLE_OUTPUT',label:'Producao',   color:'#7C5CFC'}
+];
+var SPEECH_NAMES = {1:'Eco',2:'Sombra',3:'Fala Guiada',4:'Fala Livre',5:'Nativo'};
+var FATIGUE_LABELS = {start_session:'Pronto',continue:'Continua',take_break:'Descanse',end_session:'Pare'};
+
+function renderPipeline(dist) {
+  var bar = document.getElementById('pipeline-bar');
+  var legend = document.getElementById('pipeline-legend');
+  var total = 0;
+  PIPE_STATES.forEach(function(s){ total += (dist[s.key]||0); });
+  if (total === 0) total = 1;
+  bar.innerHTML = '';
+  legend.innerHTML = '';
+  PIPE_STATES.forEach(function(s) {
+    var count = dist[s.key]||0;
+    var pct = (count/total)*100;
+    if (count > 0) {
+      var seg = document.createElement('div');
+      seg.className = 'pipeline-seg' + (pct > 8 ? ' show-label' : '');
+      seg.style.width = Math.max(pct, 0.4) + '%';
+      seg.style.background = s.color;
+      var sp = document.createElement('span');
+      sp.textContent = count >= 1000 ? Math.round(count/1000)+'k' : count;
+      seg.appendChild(sp);
+      seg.title = s.label + ': ' + count.toLocaleString();
+      bar.appendChild(seg);
+    }
+    var li = document.createElement('div');
+    li.className = 'pipeline-legend-item';
+    li.innerHTML = '<div class="pipeline-legend-dot" style="background:'+s.color+'"></div>' + s.label + ' <b style="color:#fafafa;margin-left:2px">' + count.toLocaleString() + '</b>';
+    legend.appendChild(li);
+  });
+}
+
+function renderFragile(fs) {
+  var grid = document.getElementById('fragile-grid');
+  var card = document.getElementById('fragile-card');
+  if (!fs || fs.total === 0) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  var items = [
+    {icon:'\ud83d\udc40', label:'Familiar mas fragil', key:'familiar_but_fragile'},
+    {icon:'\ud83d\udc22', label:'Conhecida mas lenta', key:'known_but_slow'},
+    {icon:'\ud83d\udcdd', label:'So texto',            key:'text_only'},
+    {icon:'\ud83d\udd0a', label:'So audio limpo',      key:'clean_audio_only'},
+    {icon:'\ud83c\udfb5', label:'Bloqueada prosodia',  key:'blocked_by_prosody'}
+  ];
+  grid.innerHTML = '';
+  items.forEach(function(it) {
+    var c = fs[it.key]||0;
+    if (c > 0) {
+      var d = document.createElement('div');
+      d.className = 'fragile-item';
+      d.innerHTML = it.icon + ' <span class="fcount">' + c + '</span> ' + it.label;
+      grid.appendChild(d);
+    }
+  });
+}
+
+function fatigueColor(score) {
+  if (score < 30) return '#34d399';
+  if (score < 50) return '#facc15';
+  if (score < 70) return '#fb923c';
+  return '#f87171';
+}
+
+function applyDashboard(d) {
+  // Streak
+  document.getElementById('streak').textContent = d.streak || 0;
+
+  // Tier badge
+  var tier = d.tier || {};
+  document.getElementById('tier-num').textContent = tier.current || 1;
+  document.getElementById('tier-label').textContent = tier.label || '';
+  document.getElementById('mastery-pct').textContent = (tier.mastery_pct||0) + '%';
+
+  // Pipeline
+  var dist = (d.acquisition_state||{}).distribution||{};
+  renderPipeline(dist);
+
+  // Quick stats
+  var acq = d.acquisition_state||{};
+  document.getElementById('qs-acquired').textContent = acq.acquired_count||0;
+  document.getElementById('qs-automatic').textContent = acq.automatic_count||0;
+  document.getElementById('qs-output').textContent = acq.available_count||0;
+  document.getElementById('qs-fragile').textContent = (d.fragile_summary||{}).total||0;
+
+  // Today's plan
+  var plan = d.today||{};
+  var compPct = plan.completed_pct||0;
+  document.getElementById('plan-fill').style.width = compPct + '%';
+  document.getElementById('plan-pct').textContent = Math.round(compPct) + '%';
+  var blkLabel = 'Bloco ' + (plan.completed_blocks||0) + ' de ' + (plan.total_blocks||0);
+  if (plan.current_block && plan.current_block.type) {
+    blkLabel += ' \u2014 ' + plan.current_block.type;
+  }
+  document.getElementById('plan-block-label').textContent = blkLabel;
+
+  // Fatigue
+  var fat = d.fatigue||{};
+  var fScore = fat.fatigue_score||0;
+  document.getElementById('fatigue-score').textContent = fScore;
+  document.getElementById('fatigue-dot').style.background = fatigueColor(fScore);
+  document.getElementById('fatigue-rec').textContent = FATIGUE_LABELS[fat.recommendation]||'';
+  var warn = document.getElementById('fatigue-warn');
+  if (fat.recommendation === 'take_break' || fat.recommendation === 'end_session') {
+    warn.style.display = 'block';
+    warn.textContent = fat.recommendation === 'end_session' ? 'Sessao encerrada \u2014 descanse!' : 'Hora de descansar';
+  }
+
+  // Speech
+  var sp = d.speech||{};
+  var stg = sp.stage||1;
+  document.getElementById('speech-stage').textContent = stg;
+  document.getElementById('speech-name').textContent = SPEECH_NAMES[stg]||('Estagio '+stg);
+
+  // Fragile
+  renderFragile(d.fragile_summary);
+}
+
+// Primary: /api/dashboard, fallback: /api/home-stats
+fetch('/api/dashboard').then(function(r){
+  if(!r.ok) throw new Error('dashboard failed');
+  return r.json();
+}).then(function(d){
+  applyDashboard(d);
+}).catch(function(){
+  // Fallback to home-stats
+  fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
+    document.getElementById('streak').textContent = d.streak||0;
+    document.getElementById('tier-num').textContent = d.tier||1;
+    document.getElementById('tier-label').textContent = '';
+    document.getElementById('mastery-pct').textContent = (d.mastery_pct||0)+'%';
+    document.getElementById('due-badge').textContent = (d.due||0)+' pendentes';
+    document.getElementById('stories-badge').textContent = (d.story_count||0)+' historias';
+    document.getElementById('weak-badge').textContent = (d.weak_count||0)+' fracas';
+    if(d.word_of_day){
+      document.getElementById('wod-word').textContent=d.word_of_day.text||'';
+      document.getElementById('wod-sentence').textContent=d.word_of_day.sentence||'';
+      document.getElementById('wod-card').style.display='block';
+    }
+  });
+});
+
+// Word of day + daily stats (supplementary)
+fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
+  document.getElementById('due-badge').textContent = (d.due||0)+' pendentes';
+  document.getElementById('stories-badge').textContent = (d.story_count||0)+' historias';
+  document.getElementById('weak-badge').textContent = (d.weak_count||0)+' fracas';
   if(d.word_of_day){
-    var wod=d.word_of_day;
-    document.getElementById('wod-word').textContent=wod.text||'';
-    document.getElementById('wod-sentence').textContent=wod.sentence||'';
+    document.getElementById('wod-word').textContent=d.word_of_day.text||'';
+    document.getElementById('wod-sentence').textContent=d.word_of_day.sentence||'';
     document.getElementById('wod-card').style.display='block';
   }
 });
-fetch('/api/daily-stats').then(r=>r.json()).then(d=>{
+fetch('/api/daily-stats').then(function(r){return r.json()}).then(function(d){
   var t=d.today||{};
-  document.getElementById('today-reviewed').textContent=t.words_reviewed||0;
-  document.getElementById('today-mastered').textContent=t.words_mastered||0;
   document.getElementById('today-words').textContent=t.words_reviewed||0;
   document.getElementById('today-new').textContent=t.words_mastered||0;
   document.getElementById('today-mins').textContent=Math.round(t.minutes||0);
 });
+</script>
+</body></html>"""
+
+
+# ── Speech Ladder HTML ────────────────────────────────────────
+
+SPEECH_HTML = r"""<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Escada da Fala</title>
+<style>
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes glowPulse { 0%,100%{box-shadow:0 0 8px rgba(52,211,153,0.4)} 50%{box-shadow:0 0 24px rgba(52,211,153,0.8)} }
+  @keyframes celebratePop { 0%{transform:scale(0.5);opacity:0} 50%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
+  @keyframes confetti { 0%{transform:translateY(0) rotate(0)} 100%{transform:translateY(80vh) rotate(720deg);opacity:0} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+    min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+    -webkit-user-select: none; user-select: none;
+    padding-bottom: 76px;
+  }
+
+  /* ── Top Bar ── */
+  .topbar {
+    padding: 16px 20px 14px; display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 10; background: #0a0a0b;
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 12px; border: none;
+    background: rgba(255,255,255,0.06); color: #fafafa; font-size: 1.2em;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    text-decoration: none;
+  }
+  .back-btn:active { transform: scale(0.92); }
+  .topbar-title {
+    font-size: 1.3em; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #4F7BEF, #7C5CFC);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+
+  /* ── Page ── */
+  .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; }
+
+  /* ── Regression Banner ── */
+  .regression-banner {
+    display: none; padding: 12px 16px; margin: 12px 0;
+    background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.25);
+    border-radius: 14px; font-size: 0.82em; color: #f87171; font-weight: 600;
+    text-align: center; animation: fadeIn 0.4s ease-out;
+  }
+
+  /* ── Celebration Overlay ── */
+  .celebration {
+    display: none; position: fixed; inset: 0; z-index: 200;
+    background: rgba(10,10,11,0.85); backdrop-filter: blur(12px);
+    flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  }
+  .celebration.show { display: flex; }
+  .celebration .emoji { font-size: 4em; animation: celebratePop 0.5s ease-out; }
+  .celebration .msg { font-size: 1.3em; font-weight: 800; color: #34d399; animation: celebratePop 0.5s ease-out 0.1s both; }
+  .celebration .sub { font-size: 0.9em; color: #7a7a8e; animation: celebratePop 0.5s ease-out 0.2s both; }
+  .confetti-piece {
+    position: fixed; top: -20px; width: 10px; height: 10px; border-radius: 2px;
+    animation: confetti 2.5s ease-in forwards; z-index: 201;
+  }
+
+  /* ── Hero Card ── */
+  .hero-card {
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; padding: 28px 24px; margin: 16px 0;
+    animation: fadeIn 0.4s ease-out; text-align: center;
+  }
+  .stage-circle {
+    width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2em; font-weight: 900; color: #fafafa;
+    background: rgba(255,255,255,0.04);
+    border: 3px solid transparent; position: relative;
+  }
+  .stage-circle::before {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
+    padding: 3px; background: var(--stage-gradient);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+  .hero-name { font-size: 1.3em; font-weight: 800; margin-bottom: 4px; }
+  .hero-desc { font-size: 0.85em; color: #7a7a8e; margin-bottom: 16px; }
+  .activity-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 20px; }
+  .pill {
+    padding: 5px 14px; border-radius: 20px; font-size: 0.68em; font-weight: 600;
+    background: rgba(255,255,255,0.06); color: #a0a0b0;
+  }
+  .btn-conversa {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+    border: none; border-radius: 14px; font-size: 0.9em; font-weight: 700;
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s; box-shadow: 0 2px 12px rgba(59,130,246,0.3);
+  }
+  .btn-conversa:active { transform: scale(0.96); }
+
+  /* ── Gate Progress ── */
+  .gate-section {
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
+    border-radius: 20px; padding: 24px; margin-bottom: 16px;
+    animation: fadeIn 0.4s ease-out 0.1s both;
+  }
+  .gate-title { font-size: 0.78em; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; }
+  .criterion-row { margin-bottom: 14px; }
+  .criterion-label { font-size: 0.78em; color: #a0a0b0; margin-bottom: 5px; display: flex; justify-content: space-between; }
+  .criterion-nums { font-weight: 700; color: #fafafa; }
+  .progress-track {
+    height: 10px; border-radius: 5px; background: rgba(255,255,255,0.06); overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 5px; transition: width 0.6s ease; min-width: 0;
+  }
+  .btn-advance {
+    display: none; width: 100%; padding: 14px; margin-top: 8px;
+    background: linear-gradient(135deg, #34d399, #10b981); color: #fff;
+    border: none; border-radius: 14px; font-size: 1em; font-weight: 800;
+    cursor: pointer; animation: glowPulse 2s infinite;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-advance:active { transform: scale(0.97); }
+
+  /* ── Ladder Visualization ── */
+  .ladder-section {
+    margin: 16px 0; animation: fadeIn 0.4s ease-out 0.2s both;
+  }
+  .ladder-title { font-size: 0.78em; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; padding-left: 4px; }
+  .ladder {
+    position: relative; padding-left: 36px;
+  }
+  .ladder::before {
+    content: ''; position: absolute; left: 14px; top: 0; bottom: 0; width: 2px;
+    background: rgba(255,255,255,0.08);
+  }
+  .ladder-node {
+    position: relative; margin-bottom: 12px; padding: 14px 18px;
+    background: rgba(255,255,255,0.03); border-radius: 16px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+    transition: all 0.3s;
+  }
+  .ladder-node.current {
+    background: rgba(255,255,255,0.06);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 4px 16px rgba(0,0,0,0.3);
+  }
+  .ladder-node.completed { opacity: 0.7; }
+  .ladder-node.locked { opacity: 0.35; }
+  .ladder-dot {
+    position: absolute; left: -29px; top: 18px; width: 12px; height: 12px;
+    border-radius: 50%; border: 2px solid rgba(255,255,255,0.15);
+    background: #0a0a0b;
+  }
+  .ladder-node.completed .ladder-dot { background: #34d399; border-color: #34d399; }
+  .ladder-node.current .ladder-dot { border-color: var(--stage-color); background: var(--stage-color); box-shadow: 0 0 8px var(--stage-color); }
+  .ladder-node.locked .ladder-dot { background: #1a1a1e; border-color: rgba(255,255,255,0.08); }
+  .node-header { display: flex; align-items: center; gap: 10px; }
+  .node-num { font-size: 0.9em; font-weight: 800; }
+  .node-name { font-size: 0.88em; font-weight: 700; }
+  .node-desc { font-size: 0.72em; color: #7a7a8e; margin-top: 4px; }
+  .node-icon { margin-left: auto; font-size: 0.9em; }
+  .node-gate-info {
+    display: none; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.72em; color: #7a7a8e;
+  }
+  .ladder-node.current .node-gate-info { display: block; }
+  .ladder-node.locked .node-gate-info.tapped { display: block; }
+</style>
+</head><body>
+
+<!-- Celebration Overlay -->
+<div class="celebration" id="celebration">
+  <div class="emoji">&#x1F389;</div>
+  <div class="msg" id="celeb-msg">Avancou!</div>
+  <div class="sub" id="celeb-sub"></div>
+</div>
+
+<div class="topbar">
+  <a href="/" class="back-btn">&#x2190;</a>
+  <div class="topbar-title">Escada da Fala</div>
+</div>
+
+<div class="page">
+  <!-- Regression Banner -->
+  <div class="regression-banner" id="regression-banner">
+    &#x26A0;&#xFE0F; Regressao detectada — pratique mais pra manter o nivel!
+  </div>
+
+  <!-- Hero Card -->
+  <div class="hero-card" id="hero-card">
+    <div class="stage-circle" id="stage-circle" style="--stage-gradient: linear-gradient(135deg, #3B82F6, #60a5fa)">
+      <span id="hero-num">1</span>
+    </div>
+    <div class="hero-name" id="hero-name">Eco</div>
+    <div class="hero-desc" id="hero-desc">Repete exatamente o que ouve</div>
+    <div class="activity-pills" id="activity-pills"></div>
+    <a href="/conversa" class="btn-conversa">&#x1F3A4; Ir pra Conversa</a>
+  </div>
+
+  <!-- Gate Progress -->
+  <div class="gate-section" id="gate-section">
+    <div class="gate-title">Portao de Saida</div>
+    <div id="gate-criteria"></div>
+    <button class="btn-advance" id="btn-advance" onclick="doAdvance()">&#x1F31F; Avancar!</button>
+  </div>
+
+  <!-- Ladder -->
+  <div class="ladder-section">
+    <div class="ladder-title">Todas as Etapas</div>
+    <div class="ladder" id="ladder"></div>
+  </div>
+</div>
+
+{tab_bar}
+
+<script>
+var STAGES = [
+  {n:1, name:'Eco', desc:'Repete exatamente o que ouve', color:'#3B82F6',
+   gate_labels:{min_EFFORTFUL_AUDIO:'Items Esforco Auditivo', min_biometric_avg:'Biometria Media'}},
+  {n:2, name:'Troca de Chunk', desc:'Substitui um chunk na frase modelo', color:'#22d3ee',
+   gate_labels:{min_AUTOMATIC_CLEAN:'Items Automaticos Limpos', max_avg_latency_ms:'Latencia Media (ms)', min_shadow_good_pct:'% Shadowing Bom'}},
+  {n:3, name:'Reconto Guiado', desc:'Reconta uma historia com prompts visuais', color:'#34d399',
+   gate_labels:{min_AUTOMATIC_CLEAN:'Items Automaticos Limpos', min_biometric_avg:'Biometria Media'}},
+  {n:4, name:'Expressao Guiada', desc:'Responde perguntas usando chunks conhecidos', color:'#facc15',
+   gate_labels:{min_AUTOMATIC_NATIVE:'Items Automaticos Nativos', min_biometric_avg:'Biometria Media', min_output_success:'% Sucesso Output'}},
+  {n:5, name:'Semi-Livre', desc:'Conversa com topico definido', color:'#fb923c',
+   gate_labels:{min_AUTOMATIC_NATIVE:'Items Automaticos Nativos', min_AVAILABLE_OUTPUT:'Items Output Disponivel', min_biometric_avg:'Biometria Media'}},
+  {n:6, name:'Livre', desc:'Conversa livre, qualquer topico', color:'#7C5CFC',
+   gate_labels:{min_AVAILABLE_OUTPUT:'Items Output Disponivel', min_biometric_avg:'Biometria Media'}}
+];
+
+var currentStage = 1;
+var gateData = {};
+
+function stageInfo(n) { return STAGES[n-1] || STAGES[0]; }
+
+function renderHero(stage, activities) {
+  var s = stageInfo(stage);
+  var circle = document.getElementById('stage-circle');
+  circle.style.setProperty('--stage-gradient', 'linear-gradient(135deg, '+s.color+', '+s.color+'88)');
+  document.getElementById('hero-num').textContent = stage;
+  document.getElementById('hero-name').textContent = s.name;
+  document.getElementById('hero-desc').textContent = s.desc;
+  var pills = document.getElementById('activity-pills');
+  pills.innerHTML = '';
+  (activities||[]).forEach(function(a) {
+    var pill = document.createElement('span');
+    pill.className = 'pill';
+    pill.textContent = a.replace(/_/g,' ');
+    pills.appendChild(pill);
+  });
+}
+
+function criterionLabel(key, stage) {
+  var s = stageInfo(stage);
+  return (s.gate_labels && s.gate_labels[key]) || key.replace(/^(min_|max_)/,'').replace(/_/g,' ');
+}
+
+function progressColor(pct, stageColor) {
+  if (pct >= 100) return '#34d399';
+  if (pct < 30) return '#f87171';
+  return stageColor;
+}
+
+function renderGate(gates) {
+  gateData = gates;
+  var criteria = gates.criteria || {};
+  var container = document.getElementById('gate-criteria');
+  container.innerHTML = '';
+  var allMet = true;
+  var s = stageInfo(gates.current_stage || currentStage);
+  var keys = Object.keys(criteria);
+
+  keys.forEach(function(key) {
+    var c = criteria[key];
+    var required = c.required;
+    var actual = c.actual;
+    var met = c.met;
+    if (!met) allMet = false;
+
+    // For latency, invert: lower is better
+    var isLatency = key.indexOf('latency') >= 0 || key.indexOf('max_') === 0;
+    var pct;
+    if (isLatency) {
+      pct = actual <= 0 ? 0 : (required / actual) * 100;
+    } else {
+      pct = required <= 0 ? 100 : (actual / required) * 100;
+    }
+    pct = Math.min(pct, 100);
+    pct = Math.max(pct, 0);
+
+    var color = progressColor(pct, s.color);
+    var label = criterionLabel(key, gates.current_stage || currentStage);
+
+    // Format display values
+    var displayActual = typeof actual === 'number' ? (actual % 1 !== 0 ? actual.toFixed(1) : actual) : actual;
+    var displayRequired = typeof required === 'number' ? (required % 1 !== 0 ? required.toFixed(1) : required) : required;
+
+    var row = document.createElement('div');
+    row.className = 'criterion-row';
+    row.innerHTML =
+      '<div class="criterion-label"><span>'+label+'</span><span class="criterion-nums">'
+      +displayActual+' / '+displayRequired+'</span></div>'
+      +'<div class="progress-track"><div class="progress-fill" style="width:0%;background:'+color+'"></div></div>';
+    container.appendChild(row);
+
+    // Animate fill
+    setTimeout(function() {
+      row.querySelector('.progress-fill').style.width = pct+'%';
+    }, 50);
+  });
+
+  var advBtn = document.getElementById('btn-advance');
+  if (allMet && keys.length > 0) {
+    advBtn.style.display = 'block';
+  } else {
+    advBtn.style.display = 'none';
+  }
+}
+
+function renderLadder(stage, gates) {
+  var ladder = document.getElementById('ladder');
+  ladder.innerHTML = '';
+  // Render stages in reverse order (6 at top, 1 at bottom)
+  for (var i = 6; i >= 1; i--) {
+    var s = stageInfo(i);
+    var cls = 'ladder-node';
+    var icon = '';
+    if (i < stage) { cls += ' completed'; icon = '&#x2705;'; }
+    else if (i === stage) { cls += ' current'; icon = '&#x25C9;'; }
+    else { cls += ' locked'; icon = '&#x1F512;'; }
+
+    var gateInfo = '';
+    if (i === stage && gates.criteria) {
+      var missing = gates.missing || [];
+      if (missing.length > 0) {
+        gateInfo = '<div class="node-gate-info">Falta: ' + missing.map(function(m) { return criterionLabel(m, i); }).join(', ') + '</div>';
+      } else {
+        gateInfo = '<div class="node-gate-info" style="color:#34d399">Portao aberto!</div>';
+      }
+    } else if (i > stage) {
+      var gateKeys = Object.keys(STAGES[i-1].gate_labels || {});
+      gateInfo = '<div class="node-gate-info">' + gateKeys.map(function(k) { return criterionLabel(k, i); }).join(', ') + '</div>';
+    }
+
+    var node = document.createElement('div');
+    node.className = cls;
+    node.style.setProperty('--stage-color', s.color);
+    node.innerHTML =
+      '<div class="ladder-dot"></div>'
+      +'<div class="node-header">'
+      +'<span class="node-num" style="color:'+s.color+'">'+i+'</span>'
+      +'<span class="node-name">'+s.name+'</span>'
+      +'<span class="node-icon">'+icon+'</span>'
+      +'</div>'
+      +'<div class="node-desc">'+s.desc+'</div>'
+      +gateInfo;
+
+    // Tap to show gate info on locked stages
+    if (i > stage) {
+      (function(el) {
+        el.addEventListener('click', function() {
+          var gi = el.querySelector('.node-gate-info');
+          if (gi) gi.classList.toggle('tapped');
+        });
+      })(node);
+    }
+
+    ladder.appendChild(node);
+  }
+}
+
+function showCelebration(newStage) {
+  var s = stageInfo(newStage);
+  document.getElementById('celeb-msg').textContent = 'Avancou pra ' + s.name + '!';
+  document.getElementById('celeb-sub').textContent = 'Etapa ' + newStage + ' de 6';
+  var overlay = document.getElementById('celebration');
+  overlay.classList.add('show');
+  // Confetti
+  var colors = ['#3B82F6','#22d3ee','#34d399','#facc15','#fb923c','#7C5CFC','#f87171'];
+  for (var i = 0; i < 30; i++) {
+    var piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = Math.random()*100+'%';
+    piece.style.background = colors[Math.floor(Math.random()*colors.length)];
+    piece.style.animationDelay = (Math.random()*1)+'s';
+    piece.style.width = (6+Math.random()*8)+'px';
+    piece.style.height = (6+Math.random()*8)+'px';
+    document.body.appendChild(piece);
+  }
+  setTimeout(function() { location.reload(); }, 3000);
+}
+
+function doAdvance() {
+  var btn = document.getElementById('btn-advance');
+  btn.disabled = true;
+  btn.textContent = 'Avancando...';
+  fetch('/api/speech/advance', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){return r.json()})
+    .then(function(d) {
+      if (d.advanced) {
+        showCelebration(d.new_stage);
+      } else {
+        btn.textContent = d.reason || 'Ainda nao atingiu o portao';
+        setTimeout(function() { btn.textContent = '\u{1F31F} Avancar!'; btn.disabled = false; }, 2000);
+      }
+    })
+    .catch(function() {
+      btn.textContent = 'Erro — tente de novo';
+      btn.disabled = false;
+    });
+}
+
+// ── Load data ──
+fetch('/api/speech/stage')
+  .then(function(r){return r.json()})
+  .then(function(d) {
+    currentStage = d.stage || 1;
+    renderHero(currentStage, d.activities);
+    var gates = d.gates || {};
+    renderGate(gates);
+    renderLadder(currentStage, gates);
+
+    // Auto-advance check
+    if (gates.gate_met) {
+      fetch('/api/speech/advance', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+        .then(function(r){return r.json()})
+        .then(function(adv) {
+          if (adv.advanced) showCelebration(adv.new_stage);
+        });
+    }
+  })
+  .catch(function(e) { console.error('speech load error', e); });
+
+// Regression check
+fetch('/api/speech/check-regression', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+  .then(function(r){return r.json()})
+  .then(function(d) {
+    if (d.regressed) {
+      document.getElementById('regression-banner').style.display = 'block';
+    }
+  })
+  .catch(function(){});
 </script>
 </body></html>"""
 
@@ -492,12 +1223,38 @@ CONVERSA_HTML = """<!DOCTYPE html>
 <style>
   @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
   @keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)} 50%{box-shadow:0 0 0 10px rgba(248,113,113,0)} }
+  @keyframes chipFlash { 0%{background:rgba(34,197,94,0.3)} 100%{background:rgba(34,197,94,0.12)} }
+  @keyframes badgeFade { 0%{opacity:1;transform:translateY(0)} 100%{opacity:0;transform:translateY(-16px)} }
+  @keyframes overlayIn { from{opacity:0} to{opacity:1} }
+  @keyframes cardIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     display: flex; flex-direction: column; height: 100vh; height: 100dvh;
     overflow: hidden; -webkit-user-select: none; user-select: none;
   }
+
+  /* ── Stage banner ── */
+  .stage-banner {
+    padding: 10px 20px; background: rgba(255,255,255,0.03);
+    border-top: 3px solid #3B82F6;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-shrink: 0; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .stage-banner.s1 { border-top-color: #3B82F6; }
+  .stage-banner.s2 { border-top-color: #06B6D4; }
+  .stage-banner.s3 { border-top-color: #22C55E; }
+  .stage-banner.s4 { border-top-color: #EAB308; }
+  .stage-banner.s5 { border-top-color: #F97316; }
+  .stage-banner.s6 { border-top-color: #7C5CFC; }
+  .stage-label {
+    font-size: 0.82em; font-weight: 700; color: #fafafa; letter-spacing: -0.3px;
+  }
+  .stage-hint {
+    font-size: 0.72em; color: #7a7a8e; font-weight: 500; max-width: 55%; text-align: right;
+  }
+
+  /* ── Header ── */
   .header {
     padding: 14px 20px; background: rgba(255,255,255,0.03);
     border-bottom: 2px solid transparent;
@@ -519,9 +1276,31 @@ CONVERSA_HTML = """<!DOCTYPE html>
     font-weight: 600;
   }
   .hdr-btn:active { background: rgba(255,255,255,0.1); }
+  .hdr-btn.end-btn { color: #f87171; border-color: rgba(248,113,113,0.3); }
+  .hdr-btn.end-btn:active { background: rgba(248,113,113,0.1); }
+
+  /* ── Vocab chips ── */
+  .chips-bar {
+    padding: 8px 16px; display: none; flex-wrap: wrap; gap: 6px;
+    flex-shrink: 0; background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .chips-bar.visible { display: flex; }
+  .v-chip {
+    padding: 5px 12px; border-radius: 20px; font-size: 0.72em; font-weight: 600;
+    background: rgba(255,255,255,0.08); color: #c4c4d4; border: 1px solid rgba(255,255,255,0.06);
+    transition: all 0.3s; cursor: default; white-space: nowrap;
+  }
+  .v-chip.used {
+    background: rgba(34,197,94,0.12); color: #4ADE80; border-color: rgba(34,197,94,0.25);
+    animation: chipFlash 0.6s ease-out;
+  }
+  .v-chip.used::after { content: ' \\2713'; }
+
+  /* ── Messages ── */
   .messages {
     flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
-    -webkit-overflow-scrolling: touch;
+    -webkit-overflow-scrolling: touch; position: relative;
   }
   .msg {
     max-width: 82%; padding: 12px 16px; border-radius: 20px; font-size: 0.95em;
@@ -543,6 +1322,16 @@ CONVERSA_HTML = """<!DOCTYPE html>
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   }
   .msg.ai .typing { color: #525263; }
+
+  /* ── Chunk-hit badge ── */
+  .chunk-badge {
+    align-self: flex-end; padding: 4px 12px; border-radius: 12px;
+    font-size: 0.7em; font-weight: 600; color: #4ADE80;
+    background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.2);
+    animation: badgeFade 2.5s ease-out forwards;
+  }
+
+  /* ── Input bar ── */
   .input-bar {
     padding: 12px 16px 80px; background: rgba(255,255,255,0.03);
     border-top: 1px solid rgba(255,255,255,0.06);
@@ -574,15 +1363,62 @@ CONVERSA_HTML = """<!DOCTYPE html>
   }
   .mic-send-btn.recording { border-color: #f87171; color: #f87171; animation: micPulse 1.2s infinite; }
   .mic-send-btn:active { transform: scale(0.95); }
+
+  /* ── Session summary overlay ── */
+  .summary-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    align-items: center; justify-content: center; padding: 24px;
+    animation: overlayIn 0.3s ease-out;
+  }
+  .summary-overlay.visible { display: flex; }
+  .summary-card {
+    background: rgba(20,20,22,0.98); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px; padding: 28px 24px; max-width: 340px; width: 100%;
+    text-align: center; animation: cardIn 0.3s ease-out;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  .summary-card h2 {
+    font-size: 1.1em; font-weight: 800; margin-bottom: 20px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .summary-stats { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+  .summary-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05); border-radius: 12px;
+  }
+  .summary-row .label { font-size: 0.82em; color: #7a7a8e; }
+  .summary-row .value { font-size: 0.95em; font-weight: 700; color: #fafafa; }
+  .summary-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 20px; }
+  .summary-chips .v-chip { font-size: 0.7em; }
+  .summary-nova-btn {
+    width: 100%; padding: 14px; border: none; border-radius: 14px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+    font-size: 0.95em; font-weight: 700; cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.25);
+  }
+  .summary-nova-btn:active { transform: scale(0.97); opacity: 0.9; }
 </style>
 </head><body>
+
+<!-- Stage banner -->
+<div class="stage-banner s1" id="stage-banner">
+  <span class="stage-label" id="stage-label">Carregando...</span>
+  <span class="stage-hint" id="stage-hint"></span>
+</div>
 
 <div class="header">
   <h1>CONVERSA</h1>
   <div class="header-btns">
-    <button class="hdr-btn" onclick="newConversa()">Nova</button>
+    <button class="hdr-btn end-btn" id="end-btn" onclick="endConversa()" style="display:none">Encerrar</button>
+    <button class="hdr-btn" id="nova-btn" onclick="newConversa()">Nova</button>
   </div>
 </div>
+
+<!-- Vocabulary chips (stages 3-6) -->
+<div class="chips-bar" id="chips-bar"></div>
 
 <div class="messages" id="messages"></div>
 
@@ -594,23 +1430,106 @@ CONVERSA_HTML = """<!DOCTYPE html>
 
 <audio id="conv-player" preload="auto"></audio>
 
+<!-- Session summary overlay -->
+<div class="summary-overlay" id="summary-overlay">
+  <div class="summary-card">
+    <h2>Conversa Encerrada</h2>
+    <div class="summary-stats" id="summary-stats"></div>
+    <div class="summary-chips" id="summary-chips"></div>
+    <button class="summary-nova-btn" onclick="closeSummaryAndNew()">Nova Conversa</button>
+  </div>
+</div>
+
 <script>
 const msgBox = document.getElementById('messages');
 const msgInput = document.getElementById('msg-input');
 const sendBtn = document.getElementById('send-btn');
 const convPlayer = document.getElementById('conv-player');
 const micSendBtn = document.getElementById('mic-send-btn');
+const stageBanner = document.getElementById('stage-banner');
+const stageLabel = document.getElementById('stage-label');
+const stageHint = document.getElementById('stage-hint');
+const chipsBar = document.getElementById('chips-bar');
+const endBtnEl = document.getElementById('end-btn');
+const novaBtnEl = document.getElementById('nova-btn');
+const summaryOverlay = document.getElementById('summary-overlay');
+const summaryStats = document.getElementById('summary-stats');
+const summaryChips = document.getElementById('summary-chips');
 
 let convRecording = false;
 let convRecorder = null;
 let convMicChunks = [];
 
+let sessionId = null;
+let sessionStart = null;
+let currentStage = 1;
+let vocabChunks = [];
+let usedChunks = new Set();
+
+const STAGE_NAMES = {
+  1: 'Eco', 2: 'Troca', 3: 'Reconto',
+  4: 'Expressao', 5: 'Semi-Livre', 6: 'Livre'
+};
+const STAGE_HINTS = {
+  1: 'Repita o que ouviu',
+  2: 'Troque o chunk destacado',
+  3: 'Reconte com suas palavras',
+  4: 'Responda usando seus chunks',
+  5: 'Fale livremente sobre o tema',
+  6: 'Conversa natural'
+};
+
 msgInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
+function updateStageBanner(stage) {
+  currentStage = stage;
+  stageBanner.className = 'stage-banner s' + stage;
+  stageLabel.textContent = 'Nivel ' + stage + ' \\u2014 ' + (STAGE_NAMES[stage] || 'Livre');
+  stageHint.textContent = STAGE_HINTS[stage] || '';
+}
+
+function renderChips(chunks) {
+  vocabChunks = chunks || [];
+  usedChunks = new Set();
+  chipsBar.innerHTML = '';
+  if (vocabChunks.length === 0) { chipsBar.classList.remove('visible'); return; }
+  vocabChunks.forEach(function(ch) {
+    var pill = document.createElement('span');
+    pill.className = 'v-chip';
+    pill.textContent = ch;
+    pill.dataset.chunk = ch;
+    chipsBar.appendChild(pill);
+  });
+  chipsBar.classList.add('visible');
+}
+
+function markChipsUsed(hits) {
+  if (!hits || hits.length === 0) return;
+  hits.forEach(function(ch) {
+    usedChunks.add(ch);
+    var pills = chipsBar.querySelectorAll('.v-chip');
+    pills.forEach(function(p) {
+      if (p.dataset.chunk === ch && !p.classList.contains('used')) {
+        p.classList.add('used');
+      }
+    });
+  });
+}
+
+function showChunkBadge(hits) {
+  if (!hits || hits.length === 0) return;
+  var badge = document.createElement('div');
+  badge.className = 'chunk-badge';
+  badge.textContent = 'Usou: ' + hits.join(', ');
+  msgBox.appendChild(badge);
+  msgBox.scrollTop = msgBox.scrollHeight;
+  setTimeout(function() { if (badge.parentNode) badge.remove(); }, 2600);
+}
+
 function addMsg(text, role) {
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.className = 'msg ' + role;
   div.textContent = text;
   msgBox.appendChild(div);
@@ -618,27 +1537,84 @@ function addMsg(text, role) {
   return div;
 }
 
+async function startSession() {
+  sendBtn.disabled = true;
+  endBtnEl.style.display = 'none';
+  novaBtnEl.style.display = '';
+  chipsBar.classList.remove('visible');
+  msgBox.innerHTML = '';
+
+  try {
+    var stageRes = await fetch('/api/speech/stage');
+    var stageData = await stageRes.json();
+    updateStageBanner(stageData.stage || 1);
+  } catch (e) {
+    updateStageBanner(1);
+  }
+
+  var typing = addMsg('...', 'ai');
+  typing.innerHTML = '<span class="typing">Iniciando conversa...</span>';
+
+  try {
+    var res = await fetch('/api/conversa/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ topic: '' }),
+    });
+    var data = await res.json();
+
+    if (data.error) {
+      typing.textContent = 'Erro ao iniciar: ' + data.error;
+      return;
+    }
+
+    sessionId = data.session_id;
+    sessionStart = Date.now();
+    if (data.stage) updateStageBanner(data.stage);
+
+    renderChips(data.chunks_vocab || []);
+
+    typing.textContent = data.reply || 'Opa!';
+    if (data.audio_file) {
+      convPlayer.src = '/audio/' + data.audio_file;
+      convPlayer.play().catch(function() {});
+    }
+
+    endBtnEl.style.display = '';
+    novaBtnEl.style.display = 'none';
+    sendBtn.disabled = false;
+  } catch (e) {
+    typing.textContent = 'Erro de conexao ao iniciar.';
+  }
+  msgInput.focus();
+}
+
 async function sendMessage(text) {
-  const msg = text || msgInput.value.trim();
+  var msg = text || msgInput.value.trim();
   if (!msg) return;
+  if (!sessionId) { await startSession(); return; }
   msgInput.value = '';
   addMsg(msg, 'user');
 
   sendBtn.disabled = true;
-  const typing = addMsg('...', 'ai');
+  var typing = addMsg('...', 'ai');
   typing.innerHTML = '<span class="typing">Pensando...</span>';
 
   try {
-    const res = await fetch('/api/conversa/send', {
+    var res = await fetch('/api/conversa/turn', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ message: msg }),
     });
-    const data = await res.json();
+    var data = await res.json();
     typing.textContent = data.reply || 'Erro';
     if (data.audio_file) {
       convPlayer.src = '/audio/' + data.audio_file;
-      convPlayer.play().catch(() => {});
+      convPlayer.play().catch(function() {});
+    }
+    if (data.chunks_hit && data.chunks_hit.length > 0) {
+      markChipsUsed(data.chunks_hit);
+      showChunkBadge(data.chunks_hit);
     }
   } catch (e) {
     typing.textContent = 'Erro de conexao.';
@@ -647,14 +1623,77 @@ async function sendMessage(text) {
   msgInput.focus();
 }
 
-function newConversa() {
-  fetch('/api/conversa/send', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ message: '__reset__' }),
+async function endConversa() {
+  if (!sessionId) return;
+  var durationSec = Math.round((Date.now() - (sessionStart || Date.now())) / 1000);
+
+  endBtnEl.style.display = 'none';
+  sendBtn.disabled = true;
+
+  try {
+    var res = await fetch('/api/conversa/end', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session_id: sessionId, duration_seconds: durationSec }),
+    });
+    var data = await res.json();
+    showSummary(data, durationSec);
+  } catch (e) {
+    novaBtnEl.style.display = '';
+  }
+  sessionId = null;
+}
+
+function showSummary(data, durationSec) {
+  var mins = Math.floor(durationSec / 60);
+  var secs = durationSec % 60;
+  var timeStr = mins > 0 ? mins + 'min ' + secs + 's' : secs + 's';
+
+  summaryStats.innerHTML = [
+    sRow('Turnos', data.turns || 0),
+    sRow('Duracao', timeStr),
+    sRow('Chunks extraidos', data.chunks_extracted || 0),
+    sRow('Adicionados ao SRS', data.chunks_introduced || 0),
+    sRow('Vocab usados', (data.vocab_chunks_used || []).length + '/' + vocabChunks.length),
+  ].join('');
+
+  summaryChips.innerHTML = '';
+  var introduced = data.chunks_introduced_list || [];
+  var vocabUsed = data.vocab_chunks_used || [];
+  var seen = {};
+  var allChips = [];
+  introduced.concat(vocabUsed).forEach(function(ch) {
+    if (!seen[ch]) { seen[ch] = true; allChips.push(ch); }
   });
+  allChips.forEach(function(ch) {
+    var pill = document.createElement('span');
+    pill.className = 'v-chip used';
+    pill.textContent = ch;
+    summaryChips.appendChild(pill);
+  });
+
+  summaryOverlay.classList.add('visible');
+}
+
+function sRow(label, value) {
+  return '<div class="summary-row"><span class="label">' + label + '</span><span class="value">' + value + '</span></div>';
+}
+
+function closeSummaryAndNew() {
+  summaryOverlay.classList.remove('visible');
+  newConversa();
+}
+
+function newConversa() {
+  sessionId = null;
+  sessionStart = null;
+  vocabChunks = [];
+  usedChunks = new Set();
+  chipsBar.classList.remove('visible');
+  chipsBar.innerHTML = '';
   msgBox.innerHTML = '';
-  addMsg('Opa! Bora conversar, parceiro?', 'ai');
+  summaryOverlay.classList.remove('visible');
+  startSession();
 }
 
 async function toggleConvMic() {
@@ -665,27 +1704,26 @@ async function toggleConvMic() {
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     convMicChunks = [];
     convRecorder = new MediaRecorder(stream);
-    convRecorder.ondataavailable = e => { if (e.data.size > 0) convMicChunks.push(e.data); };
-    convRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(convMicChunks, { type: convRecorder.mimeType || 'audio/mp4' });
-      // For now, transcribe locally is not available — inform user to type
+    convRecorder.ondataavailable = function(e) { if (e.data.size > 0) convMicChunks.push(e.data); };
+    convRecorder.onstop = async function() {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      var blob = new Blob(convMicChunks, { type: convRecorder.mimeType || 'audio/mp4' });
       addMsg('[Gravacao de voz — use texto por enquanto]', 'user');
     };
     convRecorder.start();
     convRecording = true;
     micSendBtn.classList.add('recording');
-    setTimeout(() => { if (convRecording) toggleConvMic(); }, 10000);
+    setTimeout(function() { if (convRecording) toggleConvMic(); }, 10000);
   } catch (e) {
     // Mic not available
   }
 }
 
-// Init
-addMsg('E ai, parceiro! Bora jogar conversa fora?', 'ai');
+// Init — auto-start a session on page load
+startSession();
 </script>
 
 {tab_bar}
@@ -1078,6 +2116,544 @@ async function addToSRS() {
 </body></html>"""
 
 
+# ── Plan HTML ─────────────────────────────────────────────────
+
+PLAN_HTML = r"""<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Oxe — Plano de Hoje</title>
+<style>
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.4)} 50%{box-shadow:0 0 0 10px rgba(59,130,246,0)} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+    padding: 0 16px 100px 16px; -webkit-font-smoothing: antialiased;
+  }
+  .top-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 56px 0 12px 0;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 12px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    color: #fafafa; font-size: 18px; text-decoration: none;
+  }
+  .page-title { font-size: 1.3em; font-weight: 700; flex:1; }
+  .date-label { color: #7a7a8e; font-size: 0.8em; }
+  .glass-card {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .progress-header {
+    padding: 20px 24px; margin-bottom: 16px; animation: fadeIn 0.3s ease-out;
+  }
+  .progress-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .progress-pct { font-size: 2em; font-weight: 800; color: #3B82F6; }
+  .progress-label { color: #7a7a8e; font-size: 0.8em; }
+  .progress-track {
+    width: 100%; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08);
+  }
+  .progress-fill {
+    height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3B82F6, #7C5CFC);
+    transition: width 0.6s ease;
+  }
+  .timeline { position: relative; padding-left: 28px; margin-bottom: 16px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 11px; top: 0; bottom: 0;
+    width: 2px; background: rgba(255,255,255,0.08);
+  }
+  .block-card {
+    position: relative; padding: 16px 20px; margin-bottom: 12px;
+    animation: fadeIn 0.3s ease-out both;
+  }
+  .block-card::before {
+    content: ''; position: absolute; left: -22px; top: 20px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.1);
+  }
+  .block-card.completed { opacity: 0.5; }
+  .block-card.completed::before { background: #34d399; border-color: #34d399; }
+  .block-card.current { border-color: #3B82F6 !important; animation: pulse 2s infinite, fadeIn 0.3s ease-out both; }
+  .block-card.current::before { background: #3B82F6; border-color: #3B82F6; }
+  .block-card.upcoming { opacity: 0.6; }
+  .block-card.upcoming::before { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.06); }
+  .block-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .block-icon { font-size: 1.3em; }
+  .block-type { font-weight: 600; font-size: 0.95em; flex:1; }
+  .block-duration { color: #7a7a8e; font-size: 0.8em; }
+  .block-mode { color: #7a7a8e; font-size: 0.78em; margin-top: 2px; }
+  .block-status { font-size: 0.75em; margin-top: 6px; }
+  .block-status.done { color: #34d399; }
+  .block-status.active { color: #3B82F6; }
+  .current-detail {
+    padding: 20px 24px; margin-bottom: 16px; border: 1px solid #3B82F6;
+    animation: fadeIn 0.4s ease-out 0.1s both;
+  }
+  .current-title { font-size: 1.1em; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .current-meta { color: #7a7a8e; font-size: 0.82em; margin-bottom: 12px; }
+  .current-meta span { margin-right: 16px; }
+  .btn-start {
+    display: inline-block; padding: 12px 28px; border-radius: 14px;
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+    font-weight: 700; font-size: 0.95em; text-decoration: none; border: none; cursor: pointer;
+  }
+  .btn-start:active { transform: scale(0.97); }
+  .fatigue-widget {
+    padding: 16px 20px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.15s both;
+  }
+  .fatigue-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .fatigue-bar-track {
+    flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08);
+  }
+  .fatigue-bar-fill {
+    height: 100%; border-radius: 3px; transition: width 0.5s ease, background 0.5s ease;
+  }
+  .fatigue-score { font-weight: 700; font-size: 1.1em; min-width: 32px; }
+  .fatigue-minutes { color: #7a7a8e; font-size: 0.78em; }
+  .btn-adjust {
+    padding: 8px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.06); color: #fafafa; font-size: 0.82em; cursor: pointer;
+  }
+  .btn-adjust:active { background: rgba(255,255,255,0.12); }
+  .adjust-msg { color: #34d399; font-size: 0.8em; margin-top: 8px; display: none; }
+  .no-plan { text-align: center; padding: 40px 20px; color: #7a7a8e; }
+</style>
+</head><body>
+
+<div class="top-bar">
+  <a href="/" class="back-btn">&larr;</a>
+  <div class="page-title">Plano de Hoje</div>
+  <div class="date-label" id="plan-date"></div>
+</div>
+
+<div class="progress-header glass-card">
+  <div class="progress-row">
+    <div>
+      <div class="progress-pct" id="overall-pct">0%</div>
+      <div class="progress-label">completo</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:1.4em;font-weight:700" id="blocks-done">0</div>
+      <div class="progress-label" id="blocks-total">de 0 blocos</div>
+    </div>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+  </div>
+</div>
+
+<div class="timeline" id="timeline"></div>
+
+<div class="current-detail glass-card" id="current-detail" style="display:none">
+  <div class="current-title">
+    <span id="cur-icon"></span>
+    <span id="cur-type"></span>
+  </div>
+  <div class="current-meta">
+    <span id="cur-mode"></span>
+    <span id="cur-duration"></span>
+    <span id="cur-items"></span>
+  </div>
+  <button class="btn-start" id="btn-start" onclick="startBlock()">Começar</button>
+</div>
+
+<div class="fatigue-widget glass-card">
+  <div style="font-weight:600;font-size:0.85em;margin-bottom:10px;color:#7a7a8e">Fadiga</div>
+  <div class="fatigue-row">
+    <div class="fatigue-score" id="fat-score">0</div>
+    <div class="fatigue-bar-track">
+      <div class="fatigue-bar-fill" id="fat-fill" style="width:0%;background:#34d399"></div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div class="fatigue-minutes" id="fat-minutes">0 min ativo</div>
+    <button class="btn-adjust" onclick="adjustPlan()">Ajustar plano</button>
+  </div>
+  <div class="adjust-msg" id="adjust-msg">Plano ajustado!</div>
+</div>
+
+<div class="no-plan" id="no-plan" style="display:none">
+  <div style="font-size:2em;margin-bottom:12px">&#x2615;</div>
+  <div>Nenhum bloco para hoje.</div>
+</div>
+
+{tab_bar}
+
+<script>
+var TYPE_ICONS = {srs_drill:'\u{1F3AF}',listening:'\u{1F3A7}',shadowing:'\u{1F5E3}',break:'\u{2615}',conversa:'\u{1F4AC}'};
+var TYPE_LABELS = {srs_drill:'SRS Drill',listening:'Escuta',shadowing:'Sombreamento',break:'Pausa',conversa:'Conversa'};
+var currentBlock = null;
+
+function renderPlan(data) {
+  document.getElementById('plan-date').textContent = data.date || '';
+  var pct = Math.round(data.completed_pct || 0);
+  document.getElementById('overall-pct').textContent = pct + '%';
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('blocks-done').textContent = data.completed_blocks || 0;
+  document.getElementById('blocks-total').textContent = 'de ' + (data.total_blocks || 0) + ' blocos';
+
+  var blocks = data.blocks || [];
+  if (blocks.length === 0) {
+    document.getElementById('no-plan').style.display = 'block';
+    document.getElementById('timeline').style.display = 'none';
+    document.getElementById('current-detail').style.display = 'none';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < blocks.length; i++) {
+    var b = blocks[i];
+    var status = b.completed ? 'completed' : (data.current_block && data.current_block.block_id === b.block_id ? 'current' : 'upcoming');
+    var icon = TYPE_ICONS[b.type] || '\u{1F4CB}';
+    var label = TYPE_LABELS[b.type] || b.type;
+    var statusText = b.completed ? '<span class="block-status done">\u2713 Completo</span>' :
+      (status === 'current' ? '<span class="block-status active">\u25B6 Agora</span>' : '');
+    html += '<div class="block-card glass-card ' + status + '" style="animation-delay:' + (i * 0.05) + 's">'
+      + '<div class="block-top"><span class="block-icon">' + icon + '</span>'
+      + '<span class="block-type">' + label + '</span>'
+      + '<span class="block-duration">' + (b.duration_minutes || 0) + ' min</span></div>'
+      + (b.mode ? '<div class="block-mode">' + b.mode + '</div>' : '')
+      + statusText + '</div>';
+  }
+  document.getElementById('timeline').innerHTML = html;
+
+  if (data.current_block) {
+    currentBlock = data.current_block;
+    var cb = data.current_block;
+    document.getElementById('cur-icon').textContent = TYPE_ICONS[cb.type] || '';
+    document.getElementById('cur-type').textContent = TYPE_LABELS[cb.type] || cb.type;
+    document.getElementById('cur-mode').textContent = cb.mode || '';
+    document.getElementById('cur-duration').textContent = (cb.duration_minutes || 0) + ' min';
+    document.getElementById('cur-items').textContent = cb.target_items ? cb.target_items + ' itens' : '';
+    document.getElementById('current-detail').style.display = 'block';
+  } else {
+    document.getElementById('current-detail').style.display = 'none';
+  }
+}
+
+function startBlock() {
+  if (!currentBlock) return;
+  var t = currentBlock.type;
+  if (t === 'srs_drill') window.location.href = '/drill';
+  else if (t === 'listening' || t === 'shadowing') window.location.href = '/library';
+  else if (t === 'conversa') window.location.href = '/conversa';
+  else if (t === 'break') completeBlock();
+  else window.location.href = '/drill';
+}
+
+function completeBlock() {
+  fetch('/api/plan/block/complete', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){return r.json()})
+    .then(function(){loadPlan()});
+}
+
+function loadPlan() {
+  fetch('/api/plan/today').then(function(r){return r.json()}).then(renderPlan);
+}
+
+function loadFatigue() {
+  fetch('/api/fatigue/status').then(function(r){return r.json()}).then(function(d) {
+    var score = d.fatigue_score || d.score || 0;
+    document.getElementById('fat-score').textContent = Math.round(score);
+    document.getElementById('fat-fill').style.width = Math.min(score, 100) + '%';
+    var color = score < 40 ? '#34d399' : score < 70 ? '#fbbf24' : '#f87171';
+    document.getElementById('fat-fill').style.background = color;
+    document.getElementById('fat-score').style.color = color;
+    var mins = d.minutes_active || d.session_minutes || 0;
+    document.getElementById('fat-minutes').textContent = Math.round(mins) + ' min ativo';
+  });
+}
+
+function adjustPlan() {
+  var btn = document.querySelector('.btn-adjust');
+  btn.disabled = true; btn.textContent = '...';
+  fetch('/api/plan/adjust', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){return r.json()})
+    .then(function() {
+      document.getElementById('adjust-msg').style.display = 'block';
+      btn.textContent = 'Ajustar plano'; btn.disabled = false;
+      setTimeout(function(){document.getElementById('adjust-msg').style.display='none'}, 2000);
+      loadPlan();
+    })
+    .catch(function(){btn.textContent='Ajustar plano';btn.disabled=false;});
+}
+
+loadPlan();
+loadFatigue();
+setInterval(function(){
+  fetch('/api/plan/progress').then(function(r){return r.json()}).then(function(d){
+    var pct = Math.round(d.completed_pct || 0);
+    document.getElementById('overall-pct').textContent = pct + '%';
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('blocks-done').textContent = d.completed_blocks || 0;
+    document.getElementById('blocks-total').textContent = 'de ' + (d.total_blocks || 0) + ' blocos';
+  });
+}, 30000);
+</script>
+</body></html>"""
+
+
+# ── Chunks HTML ───────────────────────────────────────────────
+
+CHUNKS_HTML = r"""<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Oxe — Famílias de Chunks</title>
+<style>
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+    padding: 0 16px 100px 16px; -webkit-font-smoothing: antialiased;
+  }
+  .top-bar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 56px 0 12px 0;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 12px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    color: #fafafa; font-size: 18px; text-decoration: none;
+  }
+  .page-title { font-size: 1.3em; font-weight: 700; flex:1; }
+  .count-badge {
+    background: rgba(124,92,252,0.15); color: #7C5CFC; padding: 4px 12px;
+    border-radius: 20px; font-size: 0.78em; font-weight: 600;
+  }
+  .glass-card {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  }
+  .search-wrap {
+    margin-bottom: 16px; animation: fadeIn 0.3s ease-out;
+  }
+  .search-input {
+    width: 100%; padding: 12px 18px; border-radius: 14px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    color: #fafafa; font-size: 0.95em; outline: none;
+  }
+  .search-input::placeholder { color: #7a7a8e; }
+  .search-input:focus { border-color: #3B82F6; }
+  .seed-bar {
+    display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+    margin-bottom: 16px; animation: fadeIn 0.3s ease-out 0.05s both;
+  }
+  .seed-bar label { color: #7a7a8e; font-size: 0.82em; }
+  .seed-input {
+    width: 56px; padding: 6px 10px; border-radius: 8px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    color: #fafafa; font-size: 0.9em; text-align: center; outline: none;
+  }
+  .btn-seed {
+    padding: 8px 20px; border-radius: 12px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #7C5CFC, #3B82F6); color: #fff;
+    font-weight: 600; font-size: 0.85em; margin-left: auto;
+  }
+  .btn-seed:active { transform: scale(0.97); }
+  .seed-msg { color: #34d399; font-size: 0.8em; display: none; margin: -8px 0 12px 20px; }
+  .chunk-card {
+    padding: 16px 20px; margin-bottom: 10px; cursor: pointer;
+    animation: fadeIn 0.3s ease-out both; transition: border-color 0.2s;
+  }
+  .chunk-card:active { border-color: rgba(255,255,255,0.15); }
+  .chunk-top { display: flex; align-items: center; gap: 12px; }
+  .chunk-root { font-size: 1.05em; font-weight: 700; flex: 1; line-height: 1.3; }
+  .chunk-wc { color: #7a7a8e; font-size: 0.75em; white-space: nowrap; }
+  .rank-bar-track {
+    height: 4px; border-radius: 2px; background: rgba(255,255,255,0.08); margin-top: 8px;
+  }
+  .rank-bar-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, #3B82F6, #7C5CFC);
+  }
+  .score-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .score-badge {
+    font-size: 0.7em; padding: 3px 8px; border-radius: 8px;
+    background: rgba(255,255,255,0.06); color: #7a7a8e;
+  }
+  .score-badge .val { color: #fafafa; font-weight: 600; }
+  .variant-panel {
+    max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
+  }
+  .variant-panel.open { max-height: 600px; }
+  .variant-list { padding: 10px 0 4px 0; }
+  .variant-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 0;
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .variant-form { font-size: 0.9em; flex: 1; }
+  .variant-source {
+    font-size: 0.68em; padding: 2px 8px; border-radius: 6px;
+    background: rgba(59,130,246,0.12); color: #3B82F6;
+  }
+  .variant-count { color: #7a7a8e; font-size: 0.75em; }
+  .loading-more { text-align: center; padding: 20px; color: #7a7a8e; font-size: 0.82em; display: none; }
+</style>
+</head><body>
+
+<div class="top-bar">
+  <a href="/" class="back-btn">&larr;</a>
+  <div class="page-title">Famílias de Chunks</div>
+  <div class="count-badge" id="family-count">0</div>
+</div>
+
+<div class="search-wrap">
+  <input type="text" class="search-input" id="search-input" placeholder="Buscar chunk..." oninput="filterChunks()">
+</div>
+
+<div class="seed-bar glass-card">
+  <label>Seed ao SRS:</label>
+  <input type="number" class="seed-input" id="seed-limit" value="10" min="1" max="100">
+  <button class="btn-seed" onclick="seedChunks()">Adicionar ao SRS</button>
+</div>
+<div class="seed-msg" id="seed-msg"></div>
+
+<div class="chunk-list" id="chunk-list"></div>
+<div class="loading-more" id="loading-more">Carregando...</div>
+
+{tab_bar}
+
+<script>
+var allFamilies = [];
+var displayedFamilies = [];
+var loadedCount = 0;
+var pageSize = 50;
+var loading = false;
+var expandedId = null;
+
+function renderChunk(f, idx) {
+  var rankPct = Math.min((f.composite_rank || 0) * 100, 100);
+  var freq = Math.round((f.frequency_score || 0) * 100);
+  var nat = Math.round((f.naturalness_score || 0) * 100);
+  var bahia = Math.round((f.bahia_relevance || 0) * 100);
+  return '<div class="chunk-card glass-card" data-id="' + f.id + '" onclick="toggleVariants(' + f.id + ', this)">'
+    + '<div class="chunk-top">'
+    + '<div class="chunk-root">' + escHtml(f.root_form) + '</div>'
+    + '<div class="chunk-wc">' + (f.word_count || 0) + ' palavras</div>'
+    + '</div>'
+    + '<div class="rank-bar-track"><div class="rank-bar-fill" style="width:' + rankPct + '%"></div></div>'
+    + '<div class="score-row">'
+    + '<div class="score-badge">freq <span class="val">' + freq + '</span></div>'
+    + '<div class="score-badge">nat <span class="val">' + nat + '</span></div>'
+    + '<div class="score-badge">bahia <span class="val">' + bahia + '</span></div>'
+    + '</div>'
+    + '<div class="variant-panel" id="vp-' + f.id + '"></div>'
+    + '</div>';
+}
+
+function escHtml(s) {
+  var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+
+function renderList(families) {
+  var html = '';
+  for (var i = 0; i < families.length; i++) {
+    html += renderChunk(families[i], i);
+  }
+  document.getElementById('chunk-list').innerHTML = html;
+}
+
+function filterChunks() {
+  var q = (document.getElementById('search-input').value || '').toLowerCase();
+  if (!q) { displayedFamilies = allFamilies.slice(); }
+  else {
+    displayedFamilies = allFamilies.filter(function(f) {
+      return (f.root_form || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  renderList(displayedFamilies);
+}
+
+function toggleVariants(familyId, cardEl) {
+  var panel = document.getElementById('vp-' + familyId);
+  if (!panel) return;
+  if (expandedId === familyId) {
+    panel.classList.remove('open');
+    panel.innerHTML = '';
+    expandedId = null;
+    return;
+  }
+  if (expandedId !== null) {
+    var old = document.getElementById('vp-' + expandedId);
+    if (old) { old.classList.remove('open'); old.innerHTML = ''; }
+  }
+  expandedId = familyId;
+  panel.innerHTML = '<div style="padding:10px 0;color:#7a7a8e;font-size:0.82em">Carregando...</div>';
+  panel.classList.add('open');
+  fetch('/api/chunks/family/' + familyId + '/variants')
+    .then(function(r){return r.json()})
+    .then(function(variants) {
+      var html = '<div class="variant-list">';
+      for (var i = 0; i < variants.length; i++) {
+        var v = variants[i];
+        var srcColor = {story:'#34d399',podcast:'#fbbf24',conversation:'#f87171',corpus:'#3B82F6'}[v.source] || '#7a7a8e';
+        html += '<div class="variant-item">'
+          + '<div class="variant-form">' + escHtml(v.variant_form) + '</div>'
+          + '<div class="variant-source" style="background:' + srcColor + '22;color:' + srcColor + '">' + (v.source || '?') + '</div>'
+          + '<div class="variant-count">' + (v.occurrence_count || 0) + 'x</div>'
+          + '</div>';
+      }
+      html += '</div>';
+      panel.innerHTML = html;
+    })
+    .catch(function() { panel.innerHTML = '<div style="padding:10px 0;color:#f87171;font-size:0.82em">Erro</div>'; });
+}
+
+function seedChunks() {
+  var limit = parseInt(document.getElementById('seed-limit').value) || 10;
+  var btn = document.querySelector('.btn-seed');
+  btn.disabled = true; btn.textContent = '...';
+  fetch('/api/chunks/seed', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({limit: limit})})
+    .then(function(r){return r.json()})
+    .then(function(d) {
+      var msg = document.getElementById('seed-msg');
+      msg.textContent = (d.seeded || 0) + ' chunks adicionados!';
+      msg.style.display = 'block';
+      btn.textContent = 'Adicionar ao SRS'; btn.disabled = false;
+      setTimeout(function(){msg.style.display='none'}, 3000);
+    })
+    .catch(function(){btn.textContent='Adicionar ao SRS';btn.disabled=false;});
+}
+
+function loadFamilies(offset) {
+  if (loading) return;
+  loading = true;
+  document.getElementById('loading-more').style.display = 'block';
+  fetch('/api/chunks/families?limit=' + pageSize + '&offset=' + offset)
+    .then(function(r){return r.json()})
+    .then(function(data) {
+      var families = Array.isArray(data) ? data : (data.families || []);
+      for (var i = 0; i < families.length; i++) allFamilies.push(families[i]);
+      loadedCount = allFamilies.length;
+      document.getElementById('family-count').textContent = loadedCount;
+      displayedFamilies = allFamilies.slice();
+      filterChunks();
+      loading = false;
+      document.getElementById('loading-more').style.display = 'none';
+      if (families.length < pageSize) { window._allLoaded = true; }
+    })
+    .catch(function(){ loading = false; document.getElementById('loading-more').style.display = 'none'; });
+}
+
+window.addEventListener('scroll', function() {
+  if (window._allLoaded || loading) return;
+  if ((window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 200)) {
+    loadFamilies(loadedCount);
+  }
+});
+
+loadFamilies(0);
+</script>
+</body></html>"""
+
+
 # ── Unified Handler ────────────────────────────────────────────
 
 class OxeHandler(http.server.BaseHTTPRequestHandler):
@@ -1109,9 +2685,21 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/drill/next":
             self._drill_next_chunk()
 
+        # ── Speech Ladder ──
+        elif path == "/speech":
+            self._html(SPEECH_HTML.replace("{tab_bar}", TAB_BAR_HTML("inicio")))
+
         # ── Conversa ──
         elif path == "/conversa":
             self._html(CONVERSA_HTML.replace("{tab_bar}", TAB_BAR_HTML("conversa")))
+
+        # ── Plan ──
+        elif path == "/plan":
+            self._html(PLAN_HTML.replace("{tab_bar}", TAB_BAR_HTML("inicio")))
+
+        # ── Chunks ──
+        elif path == "/chunks":
+            self._html(CHUNKS_HTML.replace("{tab_bar}", TAB_BAR_HTML("inicio")))
 
         # ── Library (Stories + Podcasts + Review) ──
         elif path == "/library":
@@ -1547,6 +3135,29 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             pass
 
         due_count = len(get_due_chunks())
+
+        # Query fragility info for this chunk
+        fragility_types = []
+        try:
+            frag_conn = get_conn()
+            frag_rows = frag_conn.execute(
+                """SELECT fragility_type FROM fragile_items
+                   WHERE item_type='chunk' AND item_id=? AND resolved_at IS NULL""",
+                (chunk["id"],)
+            ).fetchall()
+            frag_conn.close()
+            fragility_types = [r["fragility_type"] for r in frag_rows]
+        except Exception:
+            pass
+
+        # Get current acquisition state for the chunk
+        chunk_state = None
+        try:
+            cs = get_or_create_state('chunk', chunk["id"])
+            chunk_state = cs.get("state", "UNKNOWN")
+        except Exception:
+            pass
+
         self._json({
             "chunk_id": chunk["id"],
             "word": chunk["word"],
@@ -1558,6 +3169,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "image_file": image_file,
             "tier": chunk["difficulty_tier"],
             "due_count": due_count,
+            "fragility_types": fragility_types,
+            "current_state": chunk_state,
         })
 
     def _drill_advance_pass(self, body):
@@ -1618,6 +3231,19 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             pass
 
+        # Read updated state for transition feedback
+        state_info = None
+        try:
+            chunk_state = get_or_create_state('chunk', chunk_id)
+            state_info = {
+                "state": chunk_state["state"],
+                "confidence": round(chunk_state.get("confidence", 0), 2),
+                "avg_latency_ms": chunk_state.get("avg_latency_ms"),
+                "latency_trend": chunk_state.get("latency_trend", 0),
+            }
+        except Exception:
+            pass
+
         rating_names = {
             Rating.Again: "De novo",
             Rating.Hard: "Difícil",
@@ -1629,6 +3255,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "rating_name": rating_names.get(rating, ""),
             "new_mastery": mastery,
             "latency_downgraded": downgraded,
+            "state_info": state_info,
+            "biometric_score": biometric,
         })
 
     def _review_feed(self):

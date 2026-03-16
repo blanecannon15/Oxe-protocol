@@ -107,7 +107,7 @@ STORY_HTML = r"""<!DOCTYPE html>
   .screen.active { display: block; }
 
   /* Level Select */
-  .level-grid { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+  .level-grid { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; padding-bottom: 20px; }
   .level-card {
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
     border-radius: 20px; padding: 20px 22px; cursor: pointer; transition: all 0.2s;
@@ -116,17 +116,64 @@ STORY_HTML = r"""<!DOCTYPE html>
     box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.3);
     border-left: 3px solid transparent;
   }
-  .level-card:not(.locked) { border-left: 3px solid #3B82F6; }
-  .level-card:active { transform: scale(0.98); border-color: rgba(59,130,246,0.4); border-left-color: #7C5CFC; }
+  .level-card:active { transform: scale(0.98); }
   .level-card.locked { opacity: 0.25; pointer-events: none; }
   .level-card .level-tag {
-    font-size: 0.75em; font-weight: 700; color: #60a5fa;
+    font-size: 0.75em; font-weight: 700;
     text-transform: uppercase; letter-spacing: 1px;
   }
   .level-card .level-name { font-size: 1.15em; font-weight: 600; margin: 6px 0 2px; color: #fafafa; }
   .level-card .level-desc { font-size: 0.8em; color: #525263; }
   .level-card .level-stats { font-size: 0.75em; color: #444; margin-top: 8px; }
+  .level-card .level-detail {
+    font-size: 0.7em; color: #6b7280; margin-top: 6px;
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .level-card .level-detail span {
+    background: rgba(255,255,255,0.04); padding: 2px 8px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
   .lock-icon { color: #333; }
+
+  /* Level tier colors */
+  .level-card.tier-p:not(.locked) { border-left: 3px solid #3B82F6; }
+  .level-card.tier-p .level-tag { color: #60a5fa; }
+  .level-card.tier-a:not(.locked) { border-left: 3px solid #34d399; }
+  .level-card.tier-a .level-tag { color: #34d399; }
+  .level-card.tier-a34:not(.locked) { border-left: 3px solid #f59e0b; }
+  .level-card.tier-a34 .level-tag { color: #f59e0b; }
+  .level-card.tier-b:not(.locked) { border-left: 3px solid #f97316; }
+  .level-card.tier-b .level-tag { color: #f97316; }
+  .level-card.tier-c:not(.locked) { border-left: 3px solid #f472b6; }
+  .level-card.tier-c .level-tag { color: #f472b6; }
+  .level-card.tier-native-clear:not(.locked) { border-left: 3px solid #22d3ee; }
+  .level-card.tier-native-clear .level-tag { color: #22d3ee; }
+  .level-card.tier-native-casual:not(.locked) { border-left: 3px solid #a78bfa; }
+  .level-card.tier-native-casual .level-tag { color: #a78bfa; }
+  .level-card.tier-native-chaotic:not(.locked) {
+    border-left: 3px solid #ef4444;
+    position: relative; overflow: hidden;
+  }
+  .level-card.tier-native-chaotic:not(.locked)::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, #ef4444, #a855f7);
+  }
+  .level-card.tier-native-chaotic .level-tag {
+    background: linear-gradient(90deg, #ef4444, #a855f7);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+
+  /* NATIVE_CHAOTIC special badge + pulse */
+  @keyframes chaoticPulse { 0%,100%{box-shadow: 0 0 0 0 rgba(239,68,68,0.3)} 50%{box-shadow: 0 0 12px 4px rgba(168,85,247,0.25)} }
+  .level-card.tier-native-chaotic:not(.locked) {
+    animation: chaoticPulse 2.5s ease-in-out infinite;
+  }
+  .desafio-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.65em;
+    font-weight: 700; margin-left: 6px;
+    background: linear-gradient(90deg, rgba(239,68,68,0.2), rgba(168,85,247,0.2));
+    color: #f87171; letter-spacing: 0.5px;
+  }
 
   /* Story List */
   .story-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
@@ -470,6 +517,25 @@ function goToLevels() {
 }
 
 // ── Level Select ────────────────────────────────────────
+const LEVEL_TIER_CLASS = {
+  P1:'tier-p', P2:'tier-p', P3:'tier-p',
+  A1:'tier-a', A2:'tier-a',
+  A3:'tier-a34', A4:'tier-a34',
+  B1:'tier-b', B2:'tier-b',
+  C1:'tier-c', C2:'tier-c',
+  NATIVE_CLEAR:'tier-native-clear',
+  NATIVE_CASUAL:'tier-native-casual',
+  NATIVE_CHAOTIC:'tier-native-chaotic',
+};
+
+const LEVEL_DETAIL = {
+  A3:  { clareza: '90%', wpm: '130-160' },
+  A4:  { clareza: '85%', wpm: '140-170' },
+  NATIVE_CLEAR:   { clareza: '80%', wpm: '140-180' },
+  NATIVE_CASUAL:  { clareza: '65%', wpm: '170-210' },
+  NATIVE_CHAOTIC: { clareza: '45%', wpm: '200-250' },
+};
+
 async function loadLevels() {
   const res = await fetch('/api/levels');
   const data = await res.json();
@@ -478,15 +544,25 @@ async function loadLevels() {
 
   for (const lv of data.levels) {
     const locked = !lv.unlocked;
+    const tierClass = LEVEL_TIER_CLASS[lv.key] || 'tier-a';
     const card = document.createElement('div');
-    card.className = 'level-card' + (locked ? ' locked' : '');
+    card.className = 'level-card ' + tierClass + (locked ? ' locked' : '');
+
+    const detail = LEVEL_DETAIL[lv.key];
+    const detailHtml = detail
+      ? `<div class="level-detail"><span>Clareza: ${detail.clareza}</span><span>${detail.wpm} wpm</span></div>`
+      : '';
+
+    const chaoBadge = lv.key === 'NATIVE_CHAOTIC' ? ' <span class="desafio-badge">DESAFIO</span>' : '';
+
     card.innerHTML = `
-      <div class="level-tag">${lv.key} — ${lv.label}</div>
+      <div class="level-tag">${lv.key} — ${lv.label}${chaoBadge}</div>
       <div class="level-name">${lv.description}</div>
       <div class="level-stats">
         ${locked ? '<span class="lock-icon">Bloqueado</span>' :
           lv.story_count + ' historias | ~10 min cada | ' + (lv.avg_score !== null ? lv.avg_score + '% media' : 'sem pontuacao')}
       </div>
+      ${detailHtml}
     `;
     if (!locked) {
       card.onclick = () => selectLevel(lv.key, lv.label);
