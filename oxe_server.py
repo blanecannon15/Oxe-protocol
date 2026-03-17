@@ -2416,17 +2416,19 @@ function renderSynonyms(d) {
   const c = document.getElementById('syn-container');
   if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
   let html = '';
-  // Register badge
-  if (d.register) {
+  // Register badge (handles both PT and EN keys)
+  var reg = d.register || d.registro || '';
+  if (reg) {
     const regClass = { formal:'formal', informal:'informal', 'gíria':'giria', 'técnico':'tecnico' };
-    html += '<span class="syn-register ' + (regClass[d.register] || 'informal') + '">' + d.register + '</span>';
+    html += '<span class="syn-register ' + (regClass[reg] || 'informal') + '">' + reg + '</span>';
   }
-  // Synonyms
-  if (d.synonyms && d.synonyms.length > 0) {
+  // Synonyms (handles both d.synonyms and d.sinonimos)
+  var syns = d.synonyms || d.sinonimos || [];
+  if (syns.length > 0) {
     html += '<div class="syn-section-label">Sinônimos</div><div class="syn-pills">';
-    d.synonyms.forEach(s => {
-      const word = typeof s === 'string' ? s : (s.word || '');
-      const note = (typeof s === 'object' && s.note) ? s.note : '';
+    syns.forEach(s => {
+      const word = typeof s === 'string' ? s : (s.word || s.palavra || '');
+      const note = (typeof s === 'object') ? (s.note || s.nota || '') : '';
       const isBa = (typeof s === 'object' && s.baiano);
       html += '<span class="syn-pill' + (isBa ? ' baiano' : '') + '" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' +
         word + (isBa ? ' <span class="ba-badge">BA</span>' : '') +
@@ -2434,21 +2436,23 @@ function renderSynonyms(d) {
     });
     html += '</div>';
   }
-  // Antonyms
-  if (d.antonyms && d.antonyms.length > 0) {
+  // Antonyms (handles both d.antonyms and d.antonimos)
+  var ants = d.antonyms || d.antonimos || [];
+  if (ants.length > 0) {
     html += '<div class="syn-section-label">Antônimos</div><div class="syn-pills">';
-    d.antonyms.forEach(a => {
-      const word = typeof a === 'string' ? a : (a.word || '');
+    ants.forEach(a => {
+      const word = typeof a === 'string' ? a : (a.word || a.palavra || '');
       html += '<span class="syn-pill ant-pill" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' + word + '</span>';
     });
     html += '</div>';
   }
-  // Related
-  if (d.related && d.related.length > 0) {
+  // Related (handles both d.related and d.palavras_relacionadas)
+  var rels = d.related || d.palavras_relacionadas || [];
+  if (rels.length > 0) {
     html += '<div class="syn-section-label">Palavras relacionadas</div><div class="syn-pills">';
-    d.related.forEach(r => {
-      const word = typeof r === 'string' ? r : (r.word || '');
-      const label = (typeof r === 'object' && r.label) ? r.label : '';
+    rels.forEach(r => {
+      const word = typeof r === 'string' ? r : (r.word || r.palavra || '');
+      const label = (typeof r === 'object') ? (r.label || r.relacao || '') : '';
       html += '<span class="syn-pill rel-pill" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' +
         word + (label ? ' <span class="rel-label">' + label + '</span>' : '') + '</span>';
     });
@@ -2462,29 +2466,32 @@ function renderChunks(d) {
   const c = document.getElementById('chunks-container');
   if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
   let html = '';
-  // DB chunks
-  if (d.db_chunks && d.db_chunks.length > 0) {
+  // DB chunks (handles both d.db_chunks and d.chunks_from_db)
+  var dbChunks = d.db_chunks || d.chunks_from_db || [];
+  if (dbChunks.length > 0) {
     html += '<div class="chunk-section-label">No banco de dados</div>';
-    d.db_chunks.forEach(ch => { html += buildChunkCard(ch, true); });
+    dbChunks.forEach(ch => { html += buildChunkCard(ch, true); });
   }
-  // Generated chunks
-  if (d.common_chunks && d.common_chunks.length > 0) {
+  // Generated chunks (handles both d.common_chunks and d.chunks_generated)
+  var genChunks = d.common_chunks || d.chunks_generated || [];
+  if (genChunks.length > 0) {
     html += '<div class="chunk-section-label">Chunks comuns</div>';
-    d.common_chunks.forEach(ch => { html += buildChunkCard(ch, false); });
+    genChunks.forEach(ch => { html += buildChunkCard(ch, false); });
   }
   if (!html) html = '<div style="text-align:center;color:#525263;padding:20px">Sem chunks disponíveis</div>';
   c.innerHTML = html;
 }
 
 function buildChunkCard(ch, fromDb) {
-  const freq = (ch.frequency || 'media').toLowerCase();
+  const freq = (ch.frequency || ch.frequencia || 'media').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const freqLabel = { alta:'Alta', media:'Média', baixa:'Baixa' }[freq] || 'Média';
   const freqClass = { alta:'alta', media:'media', baixa:'baixa' }[freq] || 'media';
   let html = '<div class="chunk-card freq-' + freqClass + '">';
   html += '<div class="chunk-text">' + (ch.text || ch.chunk || '') + '</div>';
   html += '<div class="chunk-badges">';
   html += '<span class="chunk-freq ' + freqClass + '">' + freqLabel + '</span>';
-  if (ch.type) html += '<span class="chunk-type">' + ch.type + '</span>';
+  var chType = ch.type || ch.tipo || '';
+  if (chType) html += '<span class="chunk-type">' + chType + '</span>';
   if (fromDb && ch.source) html += '<span class="chunk-source">' + ch.source + '</span>';
   html += '</div>';
   html += '<div class="chunk-actions">';
