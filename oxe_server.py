@@ -220,232 +220,185 @@ HOME_HTML = r"""<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Oxe</title>
 <style>
-  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
     -webkit-user-select: none; user-select: none; padding-bottom: 76px;
   }
-  .topbar {
-    padding: 16px 20px 14px; display: flex; justify-content: space-between; align-items: center;
-    position: sticky; top: 0; z-index: 10; background: #0a0a0b;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+
+  /* ── Header ── */
+  .header {
+    padding: 20px 20px 0; display: flex; justify-content: space-between; align-items: center;
   }
-  .topbar-brand {
-    font-size: 1.5em; font-weight: 800; letter-spacing: -1px;
+  .brand { font-size: 1.6em; font-weight: 800; letter-spacing: -1px;
     background: linear-gradient(135deg, #4F7BEF, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .topbar-right { display: flex; align-items: center; gap: 10px; }
-  .streak-pill {
-    display: flex; align-items: center; gap: 4px; padding: 5px 12px;
-    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.12);
-    border-radius: 16px; font-size: 0.75em; font-weight: 600; color: #60a5fa;
-  }
-  .tier-pill {
-    padding: 5px 12px; border-radius: 16px; font-size: 0.75em; font-weight: 700; color: #a78bfa;
-    background: rgba(124,92,252,0.10); border: 1px solid rgba(124,92,252,0.15);
-  }
-  .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px 20px; }
-  .glass-card {
-    background: rgba(255,255,255,0.03); box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
-    border-radius: 16px;
-  }
+  .header-meta { font-size: 0.72em; color: #525263; display: flex; gap: 10px; align-items: center; }
+  .header-meta b { color: #7a7a8e; }
 
-  /* ── Hero: Big CTA ── */
-  .hero { padding: 24px 20px; margin-bottom: 12px; animation: fadeIn 0.3s ease-out; text-align: center; }
-  .hero-stats { display: flex; justify-content: center; gap: 24px; margin-bottom: 20px; }
-  .hero-stat-val { font-size: 1.8em; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .hero-stat-lbl { font-size: 0.6em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-  .hero-stat-val.blue { color: #60a5fa; }
-  .hero-stat-val.green { color: #34d399; }
-  .hero-stat-val.purple { color: #a78bfa; }
-  .btn-treinar {
-    display: inline-flex; align-items: center; gap: 8px; padding: 14px 40px;
+  .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; }
+
+  /* ── Search bar (hero) ── */
+  .search-wrap { margin-bottom: 28px; animation: fadeIn 0.3s ease-out; }
+  .search-box {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 14px 16px; transition: border-color 0.2s;
+  }
+  .search-box:focus-within { border-color: rgba(79,123,239,0.5); }
+  .search-box svg { flex-shrink: 0; color: #525263; }
+  .search-box input {
+    flex: 1; background: none; border: none; outline: none; color: #fafafa;
+    font-size: 1em; font-family: inherit;
+  }
+  .search-box input::placeholder { color: #3a3a4a; }
+
+  /* ── Word of Day ── */
+  .wod { margin-bottom: 28px; animation: fadeIn 0.3s ease-out 0.05s both; display: none; }
+  .wod-label { font-size: 0.65em; color: #7C5CFC; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 8px; }
+  .wod-word { font-size: 1.4em; font-weight: 800; margin-bottom: 4px; }
+  .wod-sentence { font-size: 0.85em; color: #7a7a8e; font-style: italic; line-height: 1.4; }
+
+  /* ── Train button ── */
+  .train-btn {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 18px 20px; margin-bottom: 20px;
     background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
-    border: none; border-radius: 16px; font-size: 1em; font-weight: 700;
+    border: none; border-radius: 14px; font-size: 1em; font-weight: 700;
     text-decoration: none; -webkit-tap-highlight-color: transparent;
-    box-shadow: 0 4px 20px rgba(59,130,246,0.3); transition: transform 0.15s;
+    transition: transform 0.15s; animation: fadeIn 0.3s ease-out 0.1s both;
   }
-  .btn-treinar:active { transform: scale(0.96); }
+  .train-btn:active { transform: scale(0.97); }
+  .train-btn .due-count {
+    background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 10px;
+    font-size: 0.85em; font-weight: 600;
+  }
 
-  /* ── Pipeline (compact) ── */
-  .pipeline-row { padding: 14px 16px; margin-bottom: 12px; animation: fadeIn 0.3s ease-out 0.05s both; }
-  .pipeline-bar {
-    display: flex; height: 10px; border-radius: 5px; overflow: hidden;
-    background: rgba(255,255,255,0.04);
+  /* ── Nav list ── */
+  .nav-list { margin-bottom: 24px; animation: fadeIn 0.3s ease-out 0.15s both; }
+  .nav-link {
+    display: flex; align-items: center; gap: 14px;
+    padding: 15px 0; text-decoration: none; color: #fafafa;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    -webkit-tap-highlight-color: transparent;
   }
-  .pipeline-seg { height: 100%; min-width: 1px; transition: width 0.6s ease; }
-  .pipeline-labels { display: flex; justify-content: space-between; margin-top: 6px; }
-  .pipeline-labels span { font-size: 0.55em; color: #525263; }
-  .pipeline-labels span b { color: #7a7a8e; }
+  .nav-link:last-child { border-bottom: none; }
+  .nav-link:active { opacity: 0.7; }
+  .nav-ico {
+    width: 36px; height: 36px; border-radius: 10px; display: flex;
+    align-items: center; justify-content: center; font-size: 1.1em; flex-shrink: 0;
+  }
+  .nav-text { flex: 1; }
+  .nav-title { font-size: 0.9em; font-weight: 600; }
+  .nav-sub { font-size: 0.7em; color: #525263; margin-top: 1px; }
+  .nav-arrow { color: #3a3a4a; font-size: 0.8em; }
 
-  /* ── Today row ── */
-  .today-row {
-    display: flex; gap: 10px; margin-bottom: 12px; animation: fadeIn 0.3s ease-out 0.1s both;
-  }
-  .today-item {
-    flex: 1; padding: 14px 12px; text-align: center;
-  }
-  .today-val { font-size: 1.2em; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .today-lbl { font-size: 0.55em; color: #525263; text-transform: uppercase; margin-top: 2px; }
-
-  /* ── Quick Nav Grid ── */
-  .nav-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
-    margin-bottom: 12px; animation: fadeIn 0.3s ease-out 0.15s both;
-  }
-  .nav-item {
-    padding: 16px 10px; text-align: center; text-decoration: none; color: #fafafa;
-    -webkit-tap-highlight-color: transparent; transition: transform 0.15s;
-  }
-  .nav-item:active { transform: scale(0.95); }
-  .nav-icon { font-size: 1.5em; margin-bottom: 6px; }
-  .nav-label { font-size: 0.7em; font-weight: 600; }
-  .nav-badge {
-    display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 8px;
-    font-size: 0.6em; font-weight: 600; background: rgba(59,130,246,0.10); color: #60a5fa;
-  }
-  .nav-badge.red { background: rgba(248,113,113,0.10); color: #f87171; }
-  .nav-badge.green { background: rgba(52,211,153,0.10); color: #34d399; }
-
-  /* ── Status pills ── */
-  .status-pills {
-    display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto;
-    -webkit-overflow-scrolling: touch; padding: 0 2px;
+  /* ── Progress (minimal) ── */
+  .progress-row {
+    display: flex; align-items: center; gap: 12px; padding: 14px 0;
     animation: fadeIn 0.3s ease-out 0.2s both;
   }
-  .status-pills::-webkit-scrollbar { display: none; }
-  .spill {
-    flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
-    padding: 8px 14px; border-radius: 12px; font-size: 0.72em; font-weight: 600;
-    text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent;
-    background: rgba(255,255,255,0.03); box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+  .progress-bar-wrap {
+    flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden;
   }
-  .spill-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-
-  /* ── Word of Day (inline) ── */
-  .wod-inline {
-    padding: 14px 16px; margin-bottom: 12px; display: none;
-    animation: fadeIn 0.3s ease-out 0.25s both;
-    border-left: 3px solid #7C5CFC;
-  }
-  .wod-tag { font-size: 0.55em; color: #7C5CFC; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 4px; }
-  .wod-word { font-size: 1.1em; font-weight: 800; }
-  .wod-sentence { font-size: 0.75em; color: #7a7a8e; font-style: italic; margin-top: 2px; }
+  .progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #3B82F6, #7C5CFC); transition: width 0.6s; }
+  .progress-label { font-size: 0.7em; color: #525263; white-space: nowrap; }
+  .progress-label b { color: #a78bfa; }
 </style>
 </head><body>
 
-<div class="topbar">
-  <div class="topbar-brand">Oxe</div>
-  <div class="topbar-right">
-    <div class="tier-pill" id="tier-pill">T1</div>
-    <div class="streak-pill"><span>&#x1f525;</span><span id="streak">0</span></div>
+<div class="header">
+  <div class="brand">Oxe</div>
+  <div class="header-meta">
+    <span>T<b id="h-tier">1</b></span>
+    <span><b id="h-streak">0</b> dias</span>
   </div>
 </div>
 
 <div class="page">
 
-  <!-- Hero: Key numbers + big CTA -->
-  <div class="hero glass-card">
-    <div class="hero-stats">
-      <div>
-        <div class="hero-stat-val blue" id="hs-due">0</div>
-        <div class="hero-stat-lbl">Pendentes</div>
-      </div>
-      <div>
-        <div class="hero-stat-val green" id="hs-reviewed">0</div>
-        <div class="hero-stat-lbl">Hoje</div>
-      </div>
-      <div>
-        <div class="hero-stat-val purple" id="hs-mastery">0%</div>
-        <div class="hero-stat-lbl">Dominio</div>
-      </div>
-    </div>
-    <a href="/drill" class="btn-treinar">Treinar</a>
-  </div>
-
-  <!-- Pipeline bar (compact, no legend) -->
-  <div class="pipeline-row glass-card">
-    <div class="pipeline-bar" id="pipeline-bar"></div>
-    <div class="pipeline-labels">
-      <span><b id="pl-known">0</b> adquiridas</span>
-      <span><b id="pl-total">0</b> total</span>
+  <!-- Search (hero element) -->
+  <div class="search-wrap">
+    <div class="search-box" onclick="window.location='/search'">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6"/><line x1="12.5" y1="12.5" x2="17" y2="17"/></svg>
+      <input type="text" placeholder="Buscar palavra..." readonly>
     </div>
   </div>
 
-  <!-- Today stats -->
-  <div class="today-row">
-    <div class="today-item glass-card">
-      <div class="today-val" id="today-mins">0</div>
-      <div class="today-lbl">Minutos</div>
-    </div>
-    <div class="today-item glass-card">
-      <div class="today-val" id="today-plan">0%</div>
-      <div class="today-lbl">Plano</div>
-    </div>
-    <div class="today-item glass-card">
-      <div class="today-val" id="today-new">0</div>
-      <div class="today-lbl">Dominadas</div>
-    </div>
-  </div>
-
-  <!-- Quick Nav: 6 main actions -->
-  <div class="nav-grid">
-    <a href="/drill" class="nav-item glass-card">
-      <div class="nav-icon">&#x1f3af;</div>
-      <div class="nav-label">Treinar</div>
-      <div class="nav-badge" id="due-badge">0</div>
-    </a>
-    <a href="/library" class="nav-item glass-card">
-      <div class="nav-icon">&#x1f4d6;</div>
-      <div class="nav-label">Biblioteca</div>
-      <div class="nav-badge" id="stories-badge">0</div>
-    </a>
-    <a href="/conversa" class="nav-item glass-card">
-      <div class="nav-icon">&#x1f4ac;</div>
-      <div class="nav-label">Conversa</div>
-    </a>
-    <a href="/assembly" class="nav-item glass-card">
-      <div class="nav-icon">&#x1f9e9;</div>
-      <div class="nav-label">Montar</div>
-    </a>
-    <a href="/plan" class="nav-item glass-card">
-      <div class="nav-icon">&#x1f4cb;</div>
-      <div class="nav-label">Plano</div>
-    </a>
-    <a href="/search" class="nav-item glass-card">
-      <div class="nav-icon">&#x1f50d;</div>
-      <div class="nav-label">Buscar</div>
-    </a>
-  </div>
-
-  <!-- Status pills: scrollable horizontal -->
-  <div class="status-pills">
-    <a href="/speech" class="spill">
-      <div class="spill-dot" id="sp-dot" style="background:#3B82F6"></div>
-      Fala: <b id="sp-stage">1</b>
-    </a>
-    <div class="spill" id="sp-fatigue">
-      <div class="spill-dot" id="fat-dot" style="background:#34d399"></div>
-      Fadiga: <b id="fat-score">0</b>
-    </div>
-    <a href="/drill?mode=fragile" class="spill" id="sp-fragile" style="display:none">
-      <div class="spill-dot" style="background:#f87171"></div>
-      Frageis: <b id="frag-count">0</b>
-    </a>
-    <a href="/chunks" class="spill">
-      <div class="spill-dot" style="background:#a78bfa"></div>
-      Chunks
-    </a>
-  </div>
-
-  <!-- Word of Day (compact inline) -->
-  <div class="wod-inline glass-card" id="wod-card">
-    <div class="wod-tag">Palavra do Dia</div>
+  <!-- Word of Day -->
+  <div class="wod" id="wod">
+    <div class="wod-label">Palavra do Dia</div>
     <div class="wod-word" id="wod-word"></div>
     <div class="wod-sentence" id="wod-sentence"></div>
+  </div>
+
+  <!-- Train button -->
+  <a href="/drill" class="train-btn">
+    <span>Treinar</span>
+    <span class="due-count" id="due-count">0 pendentes</span>
+  </a>
+
+  <!-- Navigation -->
+  <div class="nav-list">
+    <a href="/library" class="nav-link">
+      <div class="nav-ico" style="background:rgba(59,130,246,0.10)">&#x1f4d6;</div>
+      <div class="nav-text">
+        <div class="nav-title">Biblioteca</div>
+        <div class="nav-sub" id="nav-stories">Historias e podcasts</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
+    <a href="/conversa" class="nav-link">
+      <div class="nav-ico" style="background:rgba(124,92,252,0.10)">&#x1f4ac;</div>
+      <div class="nav-text">
+        <div class="nav-title">Conversa</div>
+        <div class="nav-sub">Pratica de fala guiada</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
+    <a href="/assembly" class="nav-link">
+      <div class="nav-ico" style="background:rgba(52,211,153,0.10)">&#x1f9e9;</div>
+      <div class="nav-text">
+        <div class="nav-title">Montar Frases</div>
+        <div class="nav-sub">Monte frases com chunks</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
+    <a href="/plan" class="nav-link">
+      <div class="nav-ico" style="background:rgba(250,204,21,0.10)">&#x1f4cb;</div>
+      <div class="nav-text">
+        <div class="nav-title">Plano do Dia</div>
+        <div class="nav-sub" id="nav-plan">Blocos de estudo</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
+    <a href="/speech" class="nav-link">
+      <div class="nav-ico" style="background:rgba(248,113,113,0.10)">&#x1f3a4;</div>
+      <div class="nav-text">
+        <div class="nav-title">Escada da Fala</div>
+        <div class="nav-sub" id="nav-speech">Estagio 1 - Eco</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
+    <a href="/chunks" class="nav-link">
+      <div class="nav-ico" style="background:rgba(167,139,250,0.10)">&#x1f517;</div>
+      <div class="nav-text">
+        <div class="nav-title">Chunks</div>
+        <div class="nav-sub">Familias de expressoes</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
+  </div>
+
+  <!-- Progress bar (one line) -->
+  <div class="progress-row">
+    <div class="progress-bar-wrap">
+      <div class="progress-fill" id="prog-fill" style="width:0%"></div>
+    </div>
+    <div class="progress-label"><b id="prog-pct">0%</b> adquirido</div>
   </div>
 
 </div>
@@ -453,84 +406,38 @@ HOME_HTML = r"""<!DOCTYPE html>
 {tab_bar}
 
 <script>
-var PIPE_COLORS = ['#525263','#f87171','#fb923c','#facc15','#34d399','#3B82F6','#7C5CFC'];
-var PIPE_KEYS = ['UNKNOWN','RECOGNIZED','CONTEXT_KNOWN','EFFORTFUL_AUDIO','AUTOMATIC_CLEAN','AUTOMATIC_NATIVE','AVAILABLE_OUTPUT'];
 var SPEECH_NAMES = {1:'Eco',2:'Troca',3:'Reconto',4:'Expressao',5:'Semi-Livre',6:'Livre'};
 
-function renderPipeline(dist) {
-  var bar = document.getElementById('pipeline-bar');
-  var total = 0, known = 0;
-  PIPE_KEYS.forEach(function(k,i){ var c=dist[k]||0; total+=c; if(i>=4) known+=c; });
-  if (total === 0) total = 1;
-  bar.innerHTML = '';
-  PIPE_KEYS.forEach(function(k,i) {
-    var count = dist[k]||0;
-    if (count > 0) {
-      var seg = document.createElement('div');
-      seg.className = 'pipeline-seg';
-      seg.style.width = Math.max((count/total)*100, 0.5) + '%';
-      seg.style.background = PIPE_COLORS[i];
-      bar.appendChild(seg);
-    }
-  });
-  document.getElementById('pl-known').textContent = known;
-  document.getElementById('pl-total').textContent = total;
-}
-
-function fatigueColor(s) { return s<30?'#34d399':s<50?'#facc15':s<70?'#fb923c':'#f87171'; }
-
-function applyDashboard(d) {
-  var tier = d.tier||{};
-  document.getElementById('tier-pill').textContent = 'T'+(tier.current||1)+' '+(tier.mastery_pct||0)+'%';
-  document.getElementById('hs-mastery').textContent = (tier.mastery_pct||0)+'%';
-
-  var dist = (d.acquisition_state||{}).distribution||{};
-  renderPipeline(dist);
-
-  var plan = d.today||{};
-  document.getElementById('today-plan').textContent = Math.round(plan.completed_pct||0)+'%';
-
-  var fat = d.fatigue||{};
-  document.getElementById('fat-score').textContent = fat.fatigue_score||0;
-  document.getElementById('fat-dot').style.background = fatigueColor(fat.fatigue_score||0);
-
-  var sp = d.speech||{};
-  var stg = sp.stage||1;
-  document.getElementById('sp-stage').textContent = stg + ' ' + (SPEECH_NAMES[stg]||'');
-
-  var fs = d.fragile_summary||{};
-  if (fs.total > 0) {
-    document.getElementById('frag-count').textContent = fs.total;
-    document.getElementById('sp-fragile').style.display = 'flex';
-  }
-}
-
-// Phase 1: Fast data
 fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
-  document.getElementById('streak').textContent = d.streak||0;
-  document.getElementById('tier-pill').textContent = 'T'+(d.tier||1)+' '+(d.mastery_pct||0)+'%';
-  document.getElementById('hs-due').textContent = d.due||0;
-  document.getElementById('hs-mastery').textContent = (d.mastery_pct||0)+'%';
-  document.getElementById('due-badge').textContent = d.due||0;
-  document.getElementById('stories-badge').textContent = d.story_count||0;
+  document.getElementById('h-streak').textContent = d.streak||0;
+  document.getElementById('h-tier').textContent = d.tier||1;
+  var due = d.due||0;
+  document.getElementById('due-count').textContent = due + ' pendentes';
+  if(d.story_count) document.getElementById('nav-stories').textContent = d.story_count + ' historias';
   if(d.word_of_day){
-    document.getElementById('wod-word').textContent=d.word_of_day.text||'';
-    document.getElementById('wod-sentence').textContent=d.word_of_day.sentence||'';
-    document.getElementById('wod-card').style.display='block';
+    document.getElementById('wod-word').textContent = d.word_of_day.text||'';
+    document.getElementById('wod-sentence').textContent = d.word_of_day.sentence||'';
+    document.getElementById('wod').style.display = 'block';
+  }
+  if(d.mastery_pct !== undefined){
+    document.getElementById('prog-pct').textContent = d.mastery_pct + '%';
+    document.getElementById('prog-fill').style.width = d.mastery_pct + '%';
   }
 }).catch(function(){});
 
-fetch('/api/daily-stats').then(function(r){return r.json()}).then(function(d){
-  var t=d.today||{};
-  document.getElementById('hs-reviewed').textContent=t.words_reviewed||0;
-  document.getElementById('today-mins').textContent=Math.round(t.minutes||0);
-  document.getElementById('today-new').textContent=t.words_mastered||0;
-}).catch(function(){});
-
-// Phase 2: Heavy data after paint
 requestAnimationFrame(function(){
   fetch('/api/dashboard').then(function(r){return r.ok?r.json():null}).then(function(d){
-    if(d) applyDashboard(d);
+    if(!d) return;
+    var tier = d.tier||{};
+    document.getElementById('h-tier').textContent = tier.current||1;
+    var pct = tier.mastery_pct||0;
+    document.getElementById('prog-pct').textContent = pct + '%';
+    document.getElementById('prog-fill').style.width = pct + '%';
+    var sp = d.speech||{};
+    var stg = sp.stage||1;
+    document.getElementById('nav-speech').textContent = 'Estagio ' + stg + ' - ' + (SPEECH_NAMES[stg]||'');
+    var plan = d.today||{};
+    if(plan.completed_pct) document.getElementById('nav-plan').textContent = Math.round(plan.completed_pct) + '% completo';
   }).catch(function(){});
 });
 </script>
