@@ -603,6 +603,47 @@ DRILL_HTML = r"""<!DOCTYPE html>
     margin-top: 8px;
   }
 
+  /* ── Listening Layer Pills ── */
+  .listening-layers {
+    display: flex; gap: 6px; justify-content: center; padding: 8px 16px;
+    width: 100%; max-width: 360px; margin: 0 auto;
+    display: none;
+  }
+  .listening-layers.visible { display: flex; animation: fadeUp 0.3s ease-out; }
+  .layer-pill {
+    flex: 1; padding: 6px 4px; font-size: 0.65em; font-weight: 700;
+    text-align: center; border-radius: 12px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03); color: #6b7280;
+    transition: all 0.3s ease; letter-spacing: 0.2px;
+    position: relative; overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .layer-pill::before {
+    content: ''; position: absolute; bottom: 0; left: 0; width: 0; height: 3px;
+    background: linear-gradient(90deg, #3B82F6, #7C5CFC);
+    border-radius: 0 0 12px 12px; transition: width 0.4s ease;
+  }
+  .layer-pill.active {
+    background: rgba(59,130,246,0.12); color: #60a5fa;
+    border-color: rgba(59,130,246,0.3);
+    box-shadow: 0 0 12px rgba(59,130,246,0.15);
+  }
+  .layer-pill.active::before { width: 100%; }
+  .layer-pill.completed {
+    background: rgba(52,211,153,0.08); color: #34d399;
+    border-color: rgba(52,211,153,0.25);
+  }
+  .layer-pill.completed::before {
+    width: 100%; background: linear-gradient(90deg, #34d399, #10b981);
+  }
+  .layer-pill.locked {
+    opacity: 0.35; cursor: default;
+  }
+  .layer-pill .layer-icon {
+    display: block; font-size: 1.4em; line-height: 1; margin-bottom: 2px;
+  }
+
   /* ── Tab Bar — injected by TAB_BAR_HTML ── */
 </style>
 </head><body>
@@ -629,6 +670,20 @@ DRILL_HTML = r"""<!DOCTYPE html>
 </div>
 
 <div class="mode-banner hidden" id="mode-banner"></div>
+<div class="listening-layers" id="listening-layers">
+  <div class="layer-pill active" id="layer-clean" data-layer="clean" onclick="selectLayer('clean')">
+    <span class="layer-icon">&#x1F50A;</span>Limpo
+  </div>
+  <div class="layer-pill locked" id="layer-native_clear" data-layer="native_clear" onclick="selectLayer('native_clear')">
+    <span class="layer-icon">&#x1F5E3;</span>Nativo
+  </div>
+  <div class="layer-pill locked" id="layer-native_fast" data-layer="native_fast" onclick="selectLayer('native_fast')">
+    <span class="layer-icon">&#x26A1;</span>R&aacute;pido
+  </div>
+  <div class="layer-pill locked" id="layer-noisy" data-layer="noisy" onclick="selectLayer('noisy')">
+    <span class="layer-icon">&#x1F3D9;</span>Barulho
+  </div>
+</div>
 <div class="fragile-tags" id="fragile-tags"></div>
 
 <div class="progress-dots">
@@ -1293,6 +1348,151 @@ async function checkFatigueStatus() {
     // 'continue' => do nothing, UI already cleared
   } catch (e) {}
 }
+
+// ── Feature 6: Listening Difficulty Layers ────────────────
+var LISTENING_MODES = ['audio_meaning_recognition', 'native_speed_parsing', 'clean_vs_native_comparison'];
+var listeningLayerData = null;   // {chunk_id, layers: [...], current_layer}
+var listeningLayerAudios = {};   // {layer: audio_file}
+var activeListeningLayer = 'clean';
+
+function isListeningMode() {
+  if (!modeConfig) return false;
+  return LISTENING_MODES.indexOf(modeConfig.mode) >= 0;
+}
+
+function showListeningLayers() {
+  var container = $('listening-layers');
+  if (!isListeningMode()) {
+    container.classList.remove('visible');
+    return;
+  }
+  container.classList.add('visible');
+  updateLayerPills();
+}
+
+function hideListeningLayers() {
+  $('listening-layers').classList.remove('visible');
+  listeningLayerData = null;
+  listeningLayerAudios = {};
+  activeListeningLayer = 'clean';
+}
+
+function updateLayerPills() {
+  var layers = ['clean', 'native_clear', 'native_fast', 'noisy'];
+  var activeIdx = layers.indexOf(activeListeningLayer);
+
+  for (var i = 0; i < layers.length; i++) {
+    var pill = $('layer-' + layers[i]);
+    if (!pill) continue;
+    pill.className = 'layer-pill';
+    if (i < activeIdx) {
+      pill.classList.add('completed');
+    } else if (i === activeIdx) {
+      pill.classList.add('active');
+    } else {
+      pill.classList.add('locked');
+    }
+  }
+}
+
+function selectLayer(layer) {
+  var layers = ['clean', 'native_clear', 'native_fast', 'noisy'];
+  var activeIdx = layers.indexOf(activeListeningLayer);
+  var targetIdx = layers.indexOf(layer);
+
+  // Can only select current or completed layers
+  if (targetIdx > activeIdx) return;
+
+  activeListeningLayer = layer;
+  updateLayerPills();
+  playLayerAudio(layer);
+}
+
+function playLayerAudio(layer) {
+  var audioFile = listeningLayerAudios[layer];
+  if (!audioFile) return;
+  player.src = '/audio/' + audioFile;
+  player.onended = null;
+  player.onerror = null;
+  player.play().catch(function() {});
+}
+
+async function fetchListeningLayers(chunkId) {
+  if (!isListeningMode() || !chunkId) return;
+  try {
+    var res = await fetch('/api/listening/drill/' + chunkId);
+    var data = await res.json();
+    if (data.error) return;
+    listeningLayerData = data;
+    activeListeningLayer = data.current_layer || 'clean';
+    listeningLayerAudios = {};
+    if (data.layers) {
+      for (var i = 0; i < data.layers.length; i++) {
+        var l = data.layers[i];
+        if (l.audio_file) {
+          listeningLayerAudios[l.layer] = l.audio_file;
+        }
+      }
+    }
+    showListeningLayers();
+  } catch (e) {
+    // Non-fatal — drill still works without layers
+  }
+}
+
+async function advanceListeningLayer(success) {
+  if (!isListeningMode() || !currentChunk) return;
+  var chunkId = currentChunk.chunk_id || currentChunk.word_id;
+  try {
+    var res = await fetch('/api/listening/advance', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chunk_id: chunkId,
+        current_layer: activeListeningLayer,
+        success: success,
+      }),
+    });
+    var data = await res.json();
+    if (data.advanced) {
+      activeListeningLayer = data.current_layer;
+      updateLayerPills();
+      // Auto-play the new layer audio after a brief pause
+      setTimeout(function() { playLayerAudio(activeListeningLayer); }, 500);
+    } else if (data.completed) {
+      // All layers mastered — mark all pills as completed
+      var layers = ['clean', 'native_clear', 'native_fast', 'noisy'];
+      for (var i = 0; i < layers.length; i++) {
+        var pill = $('layer-' + layers[i]);
+        if (pill) {
+          pill.className = 'layer-pill completed';
+        }
+      }
+    }
+  } catch (e) {}
+}
+
+// Patch into fetchNext: after chunk loads, fetch listening layers
+var _origFetchNext = fetchNext;
+fetchNext = async function() {
+  hideListeningLayers();
+  await _origFetchNext();
+  if (currentChunk && isListeningMode()) {
+    var cid = currentChunk.chunk_id || currentChunk.word_id;
+    fetchListeningLayers(cid);
+  }
+};
+
+// Patch into completeDrill: auto-advance listening layer on success
+var _origCompleteDrill = completeDrill;
+completeDrill = async function() {
+  var wasListeningMode = isListeningMode();
+  await _origCompleteDrill();
+  if (wasListeningMode) {
+    // Assume success if rating >= 3 (Good or Easy)
+    advanceListeningLayer(true);
+  }
+};
 
 function updateTime() {
   $('time-label').textContent = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
