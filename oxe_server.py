@@ -220,394 +220,232 @@ HOME_HTML = r"""<!DOCTYPE html>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Oxe</title>
 <style>
-  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes ringPulse { 0%,100%{filter:drop-shadow(0 0 6px rgba(79,123,239,0.3))} 50%{filter:drop-shadow(0 0 12px rgba(79,123,239,0.5))} }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
     min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
-    -webkit-user-select: none; user-select: none;
-    padding-bottom: 76px;
+    -webkit-user-select: none; user-select: none; padding-bottom: 76px;
   }
-
-  /* ── Top Bar ── */
   .topbar {
     padding: 16px 20px 14px; display: flex; justify-content: space-between; align-items: center;
     position: sticky; top: 0; z-index: 10; background: #0a0a0b;
-    border-bottom: 2px solid transparent;
-    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .topbar-brand {
     font-size: 1.5em; font-weight: 800; letter-spacing: -1px;
     background: linear-gradient(135deg, #4F7BEF, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
   .streak-pill {
-    display: flex; align-items: center; gap: 5px; padding: 6px 14px;
-    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.15);
-    border-radius: 20px; font-size: 0.8em; font-weight: 600; color: #60a5fa;
+    display: flex; align-items: center; gap: 4px; padding: 5px 12px;
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.12);
+    border-radius: 16px; font-size: 0.75em; font-weight: 600; color: #60a5fa;
   }
-
-  /* ── Scroll content ── */
-  .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; }
-
-  /* ── Glass Card base ── */
+  .tier-pill {
+    padding: 5px 12px; border-radius: 16px; font-size: 0.75em; font-weight: 700; color: #a78bfa;
+    background: rgba(124,92,252,0.10); border: 1px solid rgba(124,92,252,0.15);
+  }
+  .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px 20px; }
   .glass-card {
-    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: 20px; transition: transform 0.2s, box-shadow 0.2s;
+    background: rgba(255,255,255,0.03); box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+    border-radius: 16px;
   }
 
-  /* ── Acquisition Pipeline ── */
-  .pipeline-card {
-    background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(124,92,252,0.06));
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: 20px; padding: 24px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out;
-  }
-  .pipeline-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  .pipeline-header h2 { font-size: 1.05em; font-weight: 700; }
-  .tier-badge {
-    display: flex; align-items: center; gap: 6px; padding: 5px 12px;
-    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(124,92,252,0.15));
-    border: 1px solid rgba(124,92,252,0.2); border-radius: 14px;
-    font-size: 0.72em; font-weight: 700; color: #a78bfa;
-  }
-  .tier-badge .tier-num { font-size: 1.1em; color: #fafafa; }
-  .pipeline-bar {
-    display: flex; height: 28px; border-radius: 8px; overflow: hidden;
-    background: rgba(255,255,255,0.04); margin-bottom: 10px;
-  }
-  .pipeline-seg {
-    height: 100%; min-width: 2px; position: relative; transition: width 0.6s ease;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .pipeline-seg span {
-    font-size: 0.55em; font-weight: 700; color: rgba(0,0,0,0.7); opacity: 0;
-    transition: opacity 0.3s;
-  }
-  .pipeline-seg:hover span, .pipeline-seg.show-label span { opacity: 1; }
-  .pipeline-legend {
-    display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px;
-  }
-  .pipeline-legend-item {
-    display: flex; align-items: center; gap: 4px; font-size: 0.6em; color: #7a7a8e;
-  }
-  .pipeline-legend-dot {
-    width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0;
-  }
-
-  /* ── Quick Stats Row ── */
-  .quick-stats {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-    margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.05s both;
-  }
-  .qstat {
-    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.06); border-radius: 14px;
-    padding: 14px 8px; text-align: center;
-  }
-  .qstat-val { font-size: 1.2em; font-weight: 800; font-variant-numeric: tabular-nums; color: #fafafa; }
-  .qstat-lbl { font-size: 0.55em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 3px; line-height: 1.3; }
-
-  /* ── Today's Plan ── */
-  .plan-card {
-    padding: 20px 24px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.1s both;
-  }
-  .plan-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-  .plan-header h3 { font-size: 0.95em; font-weight: 700; }
-  .plan-block-label { font-size: 0.72em; color: #7a7a8e; }
-  .plan-progress-track {
-    height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; margin-bottom: 14px;
-  }
-  .plan-progress-fill {
-    height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3B82F6, #7C5CFC);
-    transition: width 0.6s ease; min-width: 0;
-  }
-  .plan-footer { display: flex; justify-content: space-between; align-items: center; }
-  .plan-pct { font-size: 0.78em; color: #60a5fa; font-weight: 600; }
+  /* ── Hero: Big CTA ── */
+  .hero { padding: 24px 20px; margin-bottom: 12px; animation: fadeIn 0.3s ease-out; text-align: center; }
+  .hero-stats { display: flex; justify-content: center; gap: 24px; margin-bottom: 20px; }
+  .hero-stat-val { font-size: 1.8em; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .hero-stat-lbl { font-size: 0.6em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .hero-stat-val.blue { color: #60a5fa; }
+  .hero-stat-val.green { color: #34d399; }
+  .hero-stat-val.purple { color: #a78bfa; }
   .btn-treinar {
-    display: inline-flex; align-items: center; gap: 6px; padding: 10px 22px;
+    display: inline-flex; align-items: center; gap: 8px; padding: 14px 40px;
     background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
-    border: none; border-radius: 14px; font-size: 0.85em; font-weight: 700;
+    border: none; border-radius: 16px; font-size: 1em; font-weight: 700;
     text-decoration: none; -webkit-tap-highlight-color: transparent;
-    transition: transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 2px 12px rgba(59,130,246,0.3);
+    box-shadow: 0 4px 20px rgba(59,130,246,0.3); transition: transform 0.15s;
   }
   .btn-treinar:active { transform: scale(0.96); }
 
-  /* ── Fatigue & Speech Row ── */
-  .status-row {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-    margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.15s both;
+  /* ── Pipeline (compact) ── */
+  .pipeline-row { padding: 14px 16px; margin-bottom: 12px; animation: fadeIn 0.3s ease-out 0.05s both; }
+  .pipeline-bar {
+    display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+    background: rgba(255,255,255,0.04);
   }
-  .status-item {
-    padding: 16px; display: flex; flex-direction: column; gap: 8px;
-  }
-  .status-label { font-size: 0.6em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.5px; }
-  .status-value { display: flex; align-items: center; gap: 8px; }
-  .fatigue-dot {
-    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
-  }
-  .fatigue-num { font-size: 1.3em; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .fatigue-rec { font-size: 0.65em; color: #7a7a8e; }
-  .fatigue-warn {
-    font-size: 0.68em; color: #f87171; font-weight: 600;
-    padding: 4px 10px; background: rgba(248,113,113,0.1); border-radius: 8px;
-    margin-top: 2px; display: none;
-  }
-  .speech-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
-    background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(124,92,252,0.12));
-    border: 1px solid rgba(124,92,252,0.15); border-radius: 12px;
-    font-size: 0.85em; font-weight: 700; color: #a78bfa;
-  }
-  .speech-stage-num { font-size: 1.1em; color: #fafafa; }
+  .pipeline-seg { height: 100%; min-width: 1px; transition: width 0.6s ease; }
+  .pipeline-labels { display: flex; justify-content: space-between; margin-top: 6px; }
+  .pipeline-labels span { font-size: 0.55em; color: #525263; }
+  .pipeline-labels span b { color: #7a7a8e; }
 
-  /* ── Fragile Items ── */
-  .fragile-card {
-    padding: 20px 24px; margin-bottom: 16px; border-top: 2px solid #f87171;
-    animation: fadeIn 0.4s ease-out 0.2s both; display: none;
+  /* ── Today row ── */
+  .today-row {
+    display: flex; gap: 10px; margin-bottom: 12px; animation: fadeIn 0.3s ease-out 0.1s both;
   }
-  .fragile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-  .fragile-header h3 { font-size: 0.95em; font-weight: 700; color: #f87171; }
-  .fragile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 14px; }
-  .fragile-item { display: flex; align-items: center; gap: 6px; font-size: 0.78em; color: #7a7a8e; }
-  .fragile-item .fcount { color: #fafafa; font-weight: 700; min-width: 20px; }
-  .btn-resgatar {
-    display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px;
-    background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.2);
-    border-radius: 12px; font-size: 0.78em; font-weight: 700;
-    text-decoration: none; -webkit-tap-highlight-color: transparent;
-    transition: transform 0.15s;
+  .today-item {
+    flex: 1; padding: 14px 12px; text-align: center;
   }
-  .btn-resgatar:active { transform: scale(0.96); }
+  .today-val { font-size: 1.2em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .today-lbl { font-size: 0.55em; color: #525263; text-transform: uppercase; margin-top: 2px; }
 
-  /* ── Palavra do Dia (compact) ── */
-  .wod-card {
-    padding: 18px 24px; margin-bottom: 16px;
-    animation: fadeIn 0.4s ease-out 0.25s both;
-    border-top: 2px solid #7C5CFC;
+  /* ── Quick Nav Grid ── */
+  .nav-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin-bottom: 12px; animation: fadeIn 0.3s ease-out 0.15s both;
   }
-  .wod-header {
-    font-size: 0.65em; font-weight: 600; color: #7C5CFC; text-transform: uppercase;
-    letter-spacing: 1.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  .nav-item {
+    padding: 16px 10px; text-align: center; text-decoration: none; color: #fafafa;
+    -webkit-tap-highlight-color: transparent; transition: transform 0.15s;
   }
-  .wod-header::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #7C5CFC; }
-  .wod-word { font-size: 1.3em; font-weight: 800; color: #fafafa; letter-spacing: -0.5px; margin-bottom: 4px; }
-  .wod-sentence { font-size: 0.8em; color: #7a7a8e; line-height: 1.5; font-style: italic; }
+  .nav-item:active { transform: scale(0.95); }
+  .nav-icon { font-size: 1.5em; margin-bottom: 6px; }
+  .nav-label { font-size: 0.7em; font-weight: 600; }
+  .nav-badge {
+    display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 8px;
+    font-size: 0.6em; font-weight: 600; background: rgba(59,130,246,0.10); color: #60a5fa;
+  }
+  .nav-badge.red { background: rgba(248,113,113,0.10); color: #f87171; }
+  .nav-badge.green { background: rgba(52,211,153,0.10); color: #34d399; }
 
-  /* ── Section Headers ── */
-  .section-hdr {
-    font-size: 0.78em; font-weight: 700; color: #60a5fa; text-transform: uppercase;
-    letter-spacing: 1.5px; margin-bottom: 16px; padding-left: 4px;
+  /* ── Status pills ── */
+  .status-pills {
+    display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto;
+    -webkit-overflow-scrolling: touch; padding: 0 2px;
+    animation: fadeIn 0.3s ease-out 0.2s both;
   }
+  .status-pills::-webkit-scrollbar { display: none; }
+  .spill {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 12px; font-size: 0.72em; font-weight: 600;
+    text-decoration: none; color: inherit; -webkit-tap-highlight-color: transparent;
+    background: rgba(255,255,255,0.03); box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .spill-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
-  /* ── Feature Grid ── */
-  .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
-  .fcard {
-    background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: 20px; padding: 22px 18px; text-decoration: none; color: inherit;
-    -webkit-tap-highlight-color: transparent;
-    transition: transform 0.2s, box-shadow 0.2s;
-    display: flex; flex-direction: column; gap: 12px;
-    position: relative; overflow: hidden;
+  /* ── Word of Day (inline) ── */
+  .wod-inline {
+    padding: 14px 16px; margin-bottom: 12px; display: none;
+    animation: fadeIn 0.3s ease-out 0.25s both;
+    border-left: 3px solid #7C5CFC;
   }
-  .fcard::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-  .fcard.blue-edge::before { background: linear-gradient(90deg, #3B82F6, #60a5fa); }
-  .fcard.purple-edge::before { background: linear-gradient(90deg, #7C5CFC, #a78bfa); }
-  .fcard.red-edge::before { background: linear-gradient(90deg, #f87171, #fca5a5); }
-  .fcard.cyan-edge::before { background: linear-gradient(90deg, #22d3ee, #67e8f9); }
-  .fcard:active { transform: scale(0.97); box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.4); }
-  .fcard-icon {
-    width: 48px; height: 48px; border-radius: 14px;
-    display: flex; align-items: center; justify-content: center; font-size: 1.3em;
-  }
-  .fcard-icon.blue { background: rgba(59,130,246,0.12); }
-  .fcard-icon.purple { background: rgba(124,92,252,0.12); }
-  .fcard-icon.red { background: rgba(248,113,113,0.10); }
-  .fcard-icon.cyan { background: rgba(34,211,238,0.10); }
-  .fcard-title { font-size: 1em; font-weight: 700; }
-  .fcard-desc { font-size: 0.72em; color: #7a7a8e; line-height: 1.55; }
-  .fcard-badge {
-    display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 0.65em;
-    font-weight: 600; background: rgba(59,130,246,0.10); color: #60a5fa;
-    align-self: flex-start;
-  }
-  .fcard-badge.red { background: rgba(248,113,113,0.10); color: #f87171; }
-
-  /* ── Today Stats (compact) ── */
-  .today-card {
-    padding: 16px 0; margin-bottom: 16px; display: flex; align-items: center;
-    animation: fadeIn 0.4s ease-out 0.3s both;
-  }
-  .today-stat { flex: 1; text-align: center; position: relative; }
-  .today-stat + .today-stat::before {
-    content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-    width: 1px; height: 32px; background: rgba(255,255,255,0.06);
-  }
-  .today-val { font-size: 1.4em; font-weight: 700; font-variant-numeric: tabular-nums; color: #fafafa; }
-  .today-lbl { font-size: 0.55em; color: #525263; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
-
-  /* ── Gradient def ── */
-  .hidden-svg { position: absolute; width: 0; height: 0; }
+  .wod-tag { font-size: 0.55em; color: #7C5CFC; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 4px; }
+  .wod-word { font-size: 1.1em; font-weight: 800; }
+  .wod-sentence { font-size: 0.75em; color: #7a7a8e; font-style: italic; margin-top: 2px; }
 </style>
 </head><body>
 
-<!-- SVG gradient definition -->
-<svg class="hidden-svg"><defs>
-  <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-    <stop offset="0%" stop-color="#3B82F6"/>
-    <stop offset="100%" stop-color="#7C5CFC"/>
-  </linearGradient>
-</defs></svg>
-
 <div class="topbar">
   <div class="topbar-brand">Oxe</div>
-  <div class="streak-pill" id="streak-pill">
-    <span>&#x1f525;</span> <span id="streak">0</span> dias
+  <div class="topbar-right">
+    <div class="tier-pill" id="tier-pill">T1</div>
+    <div class="streak-pill"><span>&#x1f525;</span><span id="streak">0</span></div>
   </div>
 </div>
 
 <div class="page">
 
-  <!-- Acquisition Pipeline Card -->
-  <div class="pipeline-card">
-    <div class="pipeline-header">
-      <h2>Pipeline de Aquisicao</h2>
-      <div class="tier-badge">
-        <span class="tier-num" id="tier-num">1</span>
-        <span id="tier-label">Sobrevivencia</span>
-        <span style="color:#7a7a8e">&#183;</span>
-        <span id="mastery-pct">0%</span>
+  <!-- Hero: Key numbers + big CTA -->
+  <div class="hero glass-card">
+    <div class="hero-stats">
+      <div>
+        <div class="hero-stat-val blue" id="hs-due">0</div>
+        <div class="hero-stat-lbl">Pendentes</div>
+      </div>
+      <div>
+        <div class="hero-stat-val green" id="hs-reviewed">0</div>
+        <div class="hero-stat-lbl">Hoje</div>
+      </div>
+      <div>
+        <div class="hero-stat-val purple" id="hs-mastery">0%</div>
+        <div class="hero-stat-lbl">Dominio</div>
       </div>
     </div>
+    <a href="/drill" class="btn-treinar">Treinar</a>
+  </div>
+
+  <!-- Pipeline bar (compact, no legend) -->
+  <div class="pipeline-row glass-card">
     <div class="pipeline-bar" id="pipeline-bar"></div>
-    <div class="pipeline-legend" id="pipeline-legend"></div>
-  </div>
-
-  <!-- Quick Stats Row -->
-  <div class="quick-stats">
-    <div class="qstat">
-      <div class="qstat-val" id="qs-acquired">0</div>
-      <div class="qstat-lbl">Adquiridas</div>
-    </div>
-    <div class="qstat">
-      <div class="qstat-val" id="qs-automatic">0</div>
-      <div class="qstat-lbl">Automaticas</div>
-    </div>
-    <div class="qstat">
-      <div class="qstat-val" id="qs-output">0</div>
-      <div class="qstat-lbl">Producao</div>
-    </div>
-    <div class="qstat">
-      <div class="qstat-val" id="qs-fragile">0</div>
-      <div class="qstat-lbl">Frageis</div>
+    <div class="pipeline-labels">
+      <span><b id="pl-known">0</b> adquiridas</span>
+      <span><b id="pl-total">0</b> total</span>
     </div>
   </div>
 
-  <!-- Today's Plan -->
-  <a href="/plan" style="text-decoration:none;color:inherit;display:block">
-  <div class="plan-card glass-card">
-    <div class="plan-header">
-      <h3>Plano de Hoje</h3>
-      <div class="plan-block-label" id="plan-block-label">Bloco 0 de 0</div>
-    </div>
-    <div class="plan-progress-track">
-      <div class="plan-progress-fill" id="plan-fill" style="width:0%"></div>
-    </div>
-    <div class="plan-footer">
-      <div class="plan-pct" id="plan-pct">0%</div>
-      <a href="/drill" class="btn-treinar" onclick="event.stopPropagation()">&#x1f3af; Treinar</a>
-    </div>
-  </div>
-  </a>
-
-  <!-- Fatigue & Speech Row -->
-  <div class="status-row">
-    <div class="status-item glass-card">
-      <div class="status-label">Fadiga</div>
-      <div class="status-value">
-        <div class="fatigue-dot" id="fatigue-dot" style="background:#34d399"></div>
-        <div class="fatigue-num" id="fatigue-score">0</div>
-        <div class="fatigue-rec" id="fatigue-rec"></div>
-      </div>
-      <div class="fatigue-warn" id="fatigue-warn">Hora de descansar</div>
-    </div>
-    <a href="/speech" class="status-item glass-card" style="text-decoration:none;color:inherit;-webkit-tap-highlight-color:transparent">
-      <div class="status-label">Fala</div>
-      <div class="speech-badge" id="speech-badge">
-        <span class="speech-stage-num" id="speech-stage">1</span>
-        <span id="speech-name">Eco</span>
-      </div>
-    </a>
-  </div>
-
-  <!-- Fragile Items Card -->
-  <div class="fragile-card glass-card" id="fragile-card">
-    <div class="fragile-header">
-      <h3>Itens Frageis</h3>
-      <a href="/drill?mode=fragile" class="btn-resgatar">&#x1f6df; Resgatar</a>
-    </div>
-    <div class="fragile-grid" id="fragile-grid"></div>
-  </div>
-
-  <!-- Palavra do Dia -->
-  <div class="wod-card glass-card" id="wod-card" style="display:none">
-    <div class="wod-header">Palavra do Dia</div>
-    <div class="wod-word" id="wod-word"></div>
-    <div class="wod-sentence" id="wod-sentence"></div>
-  </div>
-
-  <!-- Practice -->
-  <div class="section-hdr" style="animation:fadeIn 0.4s ease-out 0.28s both">Praticar</div>
-  <div class="feature-grid" style="animation:fadeIn 0.4s ease-out 0.3s both">
-    <a href="/drill" class="fcard blue-edge">
-      <div class="fcard-icon blue">&#x1f3af;</div>
-      <div class="fcard-title">Treinar</div>
-      <div class="fcard-desc">Drills com audio, imagem e SRS</div>
-      <div class="fcard-badge" id="due-badge">0 pendentes</div>
-    </a>
-    <a href="/library" class="fcard purple-edge">
-      <div class="fcard-icon purple">&#x1f4d6;</div>
-      <div class="fcard-title">Biblioteca</div>
-      <div class="fcard-desc">Historias, podcasts e revisao</div>
-      <div class="fcard-badge" id="stories-badge">0 historias</div>
-    </a>
-    <a href="/drill?mode=weak" class="fcard red-edge">
-      <div class="fcard-icon red">&#x26a0;&#xfe0f;</div>
-      <div class="fcard-title">Reforco</div>
-      <div class="fcard-desc">Palavras que voce mais erra</div>
-      <div class="fcard-badge red" id="weak-badge">0 fracas</div>
-    </a>
-    <a href="/conversa" class="fcard cyan-edge">
-      <div class="fcard-icon cyan">&#x1f4ac;</div>
-      <div class="fcard-title">Conversa</div>
-      <div class="fcard-desc">Papo livre com IA baiana</div>
-    </a>
-    <a href="/chunks" class="fcard purple-edge">
-      <div class="fcard-icon purple">&#x1f9e9;</div>
-      <div class="fcard-title">Chunks</div>
-      <div class="fcard-desc">Familias de collocations</div>
-    </a>
-  </div>
-
-  <!-- Today -->
-  <div class="section-hdr" style="animation:fadeIn 0.4s ease-out 0.32s both">Hoje</div>
-  <div class="today-card glass-card">
-    <div class="today-stat">
+  <!-- Today stats -->
+  <div class="today-row">
+    <div class="today-item glass-card">
       <div class="today-val" id="today-mins">0</div>
       <div class="today-lbl">Minutos</div>
     </div>
-    <div class="today-stat">
-      <div class="today-val" id="today-words">0</div>
-      <div class="today-lbl">Revisadas</div>
+    <div class="today-item glass-card">
+      <div class="today-val" id="today-plan">0%</div>
+      <div class="today-lbl">Plano</div>
     </div>
-    <div class="today-stat">
+    <div class="today-item glass-card">
       <div class="today-val" id="today-new">0</div>
       <div class="today-lbl">Dominadas</div>
     </div>
+  </div>
+
+  <!-- Quick Nav: 6 main actions -->
+  <div class="nav-grid">
+    <a href="/drill" class="nav-item glass-card">
+      <div class="nav-icon">&#x1f3af;</div>
+      <div class="nav-label">Treinar</div>
+      <div class="nav-badge" id="due-badge">0</div>
+    </a>
+    <a href="/library" class="nav-item glass-card">
+      <div class="nav-icon">&#x1f4d6;</div>
+      <div class="nav-label">Biblioteca</div>
+      <div class="nav-badge" id="stories-badge">0</div>
+    </a>
+    <a href="/conversa" class="nav-item glass-card">
+      <div class="nav-icon">&#x1f4ac;</div>
+      <div class="nav-label">Conversa</div>
+    </a>
+    <a href="/assembly" class="nav-item glass-card">
+      <div class="nav-icon">&#x1f9e9;</div>
+      <div class="nav-label">Montar</div>
+    </a>
+    <a href="/plan" class="nav-item glass-card">
+      <div class="nav-icon">&#x1f4cb;</div>
+      <div class="nav-label">Plano</div>
+    </a>
+    <a href="/search" class="nav-item glass-card">
+      <div class="nav-icon">&#x1f50d;</div>
+      <div class="nav-label">Buscar</div>
+    </a>
+  </div>
+
+  <!-- Status pills: scrollable horizontal -->
+  <div class="status-pills">
+    <a href="/speech" class="spill">
+      <div class="spill-dot" id="sp-dot" style="background:#3B82F6"></div>
+      Fala: <b id="sp-stage">1</b>
+    </a>
+    <div class="spill" id="sp-fatigue">
+      <div class="spill-dot" id="fat-dot" style="background:#34d399"></div>
+      Fadiga: <b id="fat-score">0</b>
+    </div>
+    <a href="/drill?mode=fragile" class="spill" id="sp-fragile" style="display:none">
+      <div class="spill-dot" style="background:#f87171"></div>
+      Frageis: <b id="frag-count">0</b>
+    </a>
+    <a href="/chunks" class="spill">
+      <div class="spill-dot" style="background:#a78bfa"></div>
+      Chunks
+    </a>
+  </div>
+
+  <!-- Word of Day (compact inline) -->
+  <div class="wod-inline glass-card" id="wod-card">
+    <div class="wod-tag">Palavra do Dia</div>
+    <div class="wod-word" id="wod-word"></div>
+    <div class="wod-sentence" id="wod-sentence"></div>
   </div>
 
 </div>
@@ -615,141 +453,66 @@ HOME_HTML = r"""<!DOCTYPE html>
 {tab_bar}
 
 <script>
-var PIPE_STATES = [
-  {key:'UNKNOWN',       label:'Desconhecida', color:'#525263'},
-  {key:'RECOGNIZED',    label:'Reconhecida',  color:'#f87171'},
-  {key:'CONTEXT_KNOWN', label:'Contexto',     color:'#fb923c'},
-  {key:'EFFORTFUL_AUDIO',label:'Audio Lento', color:'#facc15'},
-  {key:'AUTOMATIC_CLEAN',label:'Automatica',  color:'#34d399'},
-  {key:'AUTOMATIC_NATIVE',label:'Nativa',     color:'#3B82F6'},
-  {key:'AVAILABLE_OUTPUT',label:'Producao',   color:'#7C5CFC'}
-];
-var SPEECH_NAMES = {1:'Eco',2:'Sombra',3:'Fala Guiada',4:'Fala Livre',5:'Nativo'};
-var FATIGUE_LABELS = {start_session:'Pronto',continue:'Continua',take_break:'Descanse',end_session:'Pare'};
+var PIPE_COLORS = ['#525263','#f87171','#fb923c','#facc15','#34d399','#3B82F6','#7C5CFC'];
+var PIPE_KEYS = ['UNKNOWN','RECOGNIZED','CONTEXT_KNOWN','EFFORTFUL_AUDIO','AUTOMATIC_CLEAN','AUTOMATIC_NATIVE','AVAILABLE_OUTPUT'];
+var SPEECH_NAMES = {1:'Eco',2:'Troca',3:'Reconto',4:'Expressao',5:'Semi-Livre',6:'Livre'};
 
 function renderPipeline(dist) {
   var bar = document.getElementById('pipeline-bar');
-  var legend = document.getElementById('pipeline-legend');
-  var total = 0;
-  PIPE_STATES.forEach(function(s){ total += (dist[s.key]||0); });
+  var total = 0, known = 0;
+  PIPE_KEYS.forEach(function(k,i){ var c=dist[k]||0; total+=c; if(i>=4) known+=c; });
   if (total === 0) total = 1;
   bar.innerHTML = '';
-  legend.innerHTML = '';
-  PIPE_STATES.forEach(function(s) {
-    var count = dist[s.key]||0;
-    var pct = (count/total)*100;
+  PIPE_KEYS.forEach(function(k,i) {
+    var count = dist[k]||0;
     if (count > 0) {
       var seg = document.createElement('div');
-      seg.className = 'pipeline-seg' + (pct > 8 ? ' show-label' : '');
-      seg.style.width = Math.max(pct, 0.4) + '%';
-      seg.style.background = s.color;
-      var sp = document.createElement('span');
-      sp.textContent = count >= 1000 ? Math.round(count/1000)+'k' : count;
-      seg.appendChild(sp);
-      seg.title = s.label + ': ' + count.toLocaleString();
+      seg.className = 'pipeline-seg';
+      seg.style.width = Math.max((count/total)*100, 0.5) + '%';
+      seg.style.background = PIPE_COLORS[i];
       bar.appendChild(seg);
     }
-    var li = document.createElement('div');
-    li.className = 'pipeline-legend-item';
-    li.innerHTML = '<div class="pipeline-legend-dot" style="background:'+s.color+'"></div>' + s.label + ' <b style="color:#fafafa;margin-left:2px">' + count.toLocaleString() + '</b>';
-    legend.appendChild(li);
   });
+  document.getElementById('pl-known').textContent = known;
+  document.getElementById('pl-total').textContent = total;
 }
 
-function renderFragile(fs) {
-  var grid = document.getElementById('fragile-grid');
-  var card = document.getElementById('fragile-card');
-  if (!fs || fs.total === 0) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
-  var items = [
-    {icon:'\ud83d\udc40', label:'Familiar mas fragil', key:'familiar_but_fragile'},
-    {icon:'\ud83d\udc22', label:'Conhecida mas lenta', key:'known_but_slow'},
-    {icon:'\ud83d\udcdd', label:'So texto',            key:'text_only'},
-    {icon:'\ud83d\udd0a', label:'So audio limpo',      key:'clean_audio_only'},
-    {icon:'\ud83c\udfb5', label:'Bloqueada prosodia',  key:'blocked_by_prosody'}
-  ];
-  grid.innerHTML = '';
-  items.forEach(function(it) {
-    var c = fs[it.key]||0;
-    if (c > 0) {
-      var d = document.createElement('div');
-      d.className = 'fragile-item';
-      d.innerHTML = it.icon + ' <span class="fcount">' + c + '</span> ' + it.label;
-      grid.appendChild(d);
-    }
-  });
-}
-
-function fatigueColor(score) {
-  if (score < 30) return '#34d399';
-  if (score < 50) return '#facc15';
-  if (score < 70) return '#fb923c';
-  return '#f87171';
-}
+function fatigueColor(s) { return s<30?'#34d399':s<50?'#facc15':s<70?'#fb923c':'#f87171'; }
 
 function applyDashboard(d) {
-  // Streak
-  document.getElementById('streak').textContent = d.streak || 0;
+  var tier = d.tier||{};
+  document.getElementById('tier-pill').textContent = 'T'+(tier.current||1)+' '+(tier.mastery_pct||0)+'%';
+  document.getElementById('hs-mastery').textContent = (tier.mastery_pct||0)+'%';
 
-  // Tier badge
-  var tier = d.tier || {};
-  document.getElementById('tier-num').textContent = tier.current || 1;
-  document.getElementById('tier-label').textContent = tier.label || '';
-  document.getElementById('mastery-pct').textContent = (tier.mastery_pct||0) + '%';
-
-  // Pipeline
   var dist = (d.acquisition_state||{}).distribution||{};
   renderPipeline(dist);
 
-  // Quick stats
-  var acq = d.acquisition_state||{};
-  document.getElementById('qs-acquired').textContent = acq.acquired_count||0;
-  document.getElementById('qs-automatic').textContent = acq.automatic_count||0;
-  document.getElementById('qs-output').textContent = acq.available_count||0;
-  document.getElementById('qs-fragile').textContent = (d.fragile_summary||{}).total||0;
-
-  // Today's plan
   var plan = d.today||{};
-  var compPct = plan.completed_pct||0;
-  document.getElementById('plan-fill').style.width = compPct + '%';
-  document.getElementById('plan-pct').textContent = Math.round(compPct) + '%';
-  var blkLabel = 'Bloco ' + (plan.completed_blocks||0) + ' de ' + (plan.total_blocks||0);
-  if (plan.current_block && plan.current_block.type) {
-    blkLabel += ' \u2014 ' + plan.current_block.type;
-  }
-  document.getElementById('plan-block-label').textContent = blkLabel;
+  document.getElementById('today-plan').textContent = Math.round(plan.completed_pct||0)+'%';
 
-  // Fatigue
   var fat = d.fatigue||{};
-  var fScore = fat.fatigue_score||0;
-  document.getElementById('fatigue-score').textContent = fScore;
-  document.getElementById('fatigue-dot').style.background = fatigueColor(fScore);
-  document.getElementById('fatigue-rec').textContent = FATIGUE_LABELS[fat.recommendation]||'';
-  var warn = document.getElementById('fatigue-warn');
-  if (fat.recommendation === 'take_break' || fat.recommendation === 'end_session') {
-    warn.style.display = 'block';
-    warn.textContent = fat.recommendation === 'end_session' ? 'Sessao encerrada \u2014 descanse!' : 'Hora de descansar';
-  }
+  document.getElementById('fat-score').textContent = fat.fatigue_score||0;
+  document.getElementById('fat-dot').style.background = fatigueColor(fat.fatigue_score||0);
 
-  // Speech
   var sp = d.speech||{};
   var stg = sp.stage||1;
-  document.getElementById('speech-stage').textContent = stg;
-  document.getElementById('speech-name').textContent = SPEECH_NAMES[stg]||('Estagio '+stg);
+  document.getElementById('sp-stage').textContent = stg + ' ' + (SPEECH_NAMES[stg]||'');
 
-  // Fragile
-  renderFragile(d.fragile_summary);
+  var fs = d.fragile_summary||{};
+  if (fs.total > 0) {
+    document.getElementById('frag-count').textContent = fs.total;
+    document.getElementById('sp-fragile').style.display = 'flex';
+  }
 }
 
-// Phase 1: Fast lightweight data renders the page immediately
+// Phase 1: Fast data
 fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
   document.getElementById('streak').textContent = d.streak||0;
-  document.getElementById('tier-num').textContent = d.tier||1;
-  document.getElementById('mastery-pct').textContent = (d.mastery_pct||0)+'%';
-  var el;
-  el = document.getElementById('due-badge'); if(el) el.textContent = (d.due||0)+' pendentes';
-  el = document.getElementById('stories-badge'); if(el) el.textContent = (d.story_count||0)+' historias';
-  el = document.getElementById('weak-badge'); if(el) el.textContent = (d.weak_count||0)+' fracas';
+  document.getElementById('tier-pill').textContent = 'T'+(d.tier||1)+' '+(d.mastery_pct||0)+'%';
+  document.getElementById('hs-due').textContent = d.due||0;
+  document.getElementById('hs-mastery').textContent = (d.mastery_pct||0)+'%';
+  document.getElementById('due-badge').textContent = d.due||0;
+  document.getElementById('stories-badge').textContent = d.story_count||0;
   if(d.word_of_day){
     document.getElementById('wod-word').textContent=d.word_of_day.text||'';
     document.getElementById('wod-sentence').textContent=d.word_of_day.sentence||'';
@@ -759,18 +522,15 @@ fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
 
 fetch('/api/daily-stats').then(function(r){return r.json()}).then(function(d){
   var t=d.today||{};
-  document.getElementById('today-words').textContent=t.words_reviewed||0;
-  document.getElementById('today-new').textContent=t.words_mastered||0;
+  document.getElementById('hs-reviewed').textContent=t.words_reviewed||0;
   document.getElementById('today-mins').textContent=Math.round(t.minutes||0);
+  document.getElementById('today-new').textContent=t.words_mastered||0;
 }).catch(function(){});
 
-// Phase 2: Heavy dashboard data loaded after first paint
+// Phase 2: Heavy data after paint
 requestAnimationFrame(function(){
-  fetch('/api/dashboard').then(function(r){
-    if(!r.ok) throw new Error('dashboard failed');
-    return r.json();
-  }).then(function(d){
-    applyDashboard(d);
+  fetch('/api/dashboard').then(function(r){return r.ok?r.json():null}).then(function(d){
+    if(d) applyDashboard(d);
   }).catch(function(){});
 });
 </script>
