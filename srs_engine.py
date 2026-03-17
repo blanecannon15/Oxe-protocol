@@ -526,7 +526,46 @@ def migrate_v2(db_path=DB_PATH):
             UNIQUE(word_id, tab_name)
         );
         CREATE INDEX IF NOT EXISTS idx_dict_cache ON dictionary_cache(word_id);
+
+        -- Milestones (achievement tracking)
+        CREATE TABLE IF NOT EXISTS milestones (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            milestone_type  TEXT NOT NULL,
+            milestone_key   TEXT NOT NULL,
+            milestone_data  TEXT NOT NULL DEFAULT '{}',
+            achieved_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            notified        INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(milestone_type, milestone_key)
+        );
+
+        -- Content segments (paragraph/segment-level tracking)
+        CREATE TABLE IF NOT EXISTS content_segments (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_type      TEXT NOT NULL CHECK(content_type IN ('story','podcast')),
+            content_id        INTEGER NOT NULL,
+            segment_index     INTEGER NOT NULL,
+            text              TEXT,
+            comprehension_pct REAL,
+            replays           INTEGER NOT NULL DEFAULT 0,
+            latency_ms        REAL,
+            timestamp         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(content_type, content_id, segment_index)
+        );
+        CREATE INDEX IF NOT EXISTS idx_seg_content ON content_segments(content_type, content_id);
     """)
+    # Safe column additions (ignore if already exist)
+    for col_sql in [
+        "ALTER TABLE content_metadata ADD COLUMN topic TEXT DEFAULT ''",
+        "ALTER TABLE content_metadata ADD COLUMN grammar_density REAL DEFAULT 0.0",
+        "ALTER TABLE content_metadata ADD COLUMN emotional_intensity REAL DEFAULT 0.0",
+        "ALTER TABLE content_metadata ADD COLUMN social_context TEXT DEFAULT ''",
+        "ALTER TABLE content_metadata ADD COLUMN native_likeness REAL DEFAULT 0.0",
+    ]:
+        try:
+            conn.execute(col_sql)
+        except Exception:
+            pass
+    conn.commit()
     conn.close()
 
 

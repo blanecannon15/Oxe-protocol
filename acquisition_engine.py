@@ -35,6 +35,26 @@ FRAGILITY_TYPES = [
 
 
 # ---------------------------------------------------------------------------
+# Schema migration helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_accent_column(db_path=DB_PATH):
+    """Add accent_scores column if it doesn't exist yet."""
+    conn = get_connection(db_path)
+    try:
+        conn.execute("ALTER TABLE automaticity_state ADD COLUMN accent_scores TEXT DEFAULT '{}'")
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+
+try:
+    _ensure_accent_column()
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
 # State CRUD
 # ---------------------------------------------------------------------------
 
@@ -132,7 +152,8 @@ def compute_latency_trend(latency_history):
 # ---------------------------------------------------------------------------
 
 def update_state_after_review(item_type, item_id, rating, latency_ms,
-                              audio_type, biometric_score=None, db_path=DB_PATH):
+                              audio_type, biometric_score=None, accent='baiano',
+                              db_path=DB_PATH):
     """Update automaticity state after a review. This is the CORE function.
 
     Args:
@@ -193,6 +214,16 @@ def update_state_after_review(item_type, item_id, rating, latency_ms,
         state_row['output_success'] = (
             (state_row['output_success'] * old_attempts + success) / state_row['output_attempts']
         )
+
+    # 7b. Per-accent performance tracking
+    if audio_type in ('clean', 'native') and accent:
+        accent_scores = json.loads(state_row.get('accent_scores', '{}') or '{}')
+        key = f"{accent}_{audio_type}"
+        old = accent_scores.get(key, {"success": 0.0, "attempts": 0})
+        old["attempts"] = old.get("attempts", 0) + 1
+        old["success"] = ((old.get("success", 0.0) * (old["attempts"] - 1)) + success) / old["attempts"]
+        accent_scores[key] = old
+        state_row['accent_scores'] = json.dumps(accent_scores)
 
     # 8. Update biometric
     if biometric_score is not None:
@@ -280,7 +311,8 @@ def update_state_after_review(item_type, item_id, rating, latency_ms,
                clean_audio_success = ?, native_audio_success = ?,
                clean_attempts = ?, native_attempts = ?,
                output_success = ?, output_attempts = ?,
-               last_biometric = ?, last_state_change = ?, last_reviewed = ?
+               last_biometric = ?, last_state_change = ?, last_reviewed = ?,
+               accent_scores = ?
            WHERE item_type = ? AND item_id = ?""",
         (
             state_row['state'], state_row['confidence'],
@@ -292,6 +324,7 @@ def update_state_after_review(item_type, item_id, rating, latency_ms,
             state_row['output_success'], state_row['output_attempts'],
             state_row.get('last_biometric'), state_row.get('last_state_change'),
             state_row['last_reviewed'],
+            state_row.get('accent_scores', '{}'),
             item_type, item_id,
         ),
     )
@@ -544,3 +577,49 @@ def resolve_fragility(item_type, item_id, fragility_type, db_path=DB_PATH):
     )
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Replay-triggered reinforcement
+# ---------------------------------------------------------------------------
+
+def check_replay_reinforcement(item_type, item_id, replay_count, db_path=DB_PATH):
+    """Flag items for reinforcement when replay count exceeds threshold.
+
+    If the learner replays audio 3+ times for a single item, it indicates
+    comprehension difficulty. Triggers a fragile_items entry of type
+    'familiar_but_fragile' if the item is in CONTEXT_KNOWN or higher.
+
+    Args:
+        item_type: 'word' or 'chunk'
+        item_id: the item's database ID
+        replay_count: number of times audio was replayed this session
+        db_path: path to the SQLite database
+
+    Returns:
+        dict with 'flagged' (bool) and 'fragility_type' if flagged
+    """
+    if replay_count < 3:
+        return {"flagged": False}
+
+    state_row = get_or_create_state(item_type, item_id, db_path)
+    state = state_row.get('state', 'UNKNOWN')
+
+    # Only flag if item is supposedly known (CONTEXT_KNOWN or above)
+    if STATE_ORDER.get(state, 0) < STATE_ORDER.get('CONTEXT_KNOWN', 2):
+        return {"flagged": False}
+
+    # Calculate fragility score based on replay count and state
+    score = min(100, 20 * replay_count) * (STATE_ORDER[state] / len(STATES))
+
+    conn = get_connection(db_path)
+    conn.execute(
+        """INSERT OR REPLACE INTO fragile_items
+           (item_type, item_id, fragility_type, fragility_score, detected_at, resolved_at)
+           VALUES (?, ?, 'familiar_but_fragile', ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'), NULL)""",
+        (item_type, item_id, round(score, 1)),
+    )
+    conn.commit()
+    conn.close()
+
+    return {"flagged": True, "fragility_type": "familiar_but_fragile", "score": round(score, 1)}
