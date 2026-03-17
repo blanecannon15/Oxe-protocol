@@ -77,6 +77,21 @@ from speech_ladder import (
     get_current_stage, evaluate_gates, advance_stage,
     check_regression, get_activities_for_stage,
 )
+from content_router import (
+    find_content_for_chunks, get_recently_drilled_chunks,
+    get_reencounter_queue, log_reencounter, get_reencounter_stats,
+)
+from conversa_analyzer import (
+    analyze_conversation, generate_correction_drills,
+    get_conversation_analysis, get_analysis_history,
+)
+from listening_layers import (
+    LISTENING_LAYERS, get_listening_drill,
+    advance_listening_layer, get_layer_audios,
+)
+from sentence_assembly import (
+    get_assembly_challenge, check_assembly, get_assembly_stats,
+)
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
@@ -1377,8 +1392,9 @@ CONVERSA_HTML = """<!DOCTYPE html>
   .summary-overlay.visible { display: flex; }
   .summary-card {
     background: rgba(20,20,22,0.98); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 20px; padding: 28px 24px; max-width: 340px; width: 100%;
+    border-radius: 20px; padding: 28px 24px; max-width: 420px; width: 100%;
     text-align: center; animation: cardIn 0.3s ease-out;
+    max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
     box-shadow: 0 8px 40px rgba(0,0,0,0.5);
   }
   .summary-card h2 {
@@ -1403,6 +1419,59 @@ CONVERSA_HTML = """<!DOCTYPE html>
     box-shadow: 0 4px 16px rgba(59,130,246,0.25);
   }
   .summary-nova-btn:active { transform: scale(0.97); opacity: 0.9; }
+
+  /* ── Analysis display ── */
+  .fluency-ring {
+    width: 90px; height: 90px; margin: 0 auto 16px; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fluency-ring svg { position: absolute; top: 0; left: 0; transform: rotate(-90deg); }
+  .fluency-ring .score-num { font-size: 1.8em; font-weight: 900; z-index: 1; }
+  .fluency-ring .score-num.red { color: #f87171; }
+  .fluency-ring .score-num.yellow { color: #FBBF24; }
+  .fluency-ring .score-num.green { color: #4ADE80; }
+  .analysis-section { margin-bottom: 16px; text-align: left; }
+  .analysis-section h3 {
+    font-size: 0.82em; font-weight: 700; color: #7a7a8e; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px; text-align: left;
+  }
+  .error-card {
+    padding: 10px 12px; border-radius: 12px; margin-bottom: 8px;
+    background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.15); text-align: left;
+  }
+  .error-card .err-original { color: #f87171; text-decoration: line-through; font-size: 0.85em; margin-bottom: 2px; }
+  .error-card .err-corrected { color: #4ADE80; font-size: 0.9em; font-weight: 600; margin-bottom: 4px; }
+  .error-card .err-tipo {
+    display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 0.68em;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    background: rgba(124,92,252,0.15); color: #A78BFA; margin-right: 6px;
+  }
+  .error-card .err-explain { font-size: 0.78em; color: #9ca3af; margin-top: 4px; line-height: 1.4; }
+  .pattern-card {
+    padding: 10px 12px; border-radius: 12px; margin-bottom: 8px;
+    background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.15); text-align: left;
+  }
+  .pattern-card .pat-name { font-size: 0.88em; font-weight: 700; color: #FBBF24; margin-bottom: 4px; }
+  .pattern-card .pat-examples { font-size: 0.78em; color: #9ca3af; margin-bottom: 4px; }
+  .pattern-card .pat-drill { font-size: 0.78em; color: #c4c4d4; font-style: italic; }
+  .correct-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .correct-pill {
+    padding: 4px 12px; border-radius: 20px; font-size: 0.72em; font-weight: 600;
+    background: rgba(34,197,94,0.12); color: #4ADE80; border: 1px solid rgba(34,197,94,0.25);
+  }
+  .nota-geral {
+    padding: 12px; border-radius: 12px; font-size: 0.85em; line-height: 1.5;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    color: #c4c4d4; text-align: left; margin-bottom: 16px; font-style: italic;
+  }
+  .drill-btn {
+    width: 100%; padding: 12px; border: 1px solid rgba(251,191,36,0.3); border-radius: 14px;
+    background: rgba(251,191,36,0.08); color: #FBBF24;
+    font-size: 0.88em; font-weight: 700; cursor: pointer; transition: all 0.2s; margin-bottom: 10px;
+  }
+  .drill-btn:active { background: rgba(251,191,36,0.15); transform: scale(0.97); }
+  .drill-btn:disabled { opacity: 0.4; cursor: default; }
+  .analysis-loading { padding: 20px; text-align: center; color: #525263; font-size: 0.85em; }
 </style>
 </head><body>
 
@@ -1437,8 +1506,10 @@ CONVERSA_HTML = """<!DOCTYPE html>
 <div class="summary-overlay" id="summary-overlay">
   <div class="summary-card">
     <h2>Conversa Encerrada</h2>
+    <div id="fluency-ring-container"></div>
     <div class="summary-stats" id="summary-stats"></div>
     <div class="summary-chips" id="summary-chips"></div>
+    <div id="analysis-container"></div>
     <button class="summary-nova-btn" onclick="closeSummaryAndNew()">Nova Conversa</button>
   </div>
 </div>
@@ -1652,6 +1723,27 @@ function showSummary(data, durationSec) {
   var secs = durationSec % 60;
   var timeStr = mins > 0 ? mins + 'min ' + secs + 's' : secs + 's';
 
+  // ── Fluency ring ──
+  var ringContainer = document.getElementById('fluency-ring-container');
+  ringContainer.innerHTML = '';
+  var analysis = data.analysis || null;
+  var savedSessionId = data.session_id;
+
+  if (analysis && typeof analysis.fluencia_score === 'number') {
+    var score = analysis.fluencia_score;
+    var colorClass = score < 40 ? 'red' : (score < 70 ? 'yellow' : 'green');
+    var strokeColor = score < 40 ? '#f87171' : (score < 70 ? '#FBBF24' : '#4ADE80');
+    var pct = Math.min(score, 100) / 100;
+    var circumference = 2 * Math.PI * 38;
+    var dashOffset = circumference * (1 - pct);
+    ringContainer.innerHTML =
+      '<div class="fluency-ring">' +
+      '<svg width="90" height="90"><circle cx="45" cy="45" r="38" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="6"/>' +
+      '<circle cx="45" cy="45" r="38" fill="none" stroke="' + strokeColor + '" stroke-width="6" ' +
+      'stroke-dasharray="' + circumference + '" stroke-dashoffset="' + dashOffset + '" stroke-linecap="round"/></svg>' +
+      '<span class="score-num ' + colorClass + '">' + score + '</span></div>';
+  }
+
   summaryStats.innerHTML = [
     sRow('Turnos', data.turns || 0),
     sRow('Duracao', timeStr),
@@ -1675,7 +1767,97 @@ function showSummary(data, durationSec) {
     summaryChips.appendChild(pill);
   });
 
+  // ── Analysis display ──
+  var ac = document.getElementById('analysis-container');
+  ac.innerHTML = '';
+
+  if (analysis) {
+    var html = '';
+
+    // Errors
+    var erros = analysis.erros || [];
+    if (erros.length > 0) {
+      html += '<div class="analysis-section"><h3>Erros encontrados</h3>';
+      erros.forEach(function(e) {
+        html += '<div class="error-card">' +
+          '<div class="err-original">' + escH(e.original || '') + '</div>' +
+          '<div class="err-corrected">' + escH(e.corrigido || '') + '</div>' +
+          '<span class="err-tipo">' + escH(e.tipo || '') + '</span>' +
+          '<div class="err-explain">' + escH(e.explicacao || '') + '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    // Weak patterns
+    var padroes = analysis.padroes_fracos || [];
+    if (padroes.length > 0) {
+      html += '<div class="analysis-section"><h3>Padroes fracos</h3>';
+      padroes.forEach(function(p) {
+        var exs = (p.exemplos || []).join(', ');
+        html += '<div class="pattern-card">' +
+          '<div class="pat-name">' + escH(p.padrao || '') + '</div>' +
+          '<div class="pat-examples">' + escH(exs) + '</div>' +
+          '<div class="pat-drill">' + escH(p.sugestao_drill || '') + '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    // Correct chunks
+    var corretos = analysis.chunks_corretos || [];
+    if (corretos.length > 0) {
+      html += '<div class="analysis-section"><h3>Chunks corretos</h3><div class="correct-pills">';
+      corretos.forEach(function(ch) {
+        html += '<span class="correct-pill">' + escH(ch) + '</span>';
+      });
+      html += '</div></div>';
+    }
+
+    // General note
+    if (analysis.nota_geral) {
+      html += '<div class="nota-geral">' + escH(analysis.nota_geral) + '</div>';
+    }
+
+    // Generate drills button
+    if (erros.length > 0 && savedSessionId) {
+      html += '<button class="drill-btn" id="gen-drills-btn" onclick="generateDrills(' + savedSessionId + ')">' +
+        'Criar treinos dos erros</button>';
+    }
+
+    ac.innerHTML = html;
+  }
+
   summaryOverlay.classList.add('visible');
+}
+
+function escH(s) {
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(s));
+  return d.innerHTML;
+}
+
+async function generateDrills(sid) {
+  var btn = document.getElementById('gen-drills-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Criando treinos...';
+  try {
+    var res = await fetch('/api/conversa/' + sid + '/generate-drills', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    var data = await res.json();
+    if (data.ok) {
+      btn.textContent = 'Criados! ' + data.count + ' chunks adicionados';
+      btn.style.borderColor = 'rgba(34,197,94,0.3)';
+      btn.style.color = '#4ADE80';
+      btn.style.background = 'rgba(34,197,94,0.08)';
+    } else {
+      btn.textContent = 'Erro: ' + (data.error || 'falhou');
+    }
+  } catch (e) {
+    btn.textContent = 'Erro de conexao';
+  }
 }
 
 function sRow(label, value) {
@@ -3100,6 +3282,378 @@ loadFamilies(0);
 </body></html>"""
 
 
+# ── Sentence Assembly Page ─────────────────────────────────────
+
+ASSEMBLY_HTML = r"""<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Montar Frase</title>
+<style>
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes popIn { 0%{transform:scale(0.6);opacity:0} 60%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
+  @keyframes glowGreen { 0%,100%{box-shadow:0 0 8px rgba(52,211,153,0.3)} 50%{box-shadow:0 0 20px rgba(52,211,153,0.7)} }
+  @keyframes glowYellow { 0%,100%{box-shadow:0 0 8px rgba(250,204,21,0.3)} 50%{box-shadow:0 0 20px rgba(250,204,21,0.7)} }
+  @keyframes glowRed { 0%,100%{box-shadow:0 0 8px rgba(248,113,113,0.3)} 50%{box-shadow:0 0 20px rgba(248,113,113,0.7)} }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+    min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+    -webkit-user-select: none; user-select: none;
+    padding-bottom: 76px;
+  }
+
+  .topbar {
+    padding: 16px 20px 14px; display: flex; align-items: center; gap: 14px;
+    position: sticky; top: 0; z-index: 10; background: #0a0a0b;
+    border-bottom: 2px solid transparent;
+    border-image: linear-gradient(90deg, #3B82F6, #7C5CFC) 1;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 12px; border: none;
+    background: rgba(255,255,255,0.06); color: #fafafa; font-size: 1.2em;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent; cursor: pointer;
+  }
+  .topbar h1 { font-size: 1.15em; font-weight: 600; }
+
+  .diff-bar {
+    display: flex; gap: 8px; padding: 14px 20px; justify-content: center;
+  }
+  .diff-btn {
+    padding: 6px 18px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.5);
+    font-size: 0.82em; font-weight: 500; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: all 0.2s;
+  }
+  .diff-btn.active {
+    background: rgba(59,130,246,0.15); color: #3B82F6;
+    border-color: rgba(59,130,246,0.4);
+  }
+
+  .assembly-zone {
+    margin: 12px 20px; min-height: 80px; border: 2px dashed rgba(255,255,255,0.15);
+    border-radius: 16px; padding: 14px; display: flex; flex-wrap: wrap;
+    gap: 8px; align-items: center; justify-content: center;
+    transition: border-color 0.3s, box-shadow 0.3s; position: relative;
+  }
+  .assembly-zone.empty::after {
+    content: 'Toque nos chunks abaixo para montar a frase';
+    color: rgba(255,255,255,0.25); font-size: 0.85em; text-align: center;
+  }
+  .assembly-zone.correct { border-color: #34d399; animation: glowGreen 1.5s infinite; }
+  .assembly-zone.close { border-color: #facc15; animation: glowYellow 1.5s infinite; }
+  .assembly-zone.wrong { border-color: #f87171; animation: glowRed 1.5s infinite; }
+  .assembly-zone.shake { animation: shake 0.4s; }
+
+  .pill {
+    padding: 10px 18px; border-radius: 24px;
+    background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.1);
+    color: #fafafa; font-size: 0.92em; font-weight: 500;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: all 0.25s ease; animation: popIn 0.3s ease-out;
+  }
+  .pill:active { transform: scale(0.95); }
+  .pill.in-zone {
+    background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.5);
+    color: #60a5fa;
+  }
+  .pill.used {
+    opacity: 0.25; pointer-events: none; transform: scale(0.9);
+  }
+
+  .bank-label {
+    padding: 18px 20px 8px; font-size: 0.75em; color: rgba(255,255,255,0.35);
+    text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+  }
+  .bank {
+    display: flex; flex-wrap: wrap; gap: 10px; padding: 0 20px 16px;
+    justify-content: center;
+  }
+
+  .btn-row {
+    display: flex; gap: 10px; padding: 8px 20px; justify-content: center;
+  }
+  .btn {
+    flex: 1; max-width: 200px; padding: 14px 0; border-radius: 14px; border: none;
+    font-size: 0.95em; font-weight: 600; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: all 0.2s;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
+  }
+  .btn-primary:disabled { opacity: 0.4; pointer-events: none; }
+  .btn-secondary {
+    background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .audio-btn {
+    width: 48px; height: 48px; border-radius: 50%; border: none;
+    background: rgba(59,130,246,0.15); color: #3B82F6;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; margin: 0 auto 8px; transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .audio-btn:active { transform: scale(0.9); }
+  .audio-btn svg { width: 24px; height: 24px; fill: currentColor; }
+  .audio-btn.hidden { display: none; }
+
+  .feedback {
+    margin: 12px 20px; padding: 16px; border-radius: 14px;
+    font-size: 0.92em; line-height: 1.5; text-align: center;
+    display: none; animation: fadeIn 0.3s;
+  }
+  .feedback.show { display: block; }
+  .feedback.correct { background: rgba(52,211,153,0.1); color: #34d399; border: 1px solid rgba(52,211,153,0.2); }
+  .feedback.close { background: rgba(250,204,21,0.1); color: #facc15; border: 1px solid rgba(250,204,21,0.2); }
+  .feedback.wrong { background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+
+  .score-display {
+    text-align: center; padding: 8px; font-size: 1.8em; font-weight: 700;
+    display: none;
+  }
+  .score-display.show { display: block; animation: popIn 0.4s; }
+  .score-display.s100 { color: #34d399; }
+  .score-display.s90 { color: #34d399; }
+  .score-display.s70 { color: #facc15; }
+  .score-display.s30 { color: #f87171; }
+
+  .stats-bar {
+    display: flex; justify-content: center; gap: 24px; padding: 10px 20px;
+    font-size: 0.78em; color: rgba(255,255,255,0.4);
+  }
+  .stats-bar span { font-weight: 600; color: rgba(255,255,255,0.7); }
+
+  .loader {
+    text-align: center; padding: 40px; color: rgba(255,255,255,0.4);
+    font-size: 0.9em; display: none;
+  }
+  .loader.show { display: block; }
+</style>
+</head><body>
+
+<div class="topbar">
+  <button class="back-btn" onclick="location.href='/'">&#8592;</button>
+  <h1>Montar Frase</h1>
+</div>
+
+<div class="diff-bar">
+  <button class="diff-btn" data-diff="easy" onclick="setDifficulty('easy')">F&aacute;cil</button>
+  <button class="diff-btn active" data-diff="medium" onclick="setDifficulty('medium')">M&eacute;dio</button>
+  <button class="diff-btn" data-diff="hard" onclick="setDifficulty('hard')">Dif&iacute;cil</button>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  Hoje: <span id="statAttempts">0</span> tentativas &bull; M&eacute;dia: <span id="statAvg">0</span>
+</div>
+
+<button class="audio-btn hidden" id="audioBtn" onclick="playAudio()">
+  <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8.5v7a4.49 4.49 0 002.5-3.5zM14 3.23v2.06a6.49 6.49 0 010 13.42v2.06A8.49 8.49 0 0014 3.23z"/></svg>
+</button>
+
+<div class="assembly-zone empty" id="assemblyZone"></div>
+
+<div class="bank-label">Chunks dispon&iacute;veis</div>
+<div class="bank" id="chunkBank"></div>
+
+<div class="btn-row">
+  <button class="btn btn-primary" id="checkBtn" onclick="checkAnswer()" disabled>Verificar</button>
+  <button class="btn btn-secondary" onclick="newChallenge()">Nova Frase</button>
+</div>
+
+<div class="score-display" id="scoreDisplay"></div>
+<div class="feedback" id="feedback"></div>
+<div class="loader" id="loader">Gerando desafio...</div>
+
+{tab_bar}
+
+<script>
+var currentChallenge = null;
+var difficulty = 'medium';
+var assembledChunks = [];
+var audioEl = null;
+var bankPillMap = {};
+
+function setDifficulty(d) {
+  difficulty = d;
+  var btns = document.querySelectorAll('.diff-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].className = btns[i].dataset.diff === d ? 'diff-btn active' : 'diff-btn';
+  }
+  newChallenge();
+}
+
+function newChallenge() {
+  assembledChunks = [];
+  currentChallenge = null;
+  bankPillMap = {};
+  document.getElementById('assemblyZone').innerHTML = '';
+  document.getElementById('assemblyZone').className = 'assembly-zone empty';
+  document.getElementById('chunkBank').innerHTML = '';
+  document.getElementById('feedback').className = 'feedback';
+  document.getElementById('feedback').textContent = '';
+  document.getElementById('scoreDisplay').className = 'score-display';
+  document.getElementById('checkBtn').disabled = true;
+  document.getElementById('audioBtn').className = 'audio-btn hidden';
+  document.getElementById('loader').className = 'loader show';
+
+  fetch('/api/assembly/challenge?difficulty=' + difficulty)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('loader').className = 'loader';
+      if (data.error) {
+        document.getElementById('feedback').className = 'feedback show wrong';
+        document.getElementById('feedback').textContent = data.error;
+        return;
+      }
+      currentChallenge = data;
+      renderBank(data.all_options);
+    })
+    .catch(function() {
+      document.getElementById('loader').className = 'loader';
+      document.getElementById('feedback').className = 'feedback show wrong';
+      document.getElementById('feedback').textContent = 'Erro de conexao. Tenta de novo!';
+    });
+}
+
+function renderBank(options) {
+  var bank = document.getElementById('chunkBank');
+  bank.innerHTML = '';
+  for (var i = 0; i < options.length; i++) {
+    var pill = document.createElement('div');
+    pill.className = 'pill';
+    pill.textContent = options[i];
+    pill.dataset.chunk = options[i];
+    pill.dataset.idx = String(i);
+    pill.onclick = (function(chunk, idx) {
+      return function() { addToZone(chunk, idx); };
+    })(options[i], i);
+    bank.appendChild(pill);
+    bankPillMap[i] = pill;
+  }
+}
+
+function addToZone(chunk, bankIdx) {
+  var bp = bankPillMap[bankIdx];
+  if (!bp || bp.className.indexOf('used') !== -1) return;
+  assembledChunks.push({chunk: chunk, bankIdx: bankIdx});
+  bp.className = 'pill used';
+
+  var zone = document.getElementById('assemblyZone');
+  zone.classList.remove('empty');
+
+  var pill = document.createElement('div');
+  pill.className = 'pill in-zone';
+  pill.textContent = chunk;
+  pill.style.animation = 'popIn 0.25s ease-out';
+  pill.onclick = (function(c, bi, zp) {
+    return function() { removeFromZone(c, bi, zp); };
+  })(chunk, bankIdx, pill);
+  zone.appendChild(pill);
+
+  document.getElementById('checkBtn').disabled = false;
+}
+
+function removeFromZone(chunk, bankIdx, zonePill) {
+  for (var i = 0; i < assembledChunks.length; i++) {
+    if (assembledChunks[i].chunk === chunk && assembledChunks[i].bankIdx === bankIdx) {
+      assembledChunks.splice(i, 1);
+      break;
+    }
+  }
+  zonePill.parentNode.removeChild(zonePill);
+  var bp = bankPillMap[bankIdx];
+  if (bp) bp.className = 'pill';
+
+  var zone = document.getElementById('assemblyZone');
+  if (assembledChunks.length === 0) {
+    zone.className = 'assembly-zone empty';
+    document.getElementById('checkBtn').disabled = true;
+  }
+}
+
+function checkAnswer() {
+  if (!currentChallenge || assembledChunks.length === 0) return;
+  document.getElementById('checkBtn').disabled = true;
+
+  var order = [];
+  for (var i = 0; i < assembledChunks.length; i++) order.push(assembledChunks[i].chunk);
+
+  fetch('/api/assembly/check', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      challenge_id: currentChallenge.challenge_id,
+      submitted_order: order
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(result) {
+    var zone = document.getElementById('assemblyZone');
+    var fb = document.getElementById('feedback');
+    var sd = document.getElementById('scoreDisplay');
+
+    var scoreClass = 's30';
+    if (result.score >= 100) scoreClass = 's100';
+    else if (result.score >= 90) scoreClass = 's90';
+    else if (result.score >= 70) scoreClass = 's70';
+    sd.className = 'score-display show ' + scoreClass;
+    sd.textContent = String(result.score);
+
+    var fbClass = 'wrong';
+    if (result.score >= 90) fbClass = 'correct';
+    else if (result.score >= 70) fbClass = 'close';
+    fb.className = 'feedback show ' + fbClass;
+    fb.textContent = result.feedback;
+
+    zone.className = 'assembly-zone';
+    if (result.score >= 90) zone.className += ' correct';
+    else if (result.score >= 70) zone.className += ' close';
+    else zone.className += ' wrong shake';
+
+    if (result.audio_file) {
+      currentChallenge._result_audio = result.audio_file;
+      document.getElementById('audioBtn').className = 'audio-btn';
+      playAudio();
+    }
+
+    loadStats();
+  });
+}
+
+function playAudio() {
+  var file = null;
+  if (currentChallenge && currentChallenge._result_audio) {
+    file = currentChallenge._result_audio;
+  } else if (currentChallenge && currentChallenge.audio_file) {
+    file = currentChallenge.audio_file;
+  }
+  if (!file) return;
+  if (audioEl) { audioEl.pause(); audioEl = null; }
+  audioEl = new Audio('/audio/' + file);
+  audioEl.play().catch(function() {});
+}
+
+function loadStats() {
+  fetch('/api/assembly/stats')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      document.getElementById('statAttempts').textContent = String(data.attempts || 0);
+      document.getElementById('statAvg').textContent = String(data.average_score || 0);
+    })
+    .catch(function() {});
+}
+
+newChallenge();
+loadStats();
+</script>
+</body></html>"""
+
+
 # ── Unified Handler ────────────────────────────────────────────
 
 class OxeHandler(http.server.BaseHTTPRequestHandler):
@@ -3164,6 +3718,20 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Conversa ──
         elif path == "/conversa":
             self._html(CONVERSA_HTML.replace("{tab_bar}", TAB_BAR_HTML("conversa")))
+        elif path == "/api/conversa/analysis/history":
+            lim = int(query.get("limit", ["10"])[0])
+            self._json(get_analysis_history(limit=lim))
+        elif path.startswith("/api/conversa/") and path.endswith("/analysis"):
+            parts = path.split("/")
+            if len(parts) == 5 and parts[3].isdigit():
+                sid = int(parts[3])
+                result = get_conversation_analysis(sid)
+                if result is None:
+                    self._json({"error": "Sessão não encontrada"}, status=404)
+                else:
+                    self._json(result)
+            else:
+                self.send_error(404)
 
         # ── Plan ──
         elif path == "/plan":
@@ -3172,6 +3740,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Chunks ──
         elif path == "/chunks":
             self._html(CHUNKS_HTML.replace("{tab_bar}", TAB_BAR_HTML("inicio")))
+
+        # ── Sentence Assembly ──
+        elif path == "/assembly":
+            self._html(ASSEMBLY_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
 
         # ── Library (Stories + Podcasts + Review) ──
         elif path == "/library":
@@ -3268,6 +3840,29 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             mode = query.get("mode", ["compression"])[0]
             limit = int(query.get("limit", ["10"])[0])
             self._json(select_content_for_mode(mode, limit=limit))
+
+        # ── Content Router (Re-encounter) ──
+        elif path == "/api/content/reencounter":
+            lim = int(query.get("limit", ["5"])[0])
+            self._json(get_reencounter_queue(limit=lim))
+        elif path == "/api/content/reencounter/stats":
+            days = int(query.get("days", ["7"])[0])
+            self._json(get_reencounter_stats(days=days))
+
+        # ── Listening Layers ──
+        elif path == "/api/listening/layers":
+            self._json(LISTENING_LAYERS)
+        elif path.startswith("/api/listening/drill/") and path.count("/") == 4:
+            chunk_id = int(path.split("/")[4])
+            self._json(get_listening_drill(chunk_id))
+
+        # ── Sentence Assembly ──
+        elif path == "/api/assembly/challenge":
+            diff = query.get("difficulty", ["medium"])[0]
+            self._json(get_assembly_challenge(diff))
+        elif path == "/api/assembly/stats":
+            days = int(query.get("days", ["7"])[0])
+            self._json(get_assembly_stats(days))
 
         # ── Shared ──
         elif path == "/api/daily-stats":
@@ -3373,6 +3968,14 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             result = check_regression()
             self._json(result)
 
+        # ── Listening Layers POST ──
+        elif path == "/api/listening/advance":
+            chunk_id = body.get("chunk_id", 0)
+            current_layer = body.get("current_layer", "clean")
+            success = body.get("success", False)
+            result = advance_listening_layer(chunk_id, current_layer, success)
+            self._json(result)
+
         # ── Content Ladder POST ──
         elif path == "/api/content/classify":
             ct = body.get("content_type", "story")
@@ -3395,6 +3998,33 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._conversa_turn(body)
         elif path == "/api/conversa/end":
             self._conversa_end(body)
+        elif path.startswith("/api/conversa/") and path.endswith("/generate-drills"):
+            parts = path.split("/")
+            if len(parts) == 5 and parts[3].isdigit():
+                sid = int(parts[3])
+                analysis = get_conversation_analysis(sid)
+                if analysis is None:
+                    self._json({"error": "Sessão não encontrada"}, status=404)
+                else:
+                    errors = analysis.get("erros", [])
+                    added = generate_correction_drills(errors)
+                    self._json({"ok": True, "chunks_added": added, "count": len(added)})
+            else:
+                self.send_error(404)
+
+        # ── Content Router (Re-encounter) ──
+        elif path == "/api/content/reencounter/log":
+            ct = body.get("content_type", "story")
+            cid = body.get("content_id", 0)
+            chunks = body.get("chunks", [])
+            row_id = log_reencounter(ct, cid, chunks)
+            self._json({"ok": True, "event_id": row_id})
+
+        # ── Sentence Assembly POST ──
+        elif path == "/api/assembly/check":
+            cid = body.get("challenge_id", "")
+            order = body.get("submitted_order", [])
+            self._json(check_assembly(cid, order))
 
         else:
             self.send_error(404)
@@ -4573,12 +5203,30 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 conn.commit()
                 conn.close()
 
+            # ── 6. Run error analysis on learner messages ──
+            analysis = None
+            if _conversa_history:
+                try:
+                    analysis = analyze_conversation(_conversa_history)
+                    # Store analysis inside post_extraction
+                    post_extraction["analysis"] = analysis
+                    if session_id:
+                        conn = get_conn()
+                        conn.execute(
+                            "UPDATE conversa_sessions SET post_extraction = ? WHERE id = ?",
+                            (json.dumps(post_extraction, ensure_ascii=False), session_id),
+                        )
+                        conn.commit()
+                        conn.close()
+                except Exception as e:
+                    print(f"[Conversa End] Analysis error: {e}")
+
             # ── Clean up session globals ──
             history_copy = list(_conversa_history)
             _conversa_history = []
             _conversa_chunks_vocab = []
 
-            self._json({
+            response = {
                 "ok": True,
                 "session_id": session_id,
                 "turns": turn_count,
@@ -4587,7 +5235,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 "chunks_introduced_list": chunks_introduced,
                 "vocab_chunks_used": vocab_chunks_used,
                 "vocab_chunks_used_count": len(vocab_chunks_used),
-            })
+            }
+            if analysis:
+                response["analysis"] = analysis
+            self._json(response)
         except Exception as e:
             print(f"[Conversa End] Error: {e}")
             self._json({"ok": False, "error": str(e)})
