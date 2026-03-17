@@ -103,6 +103,74 @@ def generate_tts(text):
         return None
 
 
+# ── Cache-through wrapper ──────────────────────────────────────────
+
+def _ensure_cache_table(db_path=DB_PATH):
+    """Create dictionary_cache table if it doesn't exist yet."""
+    try:
+        conn = get_connection(db_path)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS dictionary_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                word_id INTEGER NOT NULL,
+                tab_name TEXT NOT NULL CHECK(tab_name IN ('definition','examples','pronunciation','expressions','conjugation','synonyms','chunks')),
+                data_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                UNIQUE(word_id, tab_name)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dict_cache ON dictionary_cache(word_id)")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+_cache_table_ensured = False
+
+
+def _cached_call(word_id, tab_name, generate_fn, db_path=DB_PATH):
+    """Cache-through wrapper for dictionary tab data.
+
+    1. Checks dictionary_cache for existing data.
+    2. If found, returns parsed JSON instantly.
+    3. If not, calls generate_fn(), stores result in cache, returns it.
+    """
+    global _cache_table_ensured
+    if not _cache_table_ensured:
+        _ensure_cache_table(db_path)
+        _cache_table_ensured = True
+
+    # Check cache
+    try:
+        conn = get_connection(db_path)
+        row = conn.execute(
+            "SELECT data_json FROM dictionary_cache WHERE word_id = ? AND tab_name = ?",
+            (word_id, tab_name),
+        ).fetchone()
+        conn.close()
+        if row:
+            return json.loads(row["data_json"])
+    except Exception:
+        pass
+
+    # Generate fresh data
+    result = generate_fn()
+
+    # Store in cache
+    try:
+        conn = get_connection(db_path)
+        conn.execute(
+            "INSERT OR REPLACE INTO dictionary_cache (word_id, tab_name, data_json) VALUES (?, ?, ?)",
+            (word_id, tab_name, json.dumps(result, ensure_ascii=False)),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    return result
+
+
 # ── 1. search_word ──────────────────────────────────────────────────
 
 def search_word(query, db_path=DB_PATH):
@@ -521,6 +589,43 @@ def get_word_chunks(word, db_path=DB_PATH):
     }
 
 
+# ── Cached wrappers ───────────────────────────────────────────────
+
+def get_definition_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_definition."""
+    return _cached_call(word_id, "definition", lambda: get_definition(word, db_path), db_path)
+
+
+def get_examples_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_examples."""
+    return _cached_call(word_id, "examples", lambda: get_examples(word, db_path), db_path)
+
+
+def get_pronunciation_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_pronunciation_data."""
+    return _cached_call(word_id, "pronunciation", lambda: get_pronunciation_data(word), db_path)
+
+
+def get_expressions_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_expressions."""
+    return _cached_call(word_id, "expressions", lambda: get_expressions(word), db_path)
+
+
+def get_conjugation_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_conjugation."""
+    return _cached_call(word_id, "conjugation", lambda: get_conjugation(word, db_path), db_path)
+
+
+def get_synonyms_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_synonyms."""
+    return _cached_call(word_id, "synonyms", lambda: get_synonyms(word, db_path), db_path)
+
+
+def get_word_chunks_cached(word_id, word, db_path=DB_PATH):
+    """Cache-through wrapper for get_word_chunks."""
+    return _cached_call(word_id, "chunks", lambda: get_word_chunks(word, db_path), db_path)
+
+
 # ── 9. get_audio_for_word ────────────────────────────────────────
 
 def get_audio_for_word(word):
@@ -553,13 +658,13 @@ def get_full_word_data(word_id, db_path=DB_PATH):
 
     word = row["word"]
 
-    definition = get_definition(word, db_path)
-    examples = get_examples(word, db_path)
-    pronunciation = get_pronunciation_data(word)
-    expressions = get_expressions(word)
-    conjugation = get_conjugation(word, db_path)
-    synonyms = get_synonyms(word, db_path)
-    chunks = get_word_chunks(word, db_path)
+    definition = get_definition_cached(word_id, word, db_path)
+    examples = get_examples_cached(word_id, word, db_path)
+    pronunciation = get_pronunciation_cached(word_id, word, db_path)
+    expressions = get_expressions_cached(word_id, word, db_path)
+    conjugation = get_conjugation_cached(word_id, word, db_path)
+    synonyms = get_synonyms_cached(word_id, word, db_path)
+    chunks = get_word_chunks_cached(word_id, word, db_path)
 
     # Generate TTS audio for the word itself and cache it
     audio_fname = generate_tts(word)
