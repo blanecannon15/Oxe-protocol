@@ -207,6 +207,10 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
            WHERE id = ?""",
         (*params, word_id),
     )
+    conn.execute(
+        "INSERT INTO review_history (item_type, item_id, rating, latency_ms) VALUES (?, ?, ?, ?)",
+        ('word', word_id, rating, latency_ms),
+    )
     conn.commit()
     conn.close()
 
@@ -413,6 +417,16 @@ def migrate_v2(db_path=DB_PATH):
         );
         CREATE INDEX IF NOT EXISTS idx_chunk_family_rank ON chunk_families(composite_rank DESC);
 
+        -- Junction: chunk families ↔ component words
+        CREATE TABLE IF NOT EXISTS chunk_family_words (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id  INTEGER NOT NULL REFERENCES chunk_families(id),
+            word_id    INTEGER NOT NULL REFERENCES word_bank(id),
+            UNIQUE(family_id, word_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cfw_word ON chunk_family_words(word_id);
+        CREATE INDEX IF NOT EXISTS idx_cfw_family ON chunk_family_words(family_id);
+
         -- Daily planning and session tracking
         CREATE TABLE IF NOT EXISTS daily_plan (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -484,6 +498,23 @@ def migrate_v2(db_path=DB_PATH):
 
         -- Seed stage 1
         INSERT OR IGNORE INTO speech_unlock (stage, stage_name) VALUES (1, 'echo');
+
+        -- Review history (every review event as a discrete row)
+        CREATE TABLE IF NOT EXISTS review_history (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_type       TEXT NOT NULL CHECK(item_type IN ('word','chunk')),
+            item_id         INTEGER NOT NULL,
+            rating          INTEGER NOT NULL,
+            latency_ms      REAL,
+            biometric_score REAL,
+            mode            TEXT,
+            audio_type      TEXT,
+            state_before    TEXT,
+            state_after     TEXT,
+            timestamp       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_review_hist_item ON review_history(item_type, item_id);
+        CREATE INDEX IF NOT EXISTS idx_review_hist_ts ON review_history(timestamp);
 
         -- Dictionary cache for per-tab GPT-4o results
         CREATE TABLE IF NOT EXISTS dictionary_cache (
@@ -685,6 +716,10 @@ def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None,
             (mastery, word_id),
         )
 
+    conn.execute(
+        "INSERT INTO review_history (item_type, item_id, rating, latency_ms, biometric_score) VALUES (?, ?, ?, ?, ?)",
+        ('chunk', chunk_id, rating, latency_ms, biometric_score),
+    )
     conn.commit()
     conn.close()
 

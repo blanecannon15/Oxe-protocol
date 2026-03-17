@@ -112,8 +112,21 @@ def _upsert_chunk_family(root_form, word_count, is_baiano, db_path=DB_PATH):
             (root_form, word_count, bahia_relevance),
         )
         family_id = cur.lastrowid
-        conn.commit()
 
+    # Link component words to family
+    words = root_form.lower().split()
+    for w in words:
+        word_row = conn.execute(
+            "SELECT id FROM word_bank WHERE LOWER(word) = ?", (w,)
+        ).fetchone()
+        if word_row:
+            wid = word_row[0] if not isinstance(word_row, dict) else word_row["id"]
+            conn.execute(
+                "INSERT OR IGNORE INTO chunk_family_words (family_id, word_id) VALUES (?, ?)",
+                (family_id, wid),
+            )
+
+    conn.commit()
     conn.close()
     return family_id
 
@@ -385,3 +398,26 @@ def get_family_variants(family_id, db_path=DB_PATH):
     conn.close()
 
     return [dict(r) for r in rows]
+
+
+def get_chunks_for_word(word_id, db_path=DB_PATH):
+    """Return chunk families that contain the given word.
+
+    Args:
+        word_id: The word_bank id.
+        db_path: Path to the SQLite database.
+
+    Returns:
+        List of dicts with family_id, root_form, composite_rank.
+    """
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """SELECT cf.id, cf.root_form, cf.composite_rank
+           FROM chunk_family_words cfw
+           JOIN chunk_families cf ON cf.id = cfw.family_id
+           WHERE cfw.word_id = ?
+           ORDER BY cf.composite_rank DESC""",
+        (word_id,),
+    ).fetchall()
+    conn.close()
+    return [{"family_id": r[0], "root_form": r[1], "composite_rank": r[2]} for r in rows]
