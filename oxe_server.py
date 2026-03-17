@@ -2358,6 +2358,15 @@ function renderPronunciation(pron) {
   if (!pron) pron = {};
   document.getElementById('pron-silabas').textContent = pron.silabas || '';
   document.getElementById('pron-guide').textContent = pron.guia_fonetico || '';
+  // Pre-fetch audio so the button works immediately
+  if (!currentData.audio_file && currentWordId) {
+    fetch('/api/word/' + currentWordId + '/audio')
+      .then(r => r.json())
+      .then(d => {
+        var f = d && (d.audio_file || d.filename);
+        if (f) currentData.audio_file = f;
+      }).catch(()=>{});
+  }
 }
 
 function renderExpressions(data) {
@@ -2512,7 +2521,12 @@ function playWordAudio() {
     fetch('/api/word/' + currentWordId + '/audio')
       .then(r => r.json())
       .then(d => {
-        if (d && d.filename) { player.src = '/audio/' + d.filename; player.play().catch(()=>{}); }
+        var f = d && (d.audio_file || d.filename);
+        if (f) {
+          currentData.audio_file = f;
+          player.src = '/audio/' + f;
+          player.play().catch(()=>{});
+        }
       }).catch(()=>{});
   }
 }
