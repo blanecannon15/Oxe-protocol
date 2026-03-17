@@ -362,7 +362,177 @@ def get_expressions(word):
     ]
 
 
-# ── 6. get_full_word_data ──────────────────────────────────────────
+# ── 6. get_conjugation ─────────────────────────────────────────────
+
+def get_conjugation(word, db_path=DB_PATH):
+    """Generate verb conjugation tables via GPT-4o.
+
+    Returns conjugation data for 6 tenses with all 6 persons each,
+    using Baiano conjugation patterns. If the word is not a verb,
+    returns {"is_verb": false}.
+    """
+    fallback = {"is_verb": False}
+
+    user_prompt = (
+        f'A palavra "{word}" é um verbo? Se NÃO for verbo, responde '
+        '{"is_verb": false} e nada mais.\n\n'
+        "Se FOR verbo, conjuga nos 6 tempos abaixo usando padrões baianos "
+        "(ex: \"tu vai\" em vez de \"tu vais\", \"a gente fala\" em vez de \"nós falamos\").\n\n"
+        "Tempos:\n"
+        "1. presente\n"
+        "2. preterito_perfeito (passado simples)\n"
+        "3. preterito_imperfeito\n"
+        "4. futuro_informal (forma \"vou + infinitivo\" — como baiano fala de verdade)\n"
+        "5. subjuntivo_presente\n"
+        "6. imperativo\n\n"
+        "Para cada tempo, dá as 6 pessoas: eu, voce, ele, a_gente, voces, eles.\n\n"
+        "NUNCA usa inglês. Responde em JSON com:\n"
+        '- "is_verb": true\n'
+        '- "infinitivo": o infinitivo do verbo\n'
+        '- "irregular": true/false\n'
+        '- "tenses": objeto com os 6 tempos, cada um com as 6 pessoas\n\n'
+        "Responde SOMENTE em JSON."
+    )
+
+    result = _chat(SYSTEM_PROMPT, user_prompt, json_mode=True)
+    if result is None:
+        return fallback
+
+    if not result.get("is_verb", False):
+        return {"is_verb": False}
+
+    return {
+        "is_verb": True,
+        "infinitivo": result.get("infinitivo", word),
+        "irregular": result.get("irregular", False),
+        "tenses": result.get("tenses", {}),
+    }
+
+
+# ── 7. get_synonyms ──────────────────────────────────────────────
+
+def get_synonyms(word, db_path=DB_PATH):
+    """Generate synonyms and thesaurus data via GPT-4o.
+
+    Returns sinonimos, antonimos, palavras_relacionadas, and registro.
+    Each synonym includes usage notes and Bahia prevalence.
+    """
+    fallback = {
+        "sinonimos": [],
+        "antonimos": [],
+        "palavras_relacionadas": [],
+        "registro": "",
+    }
+
+    user_prompt = (
+        f'Dá sinônimos e informações de tesauro para a palavra "{word}".\n\n'
+        "NUNCA usa inglês. Responde em JSON com:\n"
+        '- "sinonimos": lista de 5-8 sinônimos. Cada item tem:\n'
+        '  - "palavra": o sinônimo\n'
+        '  - "nota": diferença de uso em poucas palavras\n'
+        '  - "baiano": true se é mais comum na Bahia, false se não\n'
+        '- "antonimos": lista de 2-3 antônimos. Cada item tem:\n'
+        '  - "palavra": o antônimo\n'
+        '  - "nota": breve explicação\n'
+        '- "palavras_relacionadas": lista de 3-5 palavras semanticamente '
+        "relacionadas. Cada item tem:\n"
+        '  - "palavra": a palavra\n'
+        '  - "relacao": tipo de relação (ex: substantivo derivado, verbo base)\n'
+        '- "registro": nível de formalidade da palavra original '
+        "(formal/informal/gíria/técnico)\n\n"
+        "Responde SOMENTE em JSON."
+    )
+
+    result = _chat(SYSTEM_PROMPT, user_prompt, json_mode=True)
+    if result is None:
+        return fallback
+
+    return {
+        "sinonimos": result.get("sinonimos", []),
+        "antonimos": result.get("antonimos", []),
+        "palavras_relacionadas": result.get("palavras_relacionadas", []),
+        "registro": result.get("registro", ""),
+    }
+
+
+# ── 8. get_word_chunks ───────────────────────────────────────────
+
+def get_word_chunks(word, db_path=DB_PATH):
+    """Get high-frequency chunks and collocations containing this word.
+
+    First queries chunk_families + chunk_variants tables for existing
+    chunks, then generates additional ones via GPT-4o if fewer than 8
+    found in the DB.
+    """
+    chunks_from_db = []
+
+    try:
+        conn = get_connection(db_path)
+        # Search chunk_families for root forms containing the word
+        rows = conn.execute(
+            "SELECT cf.root_form, cf.composite_rank, cv.source "
+            "FROM chunk_families cf "
+            "JOIN chunk_variants cv ON cv.family_id = cf.id "
+            "WHERE LOWER(cf.root_form) LIKE ? OR LOWER(cv.variant_form) LIKE ? "
+            "GROUP BY cf.id "
+            "ORDER BY cf.composite_rank DESC "
+            "LIMIT 10",
+            ("%" + word.lower() + "%", "%" + word.lower() + "%"),
+        ).fetchall()
+        conn.close()
+
+        for r in rows:
+            chunks_from_db.append({
+                "chunk": r["root_form"],
+                "frequency": round(r["composite_rank"], 2),
+                "source": r["source"],
+            })
+    except Exception:
+        pass  # tables may not exist or be empty yet
+
+    chunks_generated = []
+    if len(chunks_from_db) < 8:
+        needed = 8 - len(chunks_from_db)
+        user_prompt = (
+            f'Gera {needed} chunks/colocações naturais que usam a palavra "{word}".\n\n'
+            "Prioriza uso baiano — como se fosse um soteropolitano falando.\n"
+            "NUNCA usa inglês.\n\n"
+            'Responde em JSON com a chave "chunks" contendo uma lista. '
+            "Cada item tem:\n"
+            '- "chunk": o chunk/colocação\n'
+            '- "tipo": "colocação", "expressão", ou "phrasal"\n'
+            '- "frequencia": "alta", "média", ou "baixa"\n\n'
+            "Responde SOMENTE em JSON."
+        )
+
+        result = _chat(SYSTEM_PROMPT, user_prompt, json_mode=True)
+        if result and "chunks" in result:
+            for ch in result["chunks"]:
+                if isinstance(ch, dict):
+                    chunks_generated.append({
+                        "chunk": ch.get("chunk", ""),
+                        "tipo": ch.get("tipo", ""),
+                        "frequencia": ch.get("frequencia", ""),
+                    })
+
+    return {
+        "chunks_from_db": chunks_from_db,
+        "chunks_generated": chunks_generated,
+    }
+
+
+# ── 9. get_audio_for_word ────────────────────────────────────────
+
+def get_audio_for_word(word):
+    """Generate TTS audio for the word itself.
+
+    Uses the existing generate_tts() function. Returns the filename
+    or None if generation fails.
+    """
+    return generate_tts(word)
+
+
+# ── 10. get_full_word_data ─────────────────────────────────────────
 
 def get_full_word_data(word_id, db_path=DB_PATH):
     """Combine all dictionary data into one response for the API.
@@ -387,6 +557,9 @@ def get_full_word_data(word_id, db_path=DB_PATH):
     examples = get_examples(word, db_path)
     pronunciation = get_pronunciation_data(word)
     expressions = get_expressions(word)
+    conjugation = get_conjugation(word, db_path)
+    synonyms = get_synonyms(word, db_path)
+    chunks = get_word_chunks(word, db_path)
 
     # Generate TTS audio for the word itself and cache it
     audio_fname = generate_tts(word)
@@ -408,10 +581,13 @@ def get_full_word_data(word_id, db_path=DB_PATH):
         "exemplos": examples,
         "pronuncia": pronunciation,
         "expressoes": expressions,
+        "conjugacao": conjugation,
+        "sinonimos": synonyms,
+        "chunks": chunks,
     }
 
 
-# ── 7. log_search ──────────────────────────────────────────────────
+# ── 11. log_search ─────────────────────────────────────────────────
 
 def log_search(query, word_id=None, chunk_id=None, db_path=DB_PATH):
     """Insert a record into the search_history table."""

@@ -14,6 +14,7 @@ Usage:
     source ~/.profile && python3 oxe_server.py --port 9000  # custom port
 """
 
+import gzip
 import http.server
 import json
 import os
@@ -24,6 +25,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime
 from io import BytesIO
@@ -96,6 +98,7 @@ from drill_server import (
 # ── Imports from dictionary_engine ────────────────────────────
 from dictionary_engine import (
     search_word, get_full_word_data, log_search,
+    get_conjugation, get_synonyms, get_word_chunks, get_audio_for_word,
 )
 
 # ── Imports from story_server ──────────────────────────────────
@@ -144,6 +147,12 @@ def TAB_BAR_HTML(active_tab):
 
 # Session state
 _laranjada_remaining = 0
+
+# Time-based caches for expensive endpoints (10 second TTL)
+_dashboard_cache = {"data": None, "ts": 0}
+_dashboard_cache_lock = threading.Lock()
+_home_stats_cache = {"data": None, "ts": 0}
+_home_stats_cache_lock = threading.Lock()
 
 # Conversation history for Conversa mode
 _conversa_history = []
@@ -714,46 +723,37 @@ function applyDashboard(d) {
   renderFragile(d.fragile_summary);
 }
 
-// Primary: /api/dashboard, fallback: /api/home-stats
-fetch('/api/dashboard').then(function(r){
-  if(!r.ok) throw new Error('dashboard failed');
-  return r.json();
-}).then(function(d){
-  applyDashboard(d);
-}).catch(function(){
-  // Fallback to home-stats
-  fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
-    document.getElementById('streak').textContent = d.streak||0;
-    document.getElementById('tier-num').textContent = d.tier||1;
-    document.getElementById('tier-label').textContent = '';
-    document.getElementById('mastery-pct').textContent = (d.mastery_pct||0)+'%';
-    document.getElementById('due-badge').textContent = (d.due||0)+' pendentes';
-    document.getElementById('stories-badge').textContent = (d.story_count||0)+' historias';
-    document.getElementById('weak-badge').textContent = (d.weak_count||0)+' fracas';
-    if(d.word_of_day){
-      document.getElementById('wod-word').textContent=d.word_of_day.text||'';
-      document.getElementById('wod-sentence').textContent=d.word_of_day.sentence||'';
-      document.getElementById('wod-card').style.display='block';
-    }
-  });
-});
-
-// Word of day + daily stats (supplementary)
+// Phase 1: Fast lightweight data renders the page immediately
 fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
-  document.getElementById('due-badge').textContent = (d.due||0)+' pendentes';
-  document.getElementById('stories-badge').textContent = (d.story_count||0)+' historias';
-  document.getElementById('weak-badge').textContent = (d.weak_count||0)+' fracas';
+  document.getElementById('streak').textContent = d.streak||0;
+  document.getElementById('tier-num').textContent = d.tier||1;
+  document.getElementById('mastery-pct').textContent = (d.mastery_pct||0)+'%';
+  var el;
+  el = document.getElementById('due-badge'); if(el) el.textContent = (d.due||0)+' pendentes';
+  el = document.getElementById('stories-badge'); if(el) el.textContent = (d.story_count||0)+' historias';
+  el = document.getElementById('weak-badge'); if(el) el.textContent = (d.weak_count||0)+' fracas';
   if(d.word_of_day){
     document.getElementById('wod-word').textContent=d.word_of_day.text||'';
     document.getElementById('wod-sentence').textContent=d.word_of_day.sentence||'';
     document.getElementById('wod-card').style.display='block';
   }
-});
+}).catch(function(){});
+
 fetch('/api/daily-stats').then(function(r){return r.json()}).then(function(d){
   var t=d.today||{};
   document.getElementById('today-words').textContent=t.words_reviewed||0;
   document.getElementById('today-new').textContent=t.words_mastered||0;
   document.getElementById('today-mins').textContent=Math.round(t.minutes||0);
+}).catch(function(){});
+
+// Phase 2: Heavy dashboard data loaded after first paint
+requestAnimationFrame(function(){
+  fetch('/api/dashboard').then(function(r){
+    if(!r.ok) throw new Error('dashboard failed');
+    return r.json();
+  }).then(function(d){
+    applyDashboard(d);
+  }).catch(function(){});
 });
 </script>
 </body></html>"""
@@ -1813,9 +1813,12 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   /* ── Tabs ── */
   .tab-row {
     display: flex; gap: 0; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 20px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
   }
+  .tab-row::-webkit-scrollbar { display: none; }
   .tab-btn {
-    flex: 1; padding: 12px 0; text-align: center; font-size: 0.78em; font-weight: 600;
+    flex: 0 0 auto; white-space: nowrap; padding: 12px 14px; text-align: center;
+    font-size: 0.78em; font-weight: 600;
     color: #525263; cursor: pointer; border-bottom: 2px solid transparent;
     transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none;
   }
@@ -1886,6 +1889,143 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   /* ── Loading ── */
   .loading { text-align: center; padding: 40px; color: #525263; font-size: 0.9em; }
 
+  /* ── Skeleton loader ── */
+  @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  .skeleton {
+    padding: 20px;
+  }
+  .skel-line {
+    height: 14px; border-radius: 8px; margin-bottom: 12px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+    background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite;
+  }
+  .skel-line.w60 { width: 60%; }
+  .skel-line.w80 { width: 80%; }
+  .skel-line.w40 { width: 40%; }
+  .skel-line.w100 { width: 100%; }
+  .skel-block {
+    height: 80px; border-radius: 12px; margin-bottom: 12px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+    background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* ── Conjugation ── */
+  .conj-badge-irreg {
+    display: inline-block; padding: 3px 10px; border-radius: 10px;
+    font-size: 0.7em; font-weight: 700; background: rgba(245,158,11,0.15); color: #f59e0b;
+    margin-bottom: 16px;
+  }
+  .conj-grid {
+    display: grid; grid-template-columns: 1fr; gap: 16px;
+  }
+  @media (min-width: 500px) {
+    .conj-grid { grid-template-columns: 1fr 1fr; }
+  }
+  .conj-tense-card {
+    background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .conj-tense-name {
+    font-size: 0.78em; font-weight: 700; color: #60a5fa; text-transform: uppercase;
+    letter-spacing: 0.8px; margin-bottom: 10px;
+  }
+  .conj-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .conj-row:last-child { border-bottom: none; }
+  .conj-row:nth-child(even) { background: rgba(255,255,255,0.015); margin: 0 -8px; padding: 6px 8px; border-radius: 6px; }
+  .conj-person { font-size: 0.78em; color: #525263; min-width: 80px; }
+  .conj-person.agente { color: #60a5fa; font-weight: 600; }
+  .conj-form {
+    display: inline-block; padding: 4px 12px; border-radius: 10px;
+    background: rgba(255,255,255,0.06); color: #e0e0e5; font-size: 0.88em; font-weight: 500;
+  }
+
+  /* ── Synonyms ── */
+  .syn-register {
+    display: inline-block; padding: 4px 12px; border-radius: 10px;
+    font-size: 0.7em; font-weight: 700; margin-bottom: 16px;
+  }
+  .syn-register.formal { background: rgba(139,92,246,0.15); color: #a78bfa; }
+  .syn-register.informal { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .syn-register.giria { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .syn-register.tecnico { background: rgba(16,185,129,0.15); color: #34d399; }
+  .syn-section-label {
+    font-size: 0.7em; color: #525263; text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 10px; margin-top: 18px;
+  }
+  .syn-section-label:first-child { margin-top: 0; }
+  .syn-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .syn-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 12px;
+    background: rgba(255,255,255,0.08); color: #e0e0e5; font-size: 0.88em;
+    cursor: pointer; transition: all 0.2s; border: 1px solid transparent;
+  }
+  .syn-pill:active { transform: scale(0.96); }
+  .syn-pill.baiano { border-color: rgba(59,130,246,0.4); }
+  .syn-pill .ba-badge {
+    font-size: 0.6em; font-weight: 800; color: #60a5fa; background: rgba(59,130,246,0.15);
+    padding: 2px 5px; border-radius: 4px;
+  }
+  .syn-pill .usage-note { font-size: 0.75em; color: #7a7a8e; }
+  .ant-pill {
+    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15);
+  }
+  .rel-pill .rel-label {
+    font-size: 0.6em; color: #7a7a8e; background: rgba(255,255,255,0.05);
+    padding: 2px 6px; border-radius: 4px;
+  }
+
+  /* ── Chunks ── */
+  .chunk-section-label {
+    font-size: 0.7em; color: #525263; text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 12px; margin-top: 20px;
+  }
+  .chunk-section-label:first-child { margin-top: 0; }
+  .chunk-card {
+    background: rgba(255,255,255,0.03); border-radius: 14px; padding: 14px 14px 14px 18px;
+    margin-bottom: 10px; position: relative; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.2);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  .chunk-card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  }
+  .chunk-card.freq-alta::before { background: #22c55e; }
+  .chunk-card.freq-media::before { background: #eab308; }
+  .chunk-card.freq-baixa::before { background: #525263; }
+  .chunk-text { font-size: 1em; font-weight: 600; color: #fafafa; margin-bottom: 8px; }
+  .chunk-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chunk-freq {
+    font-size: 0.65em; font-weight: 700; padding: 3px 8px; border-radius: 8px; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .chunk-freq.alta { background: rgba(34,197,94,0.15); color: #22c55e; }
+  .chunk-freq.media { background: rgba(234,179,8,0.15); color: #eab308; }
+  .chunk-freq.baixa { background: rgba(82,82,99,0.2); color: #7a7a8e; }
+  .chunk-type {
+    font-size: 0.65em; font-weight: 600; padding: 3px 8px; border-radius: 8px;
+    background: rgba(255,255,255,0.06); color: #7a7a8e;
+  }
+  .chunk-source {
+    font-size: 0.65em; font-weight: 600; padding: 3px 8px; border-radius: 8px;
+    background: rgba(124,92,252,0.12); color: #a78bfa;
+  }
+  .chunk-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .chunk-add-btn {
+    padding: 6px 14px; border-radius: 10px; border: 1px solid rgba(59,130,246,0.25);
+    background: rgba(59,130,246,0.08); color: #60a5fa; font-size: 0.75em; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .chunk-add-btn:active { transform: scale(0.96); }
+  .chunk-add-btn:disabled { opacity: 0.4; }
+  .chunk-play-btn {
+    width: 30px; height: 30px; border-radius: 50%; border: none;
+    background: rgba(59,130,246,0.1); color: #60a5fa; font-size: 0.75em;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+
   /* ── Tab Bar — injected by TAB_BAR_HTML ── */
 </style>
 </head><body>
@@ -1924,6 +2064,9 @@ SEARCH_HTML = r"""<!DOCTYPE html>
       <button class="tab-btn" onclick="showTab(1)">Exemplos</button>
       <button class="tab-btn" onclick="showTab(2)">Pronúncia</button>
       <button class="tab-btn" onclick="showTab(3)">Expressões</button>
+      <button class="tab-btn" onclick="showTab(4)" id="tab-btn-conj" style="display:none">Conjugação</button>
+      <button class="tab-btn" onclick="showTab(5)">Sinônimos</button>
+      <button class="tab-btn" onclick="showTab(6)">Chunks</button>
     </div>
 
     <!-- Tab: Dicionário -->
@@ -1957,6 +2100,27 @@ SEARCH_HTML = r"""<!DOCTYPE html>
       <div id="expressions-list"></div>
     </div>
 
+    <!-- Tab: Conjugação -->
+    <div class="tab-content" id="tab-4">
+      <div id="conj-container">
+        <div class="skeleton"><div class="skel-block"></div><div class="skel-block"></div></div>
+      </div>
+    </div>
+
+    <!-- Tab: Sinônimos -->
+    <div class="tab-content" id="tab-5">
+      <div id="syn-container">
+        <div class="skeleton"><div class="skel-line w60"></div><div class="skel-line w80"></div><div class="skel-line w40"></div></div>
+      </div>
+    </div>
+
+    <!-- Tab: Chunks -->
+    <div class="tab-content" id="tab-6">
+      <div id="chunks-container">
+        <div class="skeleton"><div class="skel-block"></div><div class="skel-line w80"></div><div class="skel-block"></div></div>
+      </div>
+    </div>
+
     <button class="add-srs-btn" id="add-srs-btn" onclick="addToSRS()">Adicionar ao treino</button>
   </div>
 </div>
@@ -1973,6 +2137,7 @@ const player = document.getElementById('player');
 let debounceTimer = null;
 let currentData = null;
 let currentWordId = null;
+let tabCache = {};  // {tabIdx: data} — cache per word selection
 
 searchInput.addEventListener('input', function() {
   clearTimeout(debounceTimer);
@@ -2035,6 +2200,31 @@ function renderResult(d) {
   const tierNames = {1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
   document.getElementById('r-meta').textContent = 'Tier ' + (d.tier||1) + ' — ' + (tierNames[d.tier]||'') + ' · #' + (d.frequency_rank||'');
 
+  // Reset tab cache and rendered state for lazy tabs
+  tabCache = {};
+  tabRendered = {};
+  document.getElementById('conj-container').innerHTML = '<div class="skeleton"><div class="skel-block"></div><div class="skel-block"></div></div>';
+  document.getElementById('syn-container').innerHTML = '<div class="skeleton"><div class="skel-line w60"></div><div class="skel-line w80"></div><div class="skel-line w40"></div></div>';
+  document.getElementById('chunks-container').innerHTML = '<div class="skeleton"><div class="skel-block"></div><div class="skel-line w80"></div><div class="skel-block"></div></div>';
+
+  // Show/hide conjugation tab based on verb status
+  const conjBtn = document.getElementById('tab-btn-conj');
+  const isVerb = d.conjugacao && d.conjugacao.is_verb;
+  conjBtn.style.display = isVerb ? '' : 'none';
+
+  // If conjugation data came inline, cache it
+  if (isVerb && d.conjugacao) {
+    tabCache[4] = d.conjugacao;
+  }
+  // If synonyms data came inline, cache it
+  if (d.sinonimos) {
+    tabCache[5] = d.sinonimos;
+  }
+  // If chunks data came inline, cache it
+  if (d.chunks) {
+    tabCache[6] = d.chunks;
+  }
+
   // Definition tab
   const def = d.definition || {};
   document.getElementById('def-text').textContent = def.definicao || 'Sem definição disponível';
@@ -2075,21 +2265,210 @@ function renderResult(d) {
   document.getElementById('add-srs-btn').textContent = 'Adicionar ao treino';
 }
 
+let tabRendered = {};  // track which tabs have been rendered for current word
+
 function showTab(idx) {
-  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    if (b.style.display === 'none') return;
+    b.classList.toggle('active', i===idx);
+  });
   document.querySelectorAll('.tab-content').forEach((c,i) => c.classList.toggle('visible', i===idx));
+  // Lazy load or render cached data for tabs 4-6
+  if (idx >= 4 && currentWordId) {
+    if (tabCache[idx] && !tabRendered[idx]) {
+      // Data came inline but hasn't been rendered yet
+      tabRendered[idx] = true;
+      if (idx === 4) renderConjugation(tabCache[idx]);
+      else if (idx === 5) renderSynonyms(tabCache[idx]);
+      else if (idx === 6) renderChunks(tabCache[idx]);
+    } else if (!tabCache[idx]) {
+      loadTabData(idx);
+    }
+  }
+}
+
+async function loadTabData(idx) {
+  if (!currentWordId) return;
+  const endpoints = { 4: 'conjugation', 5: 'synonyms', 6: 'chunks' };
+  const ep = endpoints[idx];
+  if (!ep) return;
+  try {
+    const res = await fetch('/api/word/' + currentWordId + '/' + ep);
+    const data = await res.json();
+    tabCache[idx] = data;
+    tabRendered[idx] = true;
+    if (idx === 4) renderConjugation(data);
+    else if (idx === 5) renderSynonyms(data);
+    else if (idx === 6) renderChunks(data);
+  } catch(e) {
+    const containers = { 4: 'conj-container', 5: 'syn-container', 6: 'chunks-container' };
+    document.getElementById(containers[idx]).innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Erro ao carregar dados</div>';
+  }
+}
+
+function renderConjugation(d) {
+  const c = document.getElementById('conj-container');
+  if (!d || !d.tenses || d.tenses.length === 0) {
+    c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados de conjugação</div>';
+    return;
+  }
+  const persons = ['eu', 'você', 'ele/ela', 'a gente', 'vocês', 'eles/elas'];
+  let html = '';
+  if (d.irregular) html += '<span class="conj-badge-irreg">Irregular</span>';
+  html += '<div class="conj-grid">';
+  d.tenses.forEach(t => {
+    html += '<div class="conj-tense-card"><div class="conj-tense-name">' + (t.name || '') + '</div>';
+    persons.forEach((p, i) => {
+      const form = (t.forms && t.forms[i]) || '—';
+      const isAgente = (p === 'a gente');
+      html += '<div class="conj-row">' +
+        '<span class="conj-person' + (isAgente ? ' agente' : '') + '">' + p + '</span>' +
+        '<span class="conj-form">' + form + '</span></div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  c.innerHTML = html;
+}
+
+function renderSynonyms(d) {
+  const c = document.getElementById('syn-container');
+  if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
+  let html = '';
+  // Register badge
+  if (d.register) {
+    const regClass = { formal:'formal', informal:'informal', 'gíria':'giria', 'técnico':'tecnico' };
+    html += '<span class="syn-register ' + (regClass[d.register] || 'informal') + '">' + d.register + '</span>';
+  }
+  // Synonyms
+  if (d.synonyms && d.synonyms.length > 0) {
+    html += '<div class="syn-section-label">Sinônimos</div><div class="syn-pills">';
+    d.synonyms.forEach(s => {
+      const word = typeof s === 'string' ? s : (s.word || '');
+      const note = (typeof s === 'object' && s.note) ? s.note : '';
+      const isBa = (typeof s === 'object' && s.baiano);
+      html += '<span class="syn-pill' + (isBa ? ' baiano' : '') + '" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' +
+        word + (isBa ? ' <span class="ba-badge">BA</span>' : '') +
+        (note ? ' <span class="usage-note">' + note + '</span>' : '') + '</span>';
+    });
+    html += '</div>';
+  }
+  // Antonyms
+  if (d.antonyms && d.antonyms.length > 0) {
+    html += '<div class="syn-section-label">Antônimos</div><div class="syn-pills">';
+    d.antonyms.forEach(a => {
+      const word = typeof a === 'string' ? a : (a.word || '');
+      html += '<span class="syn-pill ant-pill" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' + word + '</span>';
+    });
+    html += '</div>';
+  }
+  // Related
+  if (d.related && d.related.length > 0) {
+    html += '<div class="syn-section-label">Palavras relacionadas</div><div class="syn-pills">';
+    d.related.forEach(r => {
+      const word = typeof r === 'string' ? r : (r.word || '');
+      const label = (typeof r === 'object' && r.label) ? r.label : '';
+      html += '<span class="syn-pill rel-pill" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' +
+        word + (label ? ' <span class="rel-label">' + label + '</span>' : '') + '</span>';
+    });
+    html += '</div>';
+  }
+  if (!html) html = '<div style="text-align:center;color:#525263;padding:20px">Sem sinônimos disponíveis</div>';
+  c.innerHTML = html;
+}
+
+function renderChunks(d) {
+  const c = document.getElementById('chunks-container');
+  if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
+  let html = '';
+  // DB chunks
+  if (d.db_chunks && d.db_chunks.length > 0) {
+    html += '<div class="chunk-section-label">No banco de dados</div>';
+    d.db_chunks.forEach(ch => { html += buildChunkCard(ch, true); });
+  }
+  // Generated chunks
+  if (d.common_chunks && d.common_chunks.length > 0) {
+    html += '<div class="chunk-section-label">Chunks comuns</div>';
+    d.common_chunks.forEach(ch => { html += buildChunkCard(ch, false); });
+  }
+  if (!html) html = '<div style="text-align:center;color:#525263;padding:20px">Sem chunks disponíveis</div>';
+  c.innerHTML = html;
+}
+
+function buildChunkCard(ch, fromDb) {
+  const freq = (ch.frequency || 'media').toLowerCase();
+  const freqLabel = { alta:'Alta', media:'Média', baixa:'Baixa' }[freq] || 'Média';
+  const freqClass = { alta:'alta', media:'media', baixa:'baixa' }[freq] || 'media';
+  let html = '<div class="chunk-card freq-' + freqClass + '">';
+  html += '<div class="chunk-text">' + (ch.text || ch.chunk || '') + '</div>';
+  html += '<div class="chunk-badges">';
+  html += '<span class="chunk-freq ' + freqClass + '">' + freqLabel + '</span>';
+  if (ch.type) html += '<span class="chunk-type">' + ch.type + '</span>';
+  if (fromDb && ch.source) html += '<span class="chunk-source">' + ch.source + '</span>';
+  html += '</div>';
+  html += '<div class="chunk-actions">';
+  const chunkText = (ch.text || ch.chunk || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  html += '<button class="chunk-add-btn" onclick="addChunkToSRS(this,\'' + chunkText + '\')">Adicionar ao SRS</button>';
+  if (ch.audio) html += '<button class="chunk-play-btn" onclick="playChunkAudio(\'' + ch.audio + '\')">&#x1F50A;</button>';
+  html += '</div></div>';
+  return html;
+}
+
+async function searchSynonym(word) {
+  searchInput.value = word;
+  clearBtn.style.display = 'flex';
+  try {
+    const res = await fetch('/api/search?q=' + encodeURIComponent(word));
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      // Auto-select exact match or first result
+      const exact = data.results.find(r => r.word.toLowerCase() === word.toLowerCase());
+      const pick = exact || data.results[0];
+      selectWord(pick.word_id, pick.word);
+    } else {
+      fetchSearch(word);
+    }
+  } catch(e) { fetchSearch(word); }
 }
 
 function playWordAudio() {
+  if (!currentWordId) return;
   if (currentData && currentData.audio_file) {
     player.src = '/audio/' + currentData.audio_file;
     player.play().catch(()=>{});
+  } else {
+    fetch('/api/word/' + currentWordId + '/audio')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.filename) { player.src = '/audio/' + d.filename; player.play().catch(()=>{}); }
+      }).catch(()=>{});
   }
 }
 
 function playExAudio(btn) {
-  // For now just play the main word audio
   playWordAudio();
+}
+
+function playChunkAudio(filename) {
+  player.src = '/audio/' + filename;
+  player.play().catch(()=>{});
+}
+
+async function addChunkToSRS(btn, chunkText) {
+  if (!currentWordId) return;
+  btn.disabled = true;
+  btn.textContent = 'Adicionando...';
+  try {
+    await fetch('/api/search/add-to-srs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ word_id: currentWordId, chunk: chunkText, carrier: chunkText }),
+    });
+    btn.textContent = 'Adicionado';
+  } catch(e) {
+    btn.textContent = 'Erro';
+    btn.disabled = false;
+  }
 }
 
 async function addToSRS() {
@@ -2679,6 +3058,20 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/search/history":
             self._dict_history()
 
+        # ── Word detail endpoints ──
+        elif path.startswith("/api/word/") and path.endswith("/conjugation"):
+            word_id = int(path.split("/")[3])
+            self._dict_conjugation(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/synonyms"):
+            word_id = int(path.split("/")[3])
+            self._dict_synonyms(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/chunks"):
+            word_id = int(path.split("/")[3])
+            self._dict_chunks(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/audio"):
+            word_id = int(path.split("/")[3])
+            self._dict_audio(word_id)
+
         # ── Drill ──
         elif path == "/drill":
             self._html(DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
@@ -2957,6 +3350,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
     def _dashboard(self):
         """Full dashboard data combining acquisition state, plan progress, and stats."""
+        now = time.time()
+        with _dashboard_cache_lock:
+            if _dashboard_cache["data"] and now - _dashboard_cache["ts"] < 10:
+                self._json(_dashboard_cache["data"])
+                return
+
         dist = get_state_distribution()
         tier = get_unlocked_tier()
         progress = tier_progress()
@@ -2988,7 +3387,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             speech_stage = 1
             speech_gates = {}
 
-        self._json({
+        result = {
             "acquisition_state": {
                 "distribution": dist,
                 "acquired_count": acquired,
@@ -3002,7 +3401,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "content_level": content_level,
             "fatigue": fatigue,
             "speech": {"stage": speech_stage, "gates": speech_gates},
-        })
+        }
+        with _dashboard_cache_lock:
+            _dashboard_cache["data"] = result
+            _dashboard_cache["ts"] = time.time()
+        self._json(result)
 
     def _chunk_families(self, limit):
         conn = get_conn()
@@ -3027,6 +3430,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"stage": 1, "gates": {}, "activities": []})
 
     def _home_stats(self):
+        now = time.time()
+        with _home_stats_cache_lock:
+            if _home_stats_cache["data"] and now - _home_stats_cache["ts"] < 10:
+                self._json(_home_stats_cache["data"])
+                return
+
         tier = get_unlocked_tier()
         due = len(list(get_due_words()))
         progress = tier_progress()
@@ -3064,6 +3473,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         }
         if wod:
             resp["word_of_day"] = wod
+        with _home_stats_cache_lock:
+            _home_stats_cache["data"] = resp
+            _home_stats_cache["ts"] = time.time()
         self._json(resp)
 
     def _daily_stats(self):
@@ -3105,6 +3517,62 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         ).fetchall()
         conn.close()
         self._json({"history": [dict(r) for r in rows]})
+
+    def _resolve_word(self, word_id):
+        """Look up a word by ID. Returns the word string or None."""
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT word FROM word_bank WHERE id = ?", (word_id,)
+        ).fetchone()
+        conn.close()
+        return row["word"] if row else None
+
+    def _dict_conjugation(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_conjugation(word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_synonyms(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_synonyms(word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_chunks(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_word_chunks(word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_audio(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            fname = get_audio_for_word(word)
+            if fname:
+                self._json({"audio_file": fname, "word": word})
+            else:
+                self._json({"error": "Falha ao gerar áudio"}, status=500)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
 
     # ── 5-Pass Drill Endpoints ─────────────────────────────
 
@@ -4197,17 +4665,30 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     # ── Helpers ────────────────────────────────────────────────
 
     def _html(self, content):
+        body = content.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "public, max-age=60")
+        accept_enc = self.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_enc and len(body) > 1024:
+            body = gzip.compress(body)
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(content.encode())
+        self.wfile.write(body)
 
     def _json(self, data, status=200):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-cache")
+        accept_enc = self.headers.get("Accept-Encoding", "")
+        if "gzip" in accept_enc and len(body) > 512:
+            body = gzip.compress(body)
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(json.dumps(data, ensure_ascii=False).encode())
+        self.wfile.write(body)
 
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -4232,7 +4713,7 @@ def main():
     migrate_db()
     migrate_v2()
     ip = get_local_ip()
-    server = http.server.HTTPServer(("0.0.0.0", port), OxeHandler)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), OxeHandler)
 
     tier = get_unlocked_tier()
     due = len(list(get_due_words()))
