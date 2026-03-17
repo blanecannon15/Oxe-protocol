@@ -307,6 +307,35 @@ HOME_HTML = r"""<!DOCTYPE html>
   .progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #3B82F6, #7C5CFC); transition: width 0.6s; }
   .progress-label { font-size: 0.7em; color: #525263; white-space: nowrap; }
   .progress-label b { color: #a78bfa; }
+
+  /* ── Insight row ── */
+  .insight-row {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;
+    animation: fadeIn 0.3s ease-out 0.12s both;
+  }
+  .insight-pill {
+    flex: 1 1 auto; min-width: 0; padding: 10px 12px; border-radius: 12px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+    text-align: center;
+  }
+  .insight-val { font-size: 0.95em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .insight-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; margin-top: 2px; }
+  .insight-val.blue { color: #60a5fa; }
+  .insight-val.green { color: #34d399; }
+  .insight-val.purple { color: #a78bfa; }
+  .insight-val.yellow { color: #facc15; }
+  .rec-banner {
+    padding: 12px 16px; border-radius: 12px; margin-bottom: 16px;
+    background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.1);
+    font-size: 0.8em; color: #60a5fa; display: none;
+    animation: fadeIn 0.3s ease-out 0.18s both;
+  }
+  .rec-banner b { font-weight: 700; }
+  .lock-pill {
+    display: inline-block; padding: 3px 10px; border-radius: 8px;
+    font-size: 0.6em; font-weight: 700; text-transform: uppercase;
+    background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.15);
+  }
 </style>
 </head><body>
 
@@ -315,6 +344,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   <div class="header-meta">
     <span>T<b id="h-tier">1</b></span>
     <span><b id="h-streak">0</b> dias</span>
+    <span class="lock-pill" id="es-lock">ES trancado</span>
   </div>
 </div>
 
@@ -340,6 +370,25 @@ HOME_HTML = r"""<!DOCTYPE html>
     <span>Treinar</span>
     <span class="due-count" id="due-count">0 pendentes</span>
   </a>
+
+  <!-- Insight row -->
+  <div class="insight-row">
+    <div class="insight-pill">
+      <div class="insight-val blue" id="i-hours">0h</div>
+      <div class="insight-lbl">Horas Efetivas</div>
+    </div>
+    <div class="insight-pill">
+      <div class="insight-val green" id="i-auto">0</div>
+      <div class="insight-lbl">Automaticas</div>
+    </div>
+    <div class="insight-pill">
+      <div class="insight-val purple" id="i-milestone">--</div>
+      <div class="insight-lbl">Proxima Meta</div>
+    </div>
+  </div>
+
+  <!-- Recommended session -->
+  <div class="rec-banner" id="rec-banner"></div>
 
   <!-- Navigation -->
   <div class="nav-list">
@@ -425,6 +474,14 @@ fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
   }
 }).catch(function(){});
 
+// Daily stats for effective hours
+fetch('/api/daily-stats').then(function(r){return r.json()}).then(function(d){
+  var t = d.today||{};
+  var mins = t.minutes||0;
+  var hrs = (mins/60).toFixed(1);
+  document.getElementById('i-hours').textContent = hrs + 'h';
+}).catch(function(){});
+
 requestAnimationFrame(function(){
   fetch('/api/dashboard').then(function(r){return r.ok?r.json():null}).then(function(d){
     if(!d) return;
@@ -438,6 +495,48 @@ requestAnimationFrame(function(){
     document.getElementById('nav-speech').textContent = 'Estagio ' + stg + ' - ' + (SPEECH_NAMES[stg]||'');
     var plan = d.today||{};
     if(plan.completed_pct) document.getElementById('nav-plan').textContent = Math.round(plan.completed_pct) + '% completo';
+
+    // Automatic count
+    var acq = d.acquisition_state||{};
+    var auto = (acq.automatic_count||0);
+    document.getElementById('i-auto').textContent = auto;
+
+    // Next milestone
+    var total = acq.acquired_count||0;
+    var milestones = [10,25,50,100,250,500,1000,2500,5000];
+    var next = '--';
+    for(var i=0;i<milestones.length;i++){
+      if(total < milestones[i]){ next = milestones[i]; break; }
+    }
+    document.getElementById('i-milestone').textContent = next === '--' ? next : next + ' acq';
+
+    // Recommended session
+    var fat = d.fatigue||{};
+    var rec = fat.recommendation||'';
+    var banner = document.getElementById('rec-banner');
+    var REC_MSGS = {
+      'start_session': 'Pronto pra treinar',
+      'continue': 'Continue treinando',
+      'switch_mode': 'Troca pra escuta passiva',
+      'take_break': 'Hora de uma pausa',
+      'end_session': 'Melhor parar por hoje'
+    };
+    if(rec && REC_MSGS[rec]){
+      banner.innerHTML = '<b>Agora:</b> ' + REC_MSGS[rec];
+      banner.style.display = 'block';
+    }
+
+    // Spanish lock — unlocks at AUTOMATIC_NATIVE >= 500 AND speech stage >= 5
+    var nativeCount = (acq.distribution||{}).AUTOMATIC_NATIVE||0;
+    var outputCount = (acq.distribution||{}).AVAILABLE_OUTPUT||0;
+    var esReady = (nativeCount + outputCount) >= 500 && stg >= 5;
+    var lockEl = document.getElementById('es-lock');
+    if(esReady){
+      lockEl.textContent = 'ES liberado';
+      lockEl.style.background = 'rgba(52,211,153,0.1)';
+      lockEl.style.color = '#34d399';
+      lockEl.style.borderColor = 'rgba(52,211,153,0.15)';
+    }
   }).catch(function(){});
 });
 </script>
@@ -3837,11 +3936,57 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "content_level": content_level,
             "fatigue": fatigue,
             "speech": {"stage": speech_stage, "gates": speech_gates},
+            "milestones": self._compute_milestones(acquired, speech_stage),
         }
         with _dashboard_cache_lock:
             _dashboard_cache["data"] = result
             _dashboard_cache["ts"] = time.time()
         self._json(result)
+
+    def _compute_milestones(self, acquired_count, speech_stage):
+        """Compute milestone progress and record newly achieved ones."""
+        milestones_def = [
+            ("acquired", "10", 10), ("acquired", "25", 25), ("acquired", "50", 50),
+            ("acquired", "100", 100), ("acquired", "250", 250), ("acquired", "500", 500),
+            ("acquired", "1000", 1000), ("acquired", "2500", 2500), ("acquired", "5000", 5000),
+            ("speech", "2", 2), ("speech", "3", 3), ("speech", "4", 4),
+            ("speech", "5", 5), ("speech", "6", 6),
+        ]
+        achieved = []
+        next_milestone = None
+        try:
+            conn = get_conn()
+            for mtype, mkey, threshold in milestones_def:
+                current = acquired_count if mtype == "acquired" else speech_stage
+                if current >= threshold:
+                    # Record if not already
+                    conn.execute(
+                        "INSERT OR IGNORE INTO milestones (milestone_type, milestone_key, milestone_data) "
+                        "VALUES (?, ?, ?)",
+                        (mtype, mkey, json.dumps({"threshold": threshold})),
+                    )
+                    achieved.append({"type": mtype, "key": mkey, "threshold": threshold})
+                elif next_milestone is None:
+                    next_milestone = {"type": mtype, "key": mkey, "threshold": threshold, "current": current}
+            conn.commit()
+
+            # Check for unnotified milestones
+            new_rows = conn.execute(
+                "SELECT milestone_type, milestone_key FROM milestones WHERE notified = 0"
+            ).fetchall()
+            new_milestones = [{"type": r[0], "key": r[1]} for r in new_rows]
+            if new_rows:
+                conn.execute("UPDATE milestones SET notified = 1 WHERE notified = 0")
+                conn.commit()
+            conn.close()
+        except Exception:
+            new_milestones = []
+
+        return {
+            "achieved_count": len(achieved),
+            "next": next_milestone,
+            "new": new_milestones,
+        }
 
     def _chunk_families(self, limit):
         conn = get_conn()

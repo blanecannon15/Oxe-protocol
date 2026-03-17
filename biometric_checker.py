@@ -520,7 +520,7 @@ def measure_cadence(user_audio, native_audio):
         return 50.0
 
 
-def enhanced_nativeness_score(user_audio, native_audio):
+def enhanced_nativeness_score(user_audio, native_audio, clone_audio=None):
     """10-dimension Baiano prosody scoring.
 
     Weights:
@@ -646,7 +646,7 @@ def enhanced_nativeness_score(user_audio, native_audio):
         if score < 60:
             feedback.append(feedback_map.get(dim, f"{dim} precisa melhorar"))
 
-    return {
+    result = {
         "total_score": total,
         "dimensions": dimensions,
         "stress_timed": stress_timed,
@@ -654,6 +654,36 @@ def enhanced_nativeness_score(user_audio, native_audio):
         "force_redrill": stress_timed,
         "dimension_feedback": feedback,
     }
+
+    # Optional voice clone comparison (secondary target)
+    if clone_audio is not None:
+        try:
+            clone_iso_dtw, _, _, _, _ = isochrony_dtw(user_audio, clone_audio)
+            clone_iso = 100.0 / (1.0 + clone_iso_dtw * 2.0)
+            clone_pitch = 50.0
+            try:
+                from tslearn.metrics import dtw as ts_dtw
+                uf0 = extract_f0(user_audio)
+                cf0 = extract_f0(clone_audio)
+                uv = uf0[uf0 > 0]
+                cv = cf0[cf0 > 0]
+                if len(uv) > 3 and len(cv) > 3:
+                    un = (uv - np.mean(uv)) / (np.std(uv) + 1e-6)
+                    cn = (cv - np.mean(cv)) / (np.std(cv) + 1e-6)
+                    cd = ts_dtw(un.reshape(-1, 1), cn.reshape(-1, 1))
+                    clone_pitch = 100.0 / (1.0 + cd * 0.5)
+            except Exception:
+                pass
+            clone_score = round(0.6 * clone_iso + 0.4 * clone_pitch, 1)
+            result["clone_comparison"] = {
+                "clone_score": clone_score,
+                "clone_isochrony": round(clone_iso, 1),
+                "clone_pitch": round(clone_pitch, 1),
+            }
+        except Exception:
+            pass
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -816,7 +846,25 @@ def check_pronunciation(chunk_id, user_audio_path, native_audio_path=None):
             f"Expected at {native_audio_path}"
         )
 
-    return full_analysis(user_audio_path, native_audio_path)
+    result = full_analysis(user_audio_path, native_audio_path)
+
+    # Attach voice clone comparison if a golden clone audio exists
+    try:
+        from prosody_transplant import get_or_generate_golden
+        golden_filename = get_or_generate_golden(chunk_id, native_audio_path)
+        if golden_filename is not None:
+            clone_path = VAULT_AUDIOS / golden_filename
+            if clone_path.exists():
+                clone_result = enhanced_nativeness_score(
+                    user_audio_path, str(native_audio_path),
+                    clone_audio=str(clone_path),
+                )
+                if "clone_comparison" in clone_result:
+                    result["clone_comparison"] = clone_result["clone_comparison"]
+    except Exception:
+        pass  # Clone comparison is optional; never block scoring
+
+    return result
 
 
 # ---------------------------------------------------------------------------
