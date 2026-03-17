@@ -43,8 +43,13 @@ def extract_chunks_from_text(text, min_words=2, max_words=6):
         "NUNCA usa inglês."
     )
     user_prompt = (
-        f"Extrai todos os chunks (unidades multipalavra) do texto abaixo.\n"
+        f"Extrai os chunks (unidades multipalavra) de ALTA FREQUÊNCIA do texto abaixo.\n"
         f"Cada chunk deve ter entre {min_words} e {max_words} palavras.\n\n"
+        f"REGRAS:\n"
+        f"- SÓ chunks que um brasileiro ouviria TODO DIA em conversa\n"
+        f"- Prioriza colocações naturais, expressões populares, gírias comuns\n"
+        f"- IGNORA combinações raras, formais, ou literárias\n"
+        f"- Prioriza uso baiano/soteropolitano\n\n"
         f"Retorna SOMENTE um JSON array. Cada elemento deve ter:\n"
         f'- "chunk": a forma exata encontrada no texto\n'
         f'- "root_form": a forma canônica/base (ex: "por causa de", "tá ligado")\n'

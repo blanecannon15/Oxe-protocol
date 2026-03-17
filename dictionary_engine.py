@@ -574,14 +574,18 @@ def get_word_chunks(word, db_path=DB_PATH):
     if len(chunks_from_db) < 8:
         needed = 8 - len(chunks_from_db)
         user_prompt = (
-            f'Gera {needed} chunks/colocações naturais que usam a palavra "{word}".\n\n'
-            "Prioriza uso baiano — como se fosse um soteropolitano falando.\n"
-            "NUNCA usa inglês.\n\n"
+            f'Gera {needed} chunks/colocações de ALTA FREQUÊNCIA que usam a palavra "{word}".\n\n'
+            "REGRAS IMPORTANTES:\n"
+            "- SÓ chunks que um brasileiro ouviria TODO DIA em conversa normal\n"
+            "- Prioriza uso baiano/soteropolitano — como se fosse alguém de Salvador falando\n"
+            "- NUNCA gera chunks raros, formais, ou literários\n"
+            "- Cada chunk deve ter 2-4 palavras (curto e natural)\n"
+            "- NUNCA usa inglês\n\n"
             'Responde em JSON com a chave "chunks" contendo uma lista. '
             "Cada item tem:\n"
-            '- "chunk": o chunk/colocação\n'
+            '- "chunk": o chunk/colocação (2-4 palavras, alta frequência)\n'
             '- "tipo": "colocação", "expressão", ou "phrasal"\n'
-            '- "frequencia": "alta", "média", ou "baixa"\n\n'
+            '- "frequencia": DEVE ser "alta" — só gera chunks de alta frequência\n\n'
             "Responde SOMENTE em JSON."
         )
 
