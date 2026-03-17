@@ -2214,8 +2214,16 @@ async function selectWord(wordId, word, tier, rank) {
   activeTabIndex = 0;
   showTab(0);
 
-  // Pre-fetch pronunciation in background (commonly needed for audio button)
-  loadTabData(2);
+  // Pre-fetch ALL tabs in background so they're ready when tapped
+  for (var t = 1; t <= 6; t++) { loadTabData(t); }
+
+  // Pre-fetch audio so Ouvir button works on first tap (mobile autoplay policy)
+  fetch('/api/word/' + wordId + '/audio')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var f = d && (d.audio_file || d.filename);
+      if (f) currentData.audio_file = f;
+    }).catch(function(){});
 
   // Fetch automaticity state + fragility
   fetchWordState(wordId);
@@ -2308,9 +2316,9 @@ function showTab(idx) {
 }
 
 async function loadTabData(idx) {
-  if (!currentWordId) return;
+  if (!currentWordId || currentWordId === -1) return;
   if (tabCache[idx]) {
-    if (!tabRendered[idx]) renderTabData(idx, tabCache[idx]);
+    if (!tabRendered[idx]) { try { renderTabData(idx, tabCache[idx]); } catch(e) { console.error('Render tab ' + idx + ':', e); } }
     return;
   }
   const ep = TAB_ENDPOINTS[idx];
@@ -2318,18 +2326,12 @@ async function loadTabData(idx) {
   try {
     const res = await fetch('/api/word/' + currentWordId + '/' + ep);
     const data = await res.json();
-    tabCache[idx] = data;
-    renderTabData(idx, data);
+    if (data && !data.error) {
+      tabCache[idx] = data;
+      try { renderTabData(idx, data); } catch(e) { console.error('Render tab ' + idx + ':', e); }
+    }
   } catch(e) {
-    // Show error in the appropriate container
-    const errHtml = '<div style="text-align:center;color:#525263;padding:20px">Erro ao carregar dados</div>';
-    if (idx === 0) document.getElementById('def-text').textContent = 'Erro ao carregar definição';
-    else if (idx === 1) document.getElementById('examples-list').innerHTML = errHtml;
-    else if (idx === 2) document.getElementById('pron-silabas').textContent = 'Erro';
-    else if (idx === 3) document.getElementById('expressions-list').innerHTML = errHtml;
-    else if (idx === 4) document.getElementById('conj-container').innerHTML = errHtml;
-    else if (idx === 5) document.getElementById('syn-container').innerHTML = errHtml;
-    else if (idx === 6) document.getElementById('chunks-container').innerHTML = errHtml;
+    console.error('Load tab ' + idx + ':', e);
   }
 }
 
@@ -2388,15 +2390,6 @@ function renderPronunciation(pron) {
   if (!pron) pron = {};
   document.getElementById('pron-silabas').textContent = pron.silabas || '';
   document.getElementById('pron-guide').textContent = pron.guia_fonetico || '';
-  // Pre-fetch audio so the button works immediately
-  if (!currentData.audio_file && currentWordId) {
-    fetch('/api/word/' + currentWordId + '/audio')
-      .then(r => r.json())
-      .then(d => {
-        var f = d && (d.audio_file || d.filename);
-        if (f) currentData.audio_file = f;
-      }).catch(()=>{});
-  }
 }
 
 function renderExpressions(data) {
@@ -2552,19 +2545,24 @@ async function searchSynonym(word) {
 function playWordAudio() {
   if (!currentWordId) return;
   if (currentData && currentData.audio_file) {
+    // Audio pre-fetched — play directly in user gesture (mobile-safe)
     player.src = '/audio/' + currentData.audio_file;
-    player.play().catch(()=>{});
+    player.play().catch(function(){});
   } else {
+    // Not pre-fetched yet — generate TTS on the fly
+    // Use synchronous src assignment to stay in user gesture stack
+    player.src = '/api/word/' + currentWordId + '/audio/stream';
+    // Fallback: fetch the filename and try
     fetch('/api/word/' + currentWordId + '/audio')
-      .then(r => r.json())
-      .then(d => {
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
         var f = d && (d.audio_file || d.filename);
         if (f) {
           currentData.audio_file = f;
           player.src = '/audio/' + f;
-          player.play().catch(()=>{});
+          player.play().catch(function(){});
         }
-      }).catch(()=>{});
+      }).catch(function(){});
   }
 }
 
