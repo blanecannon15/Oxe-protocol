@@ -32,7 +32,7 @@ def extract_chunks_from_text(text, min_words=2, max_words=6):
         max_words: Maximum number of words per chunk.
 
     Returns:
-        List of dicts, each with keys: chunk, root_form, word_count, is_baiano.
+        List of dicts, each with keys: chunk, root_form, word_count, is_baiano, bahia_relevance.
         Returns empty list on failure.
     """
     client = openai.OpenAI()
@@ -49,7 +49,8 @@ def extract_chunks_from_text(text, min_words=2, max_words=6):
         f'- "chunk": a forma exata encontrada no texto\n'
         f'- "root_form": a forma canônica/base (ex: "por causa de", "tá ligado")\n'
         f'- "word_count": número de palavras\n'
-        f'- "is_baiano": true se o chunk é típico do dialeto baiano/soteropolitano\n\n'
+        f'- "is_baiano": true se o chunk é típico do dialeto baiano/soteropolitano\n'
+        f'- "bahia_relevance": 0-100 score de quão relevante o chunk é pro falar baiano/soteropolitano (100 = gíria exclusiva de Salvador, 0 = português genérico sem cor regional)\n\n'
         f"Texto:\n{text}"
     )
 
@@ -84,20 +85,22 @@ def extract_chunks_from_text(text, min_words=2, max_words=6):
 # Database helpers — chunk families & variants
 # ---------------------------------------------------------------------------
 
-def _upsert_chunk_family(root_form, word_count, is_baiano, db_path=DB_PATH):
+def _upsert_chunk_family(root_form, word_count, is_baiano, bahia_relevance=None, db_path=DB_PATH):
     """Insert or get an existing chunk_family by root_form.
 
     Args:
         root_form: Canonical/base form of the chunk.
         word_count: Number of words in the chunk.
         is_baiano: Whether the chunk is Baiano-specific.
+        bahia_relevance: Optional 0-100 score from GPT. Falls back to 80/20 heuristic.
         db_path: Path to the SQLite database.
 
     Returns:
         The family_id (integer).
     """
     conn = get_connection(db_path)
-    bahia_relevance = 80.0 if is_baiano else 20.0
+    if bahia_relevance is None:
+        bahia_relevance = 80.0 if is_baiano else 20.0
 
     row = conn.execute(
         "SELECT id FROM chunk_families WHERE root_form = ?", (root_form,)
@@ -184,8 +187,9 @@ def extract_chunks_from_story(story_id, db_path=DB_PATH):
         variant_form = chunk_data.get("chunk", root_form)
         word_count = chunk_data.get("word_count", len(root_form.split()))
         is_baiano = chunk_data.get("is_baiano", False)
+        bahia_rel = chunk_data.get("bahia_relevance")
 
-        family_id = _upsert_chunk_family(root_form, word_count, is_baiano, db_path)
+        family_id = _upsert_chunk_family(root_form, word_count, is_baiano, bahia_relevance=bahia_rel, db_path=db_path)
         _upsert_chunk_variant(family_id, variant_form, "story", story_id, db_path)
         added += 1
 
@@ -219,8 +223,9 @@ def extract_chunks_from_podcast(podcast_id, db_path=DB_PATH):
         variant_form = chunk_data.get("chunk", root_form)
         word_count = chunk_data.get("word_count", len(root_form.split()))
         is_baiano = chunk_data.get("is_baiano", False)
+        bahia_rel = chunk_data.get("bahia_relevance")
 
-        family_id = _upsert_chunk_family(root_form, word_count, is_baiano, db_path)
+        family_id = _upsert_chunk_family(root_form, word_count, is_baiano, bahia_relevance=bahia_rel, db_path=db_path)
         _upsert_chunk_variant(family_id, variant_form, "podcast", podcast_id, db_path)
         added += 1
 

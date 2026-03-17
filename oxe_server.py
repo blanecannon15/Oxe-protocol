@@ -3659,6 +3659,23 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             date = query.get("date", [None])[0]
             self._json(get_fatigue_history(date))
 
+        # ── Milestones ──
+        elif path == "/api/milestones":
+            self._milestones_list()
+        elif path == "/api/milestones/unnotified":
+            self._milestones_unnotified()
+
+        # ── Content Segments ──
+        elif path.startswith("/api/content/segments/"):
+            # /api/content/segments/story/5 or /api/content/segments/podcast/3
+            parts = path.split("/")
+            if len(parts) == 6:
+                ct = parts[4]
+                cid = int(parts[5])
+                self._content_segments(ct, cid)
+            else:
+                self.send_error(404)
+
         # ── Content Ladder ──
         elif path == "/api/content/level":
             self._json({"level": get_learner_level()})
@@ -3817,6 +3834,32 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             reset_fatigue_session()
             self._json({"ok": True})
 
+        # ── Milestones POST ──
+        elif path == "/api/milestones/notify":
+            milestone_id = body.get("milestone_id", 0)
+            conn = get_conn()
+            conn.execute("UPDATE milestones SET notified = 1 WHERE id = ?", (milestone_id,))
+            conn.commit()
+            conn.close()
+            self._json({"ok": True})
+
+        elif path == "/api/content/segments/log":
+            ct = body.get("content_type", "story")
+            cid = body.get("content_id", 0)
+            segments = body.get("segments", [])
+            conn = get_conn()
+            for seg in segments:
+                conn.execute(
+                    """INSERT OR REPLACE INTO content_segments
+                       (content_type, content_id, segment_index, text, comprehension_pct, replays, latency_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (ct, cid, seg.get("index", 0), seg.get("text", ""),
+                     seg.get("comprehension_pct", 0), seg.get("replays", 0), seg.get("latency_ms")),
+                )
+            conn.commit()
+            conn.close()
+            self._json({"ok": True, "logged": len(segments)})
+
         # ── Conversa (stage-scaffolded) ──
         elif path == "/api/conversa/start":
             self._conversa_start(body)
@@ -3942,6 +3985,35 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             _dashboard_cache["data"] = result
             _dashboard_cache["ts"] = time.time()
         self._json(result)
+
+    def _milestones_list(self):
+        conn = get_conn()
+        rows = conn.execute(
+            "SELECT * FROM milestones ORDER BY achieved_at DESC LIMIT 50"
+        ).fetchall()
+        conn.close()
+        self._json([dict(r) for r in rows])
+
+    def _milestones_unnotified(self):
+        try:
+            dist = get_state_distribution()
+            acquired = dist.get("AUTOMATIC_CLEAN", 0) + dist.get("AUTOMATIC_NATIVE", 0) + dist.get("AVAILABLE_OUTPUT", 0)
+            speech_stage = get_current_stage()
+            milestones = self._compute_milestones(acquired, speech_stage)
+            self._json(milestones)
+        except Exception as e:
+            self._json({"error": str(e)})
+
+    def _content_segments(self, content_type, content_id):
+        conn = get_conn()
+        rows = conn.execute(
+            """SELECT * FROM content_segments
+               WHERE content_type = ? AND content_id = ?
+               ORDER BY segment_index ASC""",
+            (content_type, content_id),
+        ).fetchall()
+        conn.close()
+        self._json([dict(r) for r in rows])
 
     def _compute_milestones(self, acquired_count, speech_stage):
         """Compute milestone progress and record newly achieved ones."""
@@ -4871,39 +4943,40 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[Conversa Start] Chunk fetch warning: {e}")
 
-            # ── Stages 2+: introduce i+1 chunks (just beyond learner's level) ──
-            i_plus_one = []
-            try:
-                # Get chunks at CONTEXT_KNOWN or EFFORTFUL — known but not yet automatic
-                stretch_items = get_items_in_state('CONTEXT_KNOWN', 'chunk', limit=15)
-                stretch_items.extend(get_items_in_state('EFFORTFUL_AUDIO', 'chunk', limit=10))
+            if stage >= 2:
+                # ── Stages 2+: introduce i+1 chunks (just beyond learner's level) ──
+                i_plus_one = []
+                try:
+                    # Get chunks at CONTEXT_KNOWN or EFFORTFUL — known but not yet automatic
+                    stretch_items = get_items_in_state('CONTEXT_KNOWN', 'chunk', limit=15)
+                    stretch_items.extend(get_items_in_state('EFFORTFUL_AUDIO', 'chunk', limit=10))
 
-                if stretch_items:
-                    conn = get_conn()
-                    stretch_chunks = []
-                    for item in stretch_items:
-                        row = conn.execute(
-                            "SELECT target_chunk FROM chunk_queue WHERE id = ?",
-                            (item['item_id'],),
-                        ).fetchone()
-                        if row:
-                            tc = row['target_chunk']
-                            # Avoid duplicates with known vocab
-                            if tc not in chunks_used_list:
-                                stretch_chunks.append(tc)
-                    conn.close()
+                    if stretch_items:
+                        conn = get_conn()
+                        stretch_chunks = []
+                        for item in stretch_items:
+                            row = conn.execute(
+                                "SELECT target_chunk FROM chunk_queue WHERE id = ?",
+                                (item['item_id'],),
+                            ).fetchone()
+                            if row:
+                                tc = row['target_chunk']
+                                # Avoid duplicates with known vocab
+                                if tc not in chunks_used_list:
+                                    stretch_chunks.append(tc)
+                        conn.close()
 
-                    if stretch_chunks:
-                        n = min(2, len(stretch_chunks))
-                        selected_new = random.sample(stretch_chunks, n)
-                        i_plus_one = selected_new
-                        system_prompt += (
-                            f" Chunks novos pra introduzir naturalmente (i+1): "
-                            f"{', '.join(selected_new)}. "
-                            f"Usa esses chunks na conversa pra o aprendiz ouvir em contexto."
-                        )
-            except Exception as e:
-                print(f"[Conversa Start] i+1 chunk warning: {e}")
+                        if stretch_chunks:
+                            n = min(2, len(stretch_chunks))
+                            selected_new = random.sample(stretch_chunks, n)
+                            i_plus_one = selected_new
+                            system_prompt += (
+                                f" Chunks novos pra introduzir naturalmente (i+1): "
+                                f"{', '.join(selected_new)}. "
+                                f"Usa esses chunks na conversa pra o aprendiz ouvir em contexto."
+                            )
+                except Exception as e:
+                    print(f"[Conversa Start] i+1 chunk warning: {e}")
 
             # ── Stage 4+: generate a specific prompt based on stage type ──
             prompt_data = None
@@ -5302,6 +5375,18 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 "UPDATE story_library SET comprehension_scores = ? WHERE id = ?",
                 (json.dumps(scores), story_id),
             )
+            conn.commit()
+        # Log segments from the result body
+        segments = body.get("segments", [])
+        if segments:
+            for seg in segments:
+                conn.execute(
+                    """INSERT OR REPLACE INTO content_segments
+                       (content_type, content_id, segment_index, text, comprehension_pct, replays, latency_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    ('story', story_id, seg.get("index", 0), seg.get("text", ""),
+                     seg.get("comprehension_pct", 0), seg.get("replays", 0), seg.get("latency_ms")),
+                )
             conn.commit()
         conn.close()
         self._json({"ok": True})
