@@ -484,6 +484,17 @@ def migrate_v2(db_path=DB_PATH):
 
         -- Seed stage 1
         INSERT OR IGNORE INTO speech_unlock (stage, stage_name) VALUES (1, 'echo');
+
+        -- Dictionary cache for per-tab GPT-4o results
+        CREATE TABLE IF NOT EXISTS dictionary_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_id INTEGER NOT NULL,
+            tab_name TEXT NOT NULL CHECK(tab_name IN ('definition','examples','pronunciation','expressions','conjugation','synonyms','chunks')),
+            data_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(word_id, tab_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_dict_cache ON dictionary_cache(word_id);
     """)
     conn.close()
 

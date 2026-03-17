@@ -99,6 +99,9 @@ from drill_server import (
 from dictionary_engine import (
     search_word, get_full_word_data, log_search,
     get_conjugation, get_synonyms, get_word_chunks, get_audio_for_word,
+    get_definition_cached, get_examples_cached, get_pronunciation_cached,
+    get_expressions_cached, get_conjugation_cached, get_synonyms_cached,
+    get_word_chunks_cached,
 )
 
 # ── Imports from story_server ──────────────────────────────────
@@ -2167,7 +2170,7 @@ async function fetchSearch(q) {
       acBox.innerHTML = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
     } else {
       acBox.innerHTML = data.results.map(r =>
-        '<div class="ac-item" onclick="selectWord(' + r.word_id + ',\'' + r.word.replace(/'/g, "\\'") + '\')">' +
+        '<div class="ac-item" onclick="selectWord(' + r.word_id + ',\'' + r.word.replace(/'/g, "\\'") + '\',' + r.difficulty_tier + ',' + r.frequency_rank + ')">' +
         '<span class="ac-word">' + r.word + '</span>' +
         '<span class="ac-tier">Tier ' + r.difficulty_tier + '</span></div>'
       ).join('');
@@ -2176,133 +2179,197 @@ async function fetchSearch(q) {
   } catch(e) { acBox.classList.remove('visible'); }
 }
 
-async function selectWord(wordId, word) {
+let currentWord = '';
+let activeTabIndex = 0;
+
+// Map tab indices to API endpoint names
+const TAB_ENDPOINTS = {
+  0: 'definition', 1: 'examples', 2: 'pronunciation',
+  3: 'expressions', 4: 'conjugation', 5: 'synonyms', 6: 'chunks'
+};
+
+// Map tab indices to skeleton containers
+const TAB_CONTAINERS = {
+  0: null, 1: null, 2: null, 3: null,
+  4: 'conj-container', 5: 'syn-container', 6: 'chunks-container'
+};
+
+async function selectWord(wordId, word, tier, rank) {
   acBox.classList.remove('visible');
   searchInput.value = word;
   currentWordId = wordId;
+  currentWord = word;
+  currentData = { word: word, word_id: wordId };
   document.getElementById('empty-state').style.display = 'none';
-  document.getElementById('loading').style.display = '';
-  document.getElementById('result-card').classList.remove('visible');
 
-  try {
-    const res = await fetch('/api/search/word/' + wordId);
-    currentData = await res.json();
-    renderResult(currentData);
-  } catch(e) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('empty-state').style.display = '';
-  }
-}
+  // Show word header immediately from search result info
+  showWordHeader(word, wordId, tier, rank);
 
-function renderResult(d) {
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('r-word').textContent = d.word || '';
-  const tierNames = {1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
-  document.getElementById('r-meta').textContent = 'Tier ' + (d.tier||1) + ' — ' + (tierNames[d.tier]||'') + ' · #' + (d.frequency_rank||'');
-
-  // Reset tab cache and rendered state for lazy tabs
+  // Reset all tab caches and rendered state
   tabCache = {};
   tabRendered = {};
+  resetTabSkeletons();
+
+  // Show the result card and load default tab (definition)
+  document.getElementById('result-card').classList.add('visible');
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('add-srs-btn').disabled = false;
+  document.getElementById('add-srs-btn').textContent = 'Adicionar ao treino';
+
+  // Show tab 0 (definition) and load its data
+  activeTabIndex = 0;
+  showTab(0);
+
+  // Pre-fetch pronunciation in background (commonly needed for audio button)
+  loadTabData(2);
+}
+
+function showWordHeader(word, wordId, tier, rank) {
+  document.getElementById('r-word').textContent = word;
+  const tierNames = {1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
+  if (tier && rank) {
+    document.getElementById('r-meta').textContent = 'Tier ' + tier + ' — ' + (tierNames[tier]||'') + ' · #' + rank;
+  } else {
+    document.getElementById('r-meta').textContent = '';
+  }
+  // Initially hide conjugation tab until we know it's a verb
+  document.getElementById('tab-btn-conj').style.display = 'none';
+}
+
+function resetTabSkeletons() {
+  // Reset definition tab with skeleton
+  document.getElementById('def-text').innerHTML = '<div class="skeleton"><div class="skel-line w80"></div><div class="skel-line w60"></div></div>';
+  document.getElementById('def-regional').textContent = '';
+  document.getElementById('def-chunk').textContent = '';
+  // Reset examples
+  document.getElementById('examples-list').innerHTML = '<div class="skeleton"><div class="skel-line w100"></div><div class="skel-line w80"></div><div class="skel-line w100"></div></div>';
+  // Reset pronunciation
+  document.getElementById('pron-silabas').textContent = '';
+  document.getElementById('pron-guide').textContent = '';
+  // Reset expressions
+  document.getElementById('expressions-list').innerHTML = '<div class="skeleton"><div class="skel-block"></div><div class="skel-block"></div></div>';
+  // Reset lazy tabs
   document.getElementById('conj-container').innerHTML = '<div class="skeleton"><div class="skel-block"></div><div class="skel-block"></div></div>';
   document.getElementById('syn-container').innerHTML = '<div class="skeleton"><div class="skel-line w60"></div><div class="skel-line w80"></div><div class="skel-line w40"></div></div>';
   document.getElementById('chunks-container').innerHTML = '<div class="skeleton"><div class="skel-block"></div><div class="skel-line w80"></div><div class="skel-block"></div></div>';
+}
 
-  // Show/hide conjugation tab based on verb status
-  const conjBtn = document.getElementById('tab-btn-conj');
-  const isVerb = d.conjugacao && d.conjugacao.is_verb;
-  conjBtn.style.display = isVerb ? '' : 'none';
+let tabRendered = {};
 
-  // If conjugation data came inline, cache it
-  if (isVerb && d.conjugacao) {
-    tabCache[4] = d.conjugacao;
-  }
-  // If synonyms data came inline, cache it
-  if (d.sinonimos) {
-    tabCache[5] = d.sinonimos;
-  }
-  // If chunks data came inline, cache it
-  if (d.chunks) {
-    tabCache[6] = d.chunks;
-  }
+function showTab(idx) {
+  activeTabIndex = idx;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    if (b.style.display === 'none') return;
+    b.classList.toggle('active', i===idx);
+  });
+  document.querySelectorAll('.tab-content').forEach((c,i) => c.classList.toggle('visible', i===idx));
 
-  // Definition tab
-  const def = d.definition || {};
-  document.getElementById('def-text').textContent = def.definicao || 'Sem definição disponível';
+  // Load tab data on demand if not cached
+  if (currentWordId && !tabCache[idx]) {
+    loadTabData(idx);
+  } else if (currentWordId && tabCache[idx] && !tabRendered[idx]) {
+    renderTabData(idx, tabCache[idx]);
+  }
+}
+
+async function loadTabData(idx) {
+  if (!currentWordId) return;
+  if (tabCache[idx]) {
+    if (!tabRendered[idx]) renderTabData(idx, tabCache[idx]);
+    return;
+  }
+  const ep = TAB_ENDPOINTS[idx];
+  if (!ep) return;
+  try {
+    const res = await fetch('/api/word/' + currentWordId + '/' + ep);
+    const data = await res.json();
+    tabCache[idx] = data;
+    renderTabData(idx, data);
+  } catch(e) {
+    // Show error in the appropriate container
+    const errHtml = '<div style="text-align:center;color:#525263;padding:20px">Erro ao carregar dados</div>';
+    if (idx === 0) document.getElementById('def-text').textContent = 'Erro ao carregar definição';
+    else if (idx === 1) document.getElementById('examples-list').innerHTML = errHtml;
+    else if (idx === 2) document.getElementById('pron-silabas').textContent = 'Erro';
+    else if (idx === 3) document.getElementById('expressions-list').innerHTML = errHtml;
+    else if (idx === 4) document.getElementById('conj-container').innerHTML = errHtml;
+    else if (idx === 5) document.getElementById('syn-container').innerHTML = errHtml;
+    else if (idx === 6) document.getElementById('chunks-container').innerHTML = errHtml;
+  }
+}
+
+function renderTabData(idx, data) {
+  tabRendered[idx] = true;
+  if (idx === 0) renderDefinition(data);
+  else if (idx === 1) renderExamples(data);
+  else if (idx === 2) renderPronunciation(data);
+  else if (idx === 3) renderExpressions(data);
+  else if (idx === 4) renderConjugation(data);
+  else if (idx === 5) renderSynonyms(data);
+  else if (idx === 6) renderChunks(data);
+}
+
+function renderDefinition(def) {
+  if (!def) def = {};
+  const defEl = document.getElementById('def-text');
+  defEl.innerHTML = '';
+  defEl.textContent = def.definicao || 'Sem definição disponível';
   document.getElementById('def-regional').textContent = (def.uso_regional || 'geral');
   document.getElementById('def-chunk').textContent = def.exemplo_chunk ? '"' + def.exemplo_chunk + '"' : '';
+  // Store in currentData for addToSRS
+  currentData.definition = def;
 
-  // Examples tab
+  // Now check conjugation: pre-fetch to see if it's a verb (show/hide tab)
+  if (!tabCache[4]) {
+    fetch('/api/word/' + currentWordId + '/conjugation')
+      .then(r => r.json())
+      .then(d => {
+        tabCache[4] = d;
+        const conjBtn = document.getElementById('tab-btn-conj');
+        conjBtn.style.display = (d && d.is_verb) ? '' : 'none';
+      }).catch(()=>{});
+  }
+}
+
+function renderExamples(data) {
   const exList = document.getElementById('examples-list');
   exList.innerHTML = '';
-  (d.examples || []).forEach(function(ex) {
+  const examples = Array.isArray(data) ? data : (data.exemplos || data || []);
+  currentData.examples = examples;
+  examples.forEach(function(ex) {
+    if (!ex.texto) return;
     const div = document.createElement('div');
     div.className = 'example-item';
     div.innerHTML = '<button class="ex-audio" onclick="playExAudio(this)">&#x1F50A;</button>' +
-      '<div class="ex-text">' + (ex.texto || '').replace(new RegExp('(' + (d.word||'') + ')', 'gi'), '<span class="ex-chunk">$1</span>') + '</div>';
+      '<div class="ex-text">' + (ex.texto || '').replace(new RegExp('(' + (currentWord||'') + ')', 'gi'), '<span class="ex-chunk">$1</span>') + '</div>';
     exList.appendChild(div);
   });
+  if (examples.length === 0 || !examples[0].texto) {
+    exList.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem exemplos disponíveis</div>';
+  }
+}
 
-  // Pronunciation tab
-  const pron = d.pronunciation || {};
+function renderPronunciation(pron) {
+  if (!pron) pron = {};
   document.getElementById('pron-silabas').textContent = pron.silabas || '';
   document.getElementById('pron-guide').textContent = pron.guia_fonetico || '';
+}
 
-  // Expressions tab
+function renderExpressions(data) {
   const exprList = document.getElementById('expressions-list');
   exprList.innerHTML = '';
-  (d.expressions || []).forEach(function(expr) {
+  const expressions = Array.isArray(data) ? data : (data.expressoes || data || []);
+  currentData.expressions = expressions;
+  expressions.forEach(function(expr) {
+    if (!expr.expressao) return;
     const div = document.createElement('div');
     div.className = 'expr-item';
     div.innerHTML = '<div class="expr-phrase">' + (expr.expressao || '') + '</div>' +
       '<div class="expr-meaning">' + (expr.significado || '') + '</div>';
     exprList.appendChild(div);
   });
-
-  // Show first tab
-  showTab(0);
-  document.getElementById('result-card').classList.add('visible');
-  document.getElementById('add-srs-btn').disabled = false;
-  document.getElementById('add-srs-btn').textContent = 'Adicionar ao treino';
-}
-
-let tabRendered = {};  // track which tabs have been rendered for current word
-
-function showTab(idx) {
-  document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    if (b.style.display === 'none') return;
-    b.classList.toggle('active', i===idx);
-  });
-  document.querySelectorAll('.tab-content').forEach((c,i) => c.classList.toggle('visible', i===idx));
-  // Lazy load or render cached data for tabs 4-6
-  if (idx >= 4 && currentWordId) {
-    if (tabCache[idx] && !tabRendered[idx]) {
-      // Data came inline but hasn't been rendered yet
-      tabRendered[idx] = true;
-      if (idx === 4) renderConjugation(tabCache[idx]);
-      else if (idx === 5) renderSynonyms(tabCache[idx]);
-      else if (idx === 6) renderChunks(tabCache[idx]);
-    } else if (!tabCache[idx]) {
-      loadTabData(idx);
-    }
-  }
-}
-
-async function loadTabData(idx) {
-  if (!currentWordId) return;
-  const endpoints = { 4: 'conjugation', 5: 'synonyms', 6: 'chunks' };
-  const ep = endpoints[idx];
-  if (!ep) return;
-  try {
-    const res = await fetch('/api/word/' + currentWordId + '/' + ep);
-    const data = await res.json();
-    tabCache[idx] = data;
-    tabRendered[idx] = true;
-    if (idx === 4) renderConjugation(data);
-    else if (idx === 5) renderSynonyms(data);
-    else if (idx === 6) renderChunks(data);
-  } catch(e) {
-    const containers = { 4: 'conj-container', 5: 'syn-container', 6: 'chunks-container' };
-    document.getElementById(containers[idx]).innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Erro ao carregar dados</div>';
+  if (expressions.length === 0) {
+    exprList.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem expressões disponíveis</div>';
   }
 }
 
@@ -2424,7 +2491,7 @@ async function searchSynonym(word) {
       // Auto-select exact match or first result
       const exact = data.results.find(r => r.word.toLowerCase() === word.toLowerCase());
       const pick = exact || data.results[0];
-      selectWord(pick.word_id, pick.word);
+      selectWord(pick.word_id, pick.word, pick.difficulty_tier, pick.frequency_rank);
     } else {
       fetchSearch(word);
     }
@@ -3059,6 +3126,18 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._dict_history()
 
         # ── Word detail endpoints ──
+        elif path.startswith("/api/word/") and path.endswith("/definition"):
+            word_id = int(path.split("/")[3])
+            self._dict_definition(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/examples"):
+            word_id = int(path.split("/")[3])
+            self._dict_examples(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/pronunciation"):
+            word_id = int(path.split("/")[3])
+            self._dict_pronunciation(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/expressions"):
+            word_id = int(path.split("/")[3])
+            self._dict_expressions(word_id)
         elif path.startswith("/api/word/") and path.endswith("/conjugation"):
             word_id = int(path.split("/")[3])
             self._dict_conjugation(word_id)
@@ -3527,13 +3606,57 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         conn.close()
         return row["word"] if row else None
 
+    def _dict_definition(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_definition_cached(word_id, word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_examples(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_examples_cached(word_id, word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_pronunciation(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_pronunciation_cached(word_id, word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
+    def _dict_expressions(self, word_id):
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"error": "Palavra não encontrada"}, status=404)
+            return
+        try:
+            data = get_expressions_cached(word_id, word)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
+
     def _dict_conjugation(self, word_id):
         word = self._resolve_word(word_id)
         if not word:
             self._json({"error": "Palavra não encontrada"}, status=404)
             return
         try:
-            data = get_conjugation(word)
+            data = get_conjugation_cached(word_id, word)
             self._json(data)
         except Exception as e:
             self._json({"error": str(e)}, status=500)
@@ -3544,7 +3667,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "Palavra não encontrada"}, status=404)
             return
         try:
-            data = get_synonyms(word)
+            data = get_synonyms_cached(word_id, word)
             self._json(data)
         except Exception as e:
             self._json({"error": str(e)}, status=500)
@@ -3555,7 +3678,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "Palavra não encontrada"}, status=404)
             return
         try:
-            data = get_word_chunks(word)
+            data = get_word_chunks_cached(word_id, word)
             self._json(data)
         except Exception as e:
             self._json({"error": str(e)}, status=500)
