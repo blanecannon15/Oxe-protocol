@@ -1652,7 +1652,24 @@ SEARCH_HTML = r"""<!DOCTYPE html>
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     margin-bottom: 4px;
   }
-  .result-meta { font-size: 0.78em; color: #7a7a8e; margin-bottom: 20px; }
+  .result-meta { font-size: 0.78em; color: #7a7a8e; margin-bottom: 8px; }
+  .state-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .state-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 10px;
+    font-size: 0.68em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .state-badge.unknown { background: rgba(82,82,99,0.2); color: #525263; }
+  .state-badge.recognized { background: rgba(248,113,113,0.15); color: #f87171; }
+  .state-badge.context { background: rgba(251,146,60,0.15); color: #fb923c; }
+  .state-badge.effortful { background: rgba(250,204,21,0.15); color: #facc15; }
+  .state-badge.clean { background: rgba(52,211,153,0.15); color: #34d399; }
+  .state-badge.native { background: rgba(59,130,246,0.15); color: #3B82F6; }
+  .state-badge.output { background: rgba(124,92,252,0.15); color: #7C5CFC; }
+  .frag-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 10px;
+    font-size: 0.68em; font-weight: 600; background: rgba(248,113,113,0.1);
+    color: #f87171; border: 1px solid rgba(248,113,113,0.2);
+  }
   .result-audio-btn {
     display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
     background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2);
@@ -1905,6 +1922,7 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   <div class="result-card" id="result-card">
     <div class="result-word" id="r-word"></div>
     <div class="result-meta" id="r-meta"></div>
+    <div class="state-row" id="state-row"></div>
     <button class="result-audio-btn" id="r-audio-btn" onclick="playWordAudio()">
       <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
       Ouvir
@@ -2071,6 +2089,45 @@ async function selectWord(wordId, word, tier, rank) {
 
   // Pre-fetch pronunciation in background (commonly needed for audio button)
   loadTabData(2);
+
+  // Fetch automaticity state + fragility
+  fetchWordState(wordId);
+}
+
+var STATE_LABELS = {
+  'UNKNOWN': ['Desconhecida', 'unknown'],
+  'RECOGNIZED': ['Reconhecida', 'recognized'],
+  'CONTEXT_KNOWN': ['Contexto', 'context'],
+  'EFFORTFUL_AUDIO': ['Esforço', 'effortful'],
+  'AUTOMATIC_CLEAN': ['Automática', 'clean'],
+  'AUTOMATIC_NATIVE': ['Nativa', 'native'],
+  'AVAILABLE_OUTPUT': ['Produção', 'output']
+};
+var FRAG_LABELS = {
+  'familiar_but_fragile': 'Frágil',
+  'known_but_slow': 'Lenta',
+  'text_only': 'Só texto',
+  'clean_audio_only': 'Só áudio limpo',
+  'blocked_by_prosody': 'Prosódia'
+};
+
+function fetchWordState(wordId) {
+  var row = document.getElementById('state-row');
+  row.innerHTML = '';
+  fetch('/api/word/' + wordId + '/state')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var info = STATE_LABELS[d.state] || ['?', 'unknown'];
+      row.innerHTML = '<span class="state-badge ' + info[1] + '">' + info[0] + '</span>';
+      if (d.fragilities && d.fragilities.length > 0) {
+        for (var i = 0; i < d.fragilities.length; i++) {
+          var f = d.fragilities[i];
+          var label = FRAG_LABELS[f.type] || f.type;
+          row.innerHTML += '<span class="frag-badge">' + label + '</span>';
+        }
+      }
+    })
+    .catch(function() {});
 }
 
 function showWordHeader(word, wordId, tier, rank) {
@@ -3371,6 +3428,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path.startswith("/api/word/") and path.endswith("/audio"):
             word_id = int(path.split("/")[3])
             self._dict_audio(word_id)
+        elif path.startswith("/api/word/") and path.endswith("/state"):
+            word_id = int(path.split("/")[3])
+            self._dict_state(word_id)
 
         # ── Drill ──
         elif path == "/drill":
@@ -3993,6 +4053,35 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 self._json({"error": "Falha ao gerar áudio"}, status=500)
         except Exception as e:
             self._json({"error": str(e)}, status=500)
+
+    def _dict_state(self, word_id):
+        """Return the automaticity state and fragility flags for a word."""
+        try:
+            state_row = get_or_create_state('word', word_id)
+            state = state_row.get("state", "UNKNOWN") if isinstance(state_row, dict) else "UNKNOWN"
+            confidence = state_row.get("confidence", 0) if isinstance(state_row, dict) else 0
+
+            conn = get_conn()
+            frag_rows = conn.execute(
+                "SELECT fragility_type, fragility_score FROM fragile_items "
+                "WHERE item_type = 'word' AND item_id = ? AND resolved_at IS NULL",
+                (word_id,),
+            ).fetchall()
+            conn.close()
+
+            fragilities = [
+                {"type": r["fragility_type"], "score": r["fragility_score"]}
+                for r in frag_rows
+            ]
+
+            self._json({
+                "word_id": word_id,
+                "state": state,
+                "confidence": round(confidence, 2),
+                "fragilities": fragilities,
+            })
+        except Exception as e:
+            self._json({"state": "UNKNOWN", "confidence": 0, "fragilities": [], "error": str(e)})
 
     # ── 5-Pass Drill Endpoints ─────────────────────────────
 
@@ -4637,6 +4726,40 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[Conversa Start] Chunk fetch warning: {e}")
 
+            # ── Stages 2+: introduce i+1 chunks (just beyond learner's level) ──
+            i_plus_one = []
+            try:
+                # Get chunks at CONTEXT_KNOWN or EFFORTFUL — known but not yet automatic
+                stretch_items = get_items_in_state('CONTEXT_KNOWN', 'chunk', limit=15)
+                stretch_items.extend(get_items_in_state('EFFORTFUL_AUDIO', 'chunk', limit=10))
+
+                if stretch_items:
+                    conn = get_conn()
+                    stretch_chunks = []
+                    for item in stretch_items:
+                        row = conn.execute(
+                            "SELECT target_chunk FROM chunk_queue WHERE id = ?",
+                            (item['item_id'],),
+                        ).fetchone()
+                        if row:
+                            tc = row['target_chunk']
+                            # Avoid duplicates with known vocab
+                            if tc not in chunks_used_list:
+                                stretch_chunks.append(tc)
+                    conn.close()
+
+                    if stretch_chunks:
+                        n = min(2, len(stretch_chunks))
+                        selected_new = random.sample(stretch_chunks, n)
+                        i_plus_one = selected_new
+                        system_prompt += (
+                            f" Chunks novos pra introduzir naturalmente (i+1): "
+                            f"{', '.join(selected_new)}. "
+                            f"Usa esses chunks na conversa pra o aprendiz ouvir em contexto."
+                        )
+            except Exception as e:
+                print(f"[Conversa Start] i+1 chunk warning: {e}")
+
             # ── Stage 4+: generate a specific prompt based on stage type ──
             prompt_data = None
             if stage >= 4:
@@ -4672,7 +4795,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                    (date, speech_stage, mode, prompt_type, prompt_data, messages, chunks_used)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (today, stage, "stage_scaffolded", f"stage_{stage}",
-                 prompt_data, json.dumps([]), json.dumps(chunks_used_list)),
+                 prompt_data, json.dumps([]), json.dumps(chunks_used_list + i_plus_one)),
             )
             session_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.commit()
@@ -4711,6 +4834,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 "reply": reply,
                 "audio_file": audio_fname,
                 "chunks_vocab": _conversa_chunks_vocab,
+                "chunks_i_plus_one": i_plus_one,
             })
         except Exception as e:
             print(f"[Conversa Start] Error: {e}")
