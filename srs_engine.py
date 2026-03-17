@@ -217,6 +217,22 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
     was_mastered = mastery >= 3 and old_mastery < 3
     record_daily_activity(was_mastered=was_mastered, db_path=db_path)
 
+    # Update acquisition state and backfill review_history
+    try:
+        from acquisition_engine import update_state_after_review
+        state_result = update_state_after_review('word', word_id, rating, latency_ms, 'clean')
+        conn2 = get_connection(db_path)
+        conn2.execute(
+            """UPDATE review_history SET state_before = ?, state_after = ?
+               WHERE item_type = 'word' AND item_id = ? AND state_before IS NULL
+               ORDER BY timestamp DESC LIMIT 1""",
+            (state_result['old_state'], state_result['new_state'], word_id),
+        )
+        conn2.commit()
+        conn2.close()
+    except Exception as e:
+        print(f"[SRS] Acquisition state update warning: {e}")
+
     return new_card, mastery, latency_downgraded
 
 
@@ -764,6 +780,24 @@ def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None,
 
     was_mastered = mastery >= 3 and old_mastery < 3
     record_daily_activity(was_mastered=was_mastered, db_path=db_path)
+
+    # Update acquisition state and backfill review_history
+    try:
+        from acquisition_engine import update_state_after_review
+        state_result = update_state_after_review(
+            'chunk', chunk_id, rating, latency_ms, 'clean', biometric_score
+        )
+        conn2 = get_connection(db_path)
+        conn2.execute(
+            """UPDATE review_history SET state_before = ?, state_after = ?
+               WHERE item_type = 'chunk' AND item_id = ? AND state_before IS NULL
+               ORDER BY timestamp DESC LIMIT 1""",
+            (state_result['old_state'], state_result['new_state'], chunk_id),
+        )
+        conn2.commit()
+        conn2.close()
+    except Exception as e:
+        print(f"[SRS] Chunk acquisition state update warning: {e}")
 
     return new_card, mastery, latency_downgraded
 

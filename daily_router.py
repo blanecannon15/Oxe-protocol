@@ -31,6 +31,8 @@ from acquisition_engine import (
     get_fragile_summary,
 )
 from training_modes import select_mode_for_item, TRAINING_MODES
+from fatigue_monitor import get_fatigue_history, check_fatigue
+from content_ladder import get_learner_level
 
 
 # ---------------------------------------------------------------------------
@@ -60,14 +62,9 @@ def _get_yesterday_stats(db_path=DB_PATH):
     return dict(row)
 
 
-def _compute_difficulty_bias(yesterday_stats):
-    """Determine session allocation ratios based on yesterday's accuracy.
-
-    Returns a dict of block-type proportions that sum to ~1.0.
-    Keys: drill, listen, shadow, conversa, rest (break).
-    """
+def _compute_difficulty_bias(yesterday_stats, fatigue_data=None):
+    """Determine session allocation ratios based on yesterday's accuracy, latency, and fatigue."""
     if yesterday_stats is None or yesterday_stats.get("words_reviewed", 0) == 0:
-        # Fresh start — balanced plan
         return {
             "drill": 0.40,
             "listen": 0.30,
@@ -78,17 +75,23 @@ def _compute_difficulty_bias(yesterday_stats):
 
     accuracy = yesterday_stats["words_mastered"] / max(yesterday_stats["words_reviewed"], 1)
 
-    if accuracy < 0.3:
-        # Heavy compression — lots of drilling, easy listening, rest
+    # Check for early fatigue from yesterday
+    early_fatigue = False
+    if fatigue_data:
+        for snap in fatigue_data:
+            if snap.get("minute_offset", 999) < 90 and snap.get("fatigue_score", 0) > 50:
+                early_fatigue = True
+                break
+
+    if accuracy < 0.3 or early_fatigue:
         return {
-            "drill": 0.70,
-            "listen": 0.20,
+            "drill": 0.60 if early_fatigue else 0.70,
+            "listen": 0.25 if early_fatigue else 0.20,
             "shadow": 0.0,
             "conversa": 0.0,
-            "rest": 0.10,
+            "rest": 0.15 if early_fatigue else 0.10,
         }
     elif accuracy < 0.7:
-        # Moderate — balanced with some shadowing
         return {
             "drill": 0.50,
             "listen": 0.30,
@@ -97,7 +100,6 @@ def _compute_difficulty_bias(yesterday_stats):
             "rest": 0.0,
         }
     else:
-        # Push — strong enough for conversation practice
         return {
             "drill": 0.40,
             "listen": 0.30,
@@ -230,9 +232,27 @@ def generate_daily_plan(total_minutes=240, db_path=DB_PATH):
         tier = 1
 
     # ------------------------------------------------------------------
+    # 5b. Fatigue history from yesterday
+    # ------------------------------------------------------------------
+    try:
+        from datetime import timedelta
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        fatigue_data = get_fatigue_history(yesterday, db_path)
+    except Exception:
+        fatigue_data = []
+
+    # ------------------------------------------------------------------
+    # 5c. Content level
+    # ------------------------------------------------------------------
+    try:
+        content_level = get_learner_level(db_path)
+    except Exception:
+        content_level = "P1"
+
+    # ------------------------------------------------------------------
     # 6. Difficulty bias
     # ------------------------------------------------------------------
-    bias = _compute_difficulty_bias(yesterday_stats)
+    bias = _compute_difficulty_bias(yesterday_stats, fatigue_data)
     conversa_eligible = bias["conversa"] > 0
 
     # ------------------------------------------------------------------
@@ -443,6 +463,7 @@ def generate_daily_plan(total_minutes=240, db_path=DB_PATH):
     plan = {
         "date": today,
         "learner_level": f"Tier {tier}",
+        "content_level": content_level,
         "total_minutes": total_minutes,
         "blocks": blocks,
         "priority_queues": priority_queues,

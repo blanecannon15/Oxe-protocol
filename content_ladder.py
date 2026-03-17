@@ -139,6 +139,19 @@ def classify_content(content_type, content_id, db_path=DB_PATH):
     unique_words = set(w.lower() for w in words)
     lexical_density = len(unique_words) / len(words)
 
+    # Estimate additional metadata fields
+    # Grammar density: ratio of function words (approximation)
+    function_words = {'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas',
+                      'por', 'para', 'com', 'que', 'se', 'não', 'um', 'uma', 'o', 'a',
+                      'os', 'as', 'é', 'são', 'foi', 'ser', 'ter', 'estar', 'ir', 'e',
+                      'ou', 'mas', 'pois', 'como', 'quando', 'onde', 'já', 'mais', 'muito'}
+    func_count = sum(1 for w in words if w.lower() in function_words)
+    grammar_density = round(func_count / len(words), 3) if words else 0.0
+
+    # Simple heuristics for remaining fields
+    emotional_intensity = round(min(1.0 - compression_pct + 0.2, 1.0), 2)  # harder content tends to be more emotional
+    native_likeness = round(1.0 - compression_pct, 2)  # proxy: less known = more native-like
+
     # Find the best matching level: closest known_floor to compression_pct
     best_level = "P1"
     best_distance = float("inf")
@@ -152,9 +165,11 @@ def classify_content(content_type, content_id, db_path=DB_PATH):
     conn = get_connection(db_path)
     conn.execute(
         """INSERT OR REPLACE INTO content_metadata
-           (content_type, content_id, difficulty_level, lexical_density, compression_pct)
-           VALUES (?, ?, ?, ?, ?)""",
-        (content_type, content_id, best_level, lexical_density, compression_pct),
+           (content_type, content_id, difficulty_level, lexical_density, compression_pct,
+            grammar_density, emotional_intensity, native_likeness)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (content_type, content_id, best_level, lexical_density, compression_pct,
+         grammar_density, emotional_intensity, native_likeness),
     )
     conn.commit()
     conn.close()

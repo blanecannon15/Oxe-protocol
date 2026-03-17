@@ -41,6 +41,8 @@ from srs_engine import (
 )
 from training_modes import select_mode_for_item, get_drill_config, TRAINING_MODES
 from daily_router import get_next_block, record_block_completion
+from acquisition_engine import update_state_after_review, check_replay_reinforcement
+from fatigue_monitor import record_review_event
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 IMAGE_DIR = Path(__file__).parent / "voca_vault" / "images"
@@ -1833,12 +1835,38 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
             chunk_id, rating, latency_ms, biometric
         )
 
+        # Update acquisition state
+        try:
+            audio_type = body.get("audio_type", "clean")
+            state_result = update_state_after_review(
+                'chunk', chunk_id, rating, latency_ms, audio_type, biometric
+            )
+        except Exception as e:
+            state_result = {}
+            print(f"[Drill] Acquisition update warning: {e}")
+
+        # Record fatigue event
+        try:
+            record_review_event(latency_ms or 0, rating.value, retries)
+        except Exception as e:
+            print(f"[Drill] Fatigue recording warning: {e}")
+
+        # Check replay reinforcement (3+ retries = fragile flag)
+        try:
+            if retries >= 3:
+                check_replay_reinforcement('chunk', chunk_id, retries)
+        except Exception as e:
+            print(f"[Drill] Replay reinforcement warning: {e}")
+
         log_drill(chunk_id, str(chunk_id), rating.value, latency_ms, "drill_5pass")
 
         self._json({
             "rating": rating.value,
             "rating_name": {1: "De novo", 2: "Dificil", 3: "Bom", 4: "Facil"}.get(rating.value, "Bom"),
             "new_mastery": mastery,
+            "acquisition_state": state_result.get("new_state", ""),
+            "promoted": state_result.get("promoted", False),
+            "demoted": state_result.get("demoted", False),
         })
 
     def _serve_audio(self, filename):
