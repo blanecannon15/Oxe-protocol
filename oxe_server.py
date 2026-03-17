@@ -2135,11 +2135,16 @@ async function fetchSearch(q) {
     if (!data.results || data.results.length === 0) {
       acBox.innerHTML = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
     } else {
-      acBox.innerHTML = data.results.map(r =>
-        '<div class="ac-item" onclick="selectWord(' + r.word_id + ',\'' + r.word.replace(/'/g, "\\'") + '\',' + r.difficulty_tier + ',' + r.frequency_rank + ')">' +
-        '<span class="ac-word">' + r.word + '</span>' +
-        '<span class="ac-tier">Tier ' + r.difficulty_tier + '</span></div>'
-      ).join('');
+      acBox.innerHTML = data.results.map(r => {
+        if (r.is_live_lookup) {
+          return '<div class="ac-item" onclick="selectWord(-1,\'' + r.word.replace(/'/g, "\\'") + '\',0,0)">' +
+            '<span class="ac-word">' + r.word + '</span>' +
+            '<span class="ac-tier" style="color:#3B82F6">Buscar ao vivo</span></div>';
+        }
+        return '<div class="ac-item" onclick="selectWord(' + r.word_id + ',\'' + r.word.replace(/'/g, "\\'") + '\',' + r.difficulty_tier + ',' + r.frequency_rank + ')">' +
+          '<span class="ac-word">' + r.word + '</span>' +
+          '<span class="ac-tier">Tier ' + r.difficulty_tier + '</span></div>';
+      }).join('');
     }
     acBox.classList.add('visible');
   } catch(e) { acBox.classList.remove('visible'); }
@@ -2181,6 +2186,29 @@ async function selectWord(wordId, word, tier, rank) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('add-srs-btn').disabled = false;
   document.getElementById('add-srs-btn').textContent = 'Adicionar ao treino';
+
+  // For live lookups (word not in word_bank), fetch all data via /api/search/live
+  if (wordId === -1) {
+    activeTabIndex = 0;
+    showTab(0);
+    try {
+      const res = await fetch('/api/search/live?q=' + encodeURIComponent(word));
+      const data = await res.json();
+      if (data.definition) { tabCache[0] = data.definition; renderTabData(0, data.definition); }
+      if (data.examples) { tabCache[1] = data.examples; renderTabData(1, data.examples); }
+      if (data.pronunciation) { tabCache[2] = data.pronunciation; renderTabData(2, data.pronunciation); }
+      if (data.expressions) { tabCache[3] = data.expressions; renderTabData(3, data.expressions); }
+      if (data.conjugation) {
+        tabCache[4] = data.conjugation;
+        renderTabData(4, data.conjugation);
+        var conjBtn = document.getElementById('tab-btn-conj');
+        conjBtn.style.display = (data.conjugation && data.conjugation.is_verb) ? '' : 'none';
+      }
+      if (data.synonyms) { tabCache[5] = data.synonyms; renderTabData(5, data.synonyms); }
+      if (data.chunks) { tabCache[6] = data.chunks; renderTabData(6, data.chunks); }
+    } catch(e) {}
+    return;
+  }
 
   // Show tab 0 (definition) and load its data
   activeTabIndex = 0;
@@ -2232,7 +2260,9 @@ function fetchWordState(wordId) {
 function showWordHeader(word, wordId, tier, rank) {
   document.getElementById('r-word').textContent = word;
   const tierNames = {1:'Sobrevivência',2:'Cotidiano',3:'Conversação',4:'Fluência',5:'Nuance',6:'Quase Nativo'};
-  if (tier && rank) {
+  if (wordId === -1) {
+    document.getElementById('r-meta').textContent = 'Busca ao vivo';
+  } else if (tier && rank) {
     document.getElementById('r-meta').textContent = 'Tier ' + tier + ' — ' + (tierNames[tier]||'') + ' · #' + rank;
   } else {
     document.getElementById('r-meta').textContent = '';
@@ -2416,19 +2446,19 @@ function renderSynonyms(d) {
   const c = document.getElementById('syn-container');
   if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
   let html = '';
-  // Register badge (handles both PT and EN keys)
-  var reg = d.register || d.registro || '';
+  // Register badge (PT primary, EN fallback)
+  var reg = d.registro || d.register || '';
   if (reg) {
     const regClass = { formal:'formal', informal:'informal', 'gíria':'giria', 'técnico':'tecnico' };
     html += '<span class="syn-register ' + (regClass[reg] || 'informal') + '">' + reg + '</span>';
   }
-  // Synonyms (handles both d.synonyms and d.sinonimos)
-  var syns = d.synonyms || d.sinonimos || [];
+  // Synonyms (PT primary, EN fallback)
+  var syns = d.sinonimos || d.synonyms || [];
   if (syns.length > 0) {
     html += '<div class="syn-section-label">Sinônimos</div><div class="syn-pills">';
     syns.forEach(s => {
-      const word = typeof s === 'string' ? s : (s.word || s.palavra || '');
-      const note = (typeof s === 'object') ? (s.note || s.nota || '') : '';
+      const word = typeof s === 'string' ? s : (s.palavra || s.word || '');
+      const note = (typeof s === 'object') ? (s.nota || s.note || '') : '';
       const isBa = (typeof s === 'object' && s.baiano);
       html += '<span class="syn-pill' + (isBa ? ' baiano' : '') + '" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' +
         word + (isBa ? ' <span class="ba-badge">BA</span>' : '') +
@@ -2436,23 +2466,23 @@ function renderSynonyms(d) {
     });
     html += '</div>';
   }
-  // Antonyms (handles both d.antonyms and d.antonimos)
-  var ants = d.antonyms || d.antonimos || [];
+  // Antonyms (PT primary, EN fallback)
+  var ants = d.antonimos || d.antonyms || [];
   if (ants.length > 0) {
     html += '<div class="syn-section-label">Antônimos</div><div class="syn-pills">';
     ants.forEach(a => {
-      const word = typeof a === 'string' ? a : (a.word || a.palavra || '');
+      const word = typeof a === 'string' ? a : (a.palavra || a.word || '');
       html += '<span class="syn-pill ant-pill" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' + word + '</span>';
     });
     html += '</div>';
   }
-  // Related (handles both d.related and d.palavras_relacionadas)
-  var rels = d.related || d.palavras_relacionadas || [];
+  // Related (PT primary, EN fallback)
+  var rels = d.palavras_relacionadas || d.related || [];
   if (rels.length > 0) {
     html += '<div class="syn-section-label">Palavras relacionadas</div><div class="syn-pills">';
     rels.forEach(r => {
-      const word = typeof r === 'string' ? r : (r.word || r.palavra || '');
-      const label = (typeof r === 'object') ? (r.label || r.relacao || '') : '';
+      const word = typeof r === 'string' ? r : (r.palavra || r.word || '');
+      const label = (typeof r === 'object') ? (r.relacao || r.label || '') : '';
       html += '<span class="syn-pill rel-pill" onclick="searchSynonym(\'' + word.replace(/'/g, "\\\\'") + '\')">' +
         word + (label ? ' <span class="rel-label">' + label + '</span>' : '') + '</span>';
     });
@@ -2466,14 +2496,14 @@ function renderChunks(d) {
   const c = document.getElementById('chunks-container');
   if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
   let html = '';
-  // DB chunks (handles both d.db_chunks and d.chunks_from_db)
-  var dbChunks = d.db_chunks || d.chunks_from_db || [];
+  // DB chunks (PT primary, EN fallback)
+  var dbChunks = d.chunks_from_db || d.db_chunks || [];
   if (dbChunks.length > 0) {
     html += '<div class="chunk-section-label">No banco de dados</div>';
     dbChunks.forEach(ch => { html += buildChunkCard(ch, true); });
   }
-  // Generated chunks (handles both d.common_chunks and d.chunks_generated)
-  var genChunks = d.common_chunks || d.chunks_generated || [];
+  // Generated chunks (PT primary, EN fallback)
+  var genChunks = d.chunks_generated || d.common_chunks || [];
   if (genChunks.length > 0) {
     html += '<div class="chunk-section-label">Chunks comuns</div>';
     genChunks.forEach(ch => { html += buildChunkCard(ch, false); });
@@ -2483,14 +2513,14 @@ function renderChunks(d) {
 }
 
 function buildChunkCard(ch, fromDb) {
-  const freq = (ch.frequency || ch.frequencia || 'media').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const freq = (ch.frequencia || ch.frequency || 'media').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const freqLabel = { alta:'Alta', media:'Média', baixa:'Baixa' }[freq] || 'Média';
   const freqClass = { alta:'alta', media:'media', baixa:'baixa' }[freq] || 'media';
   let html = '<div class="chunk-card freq-' + freqClass + '">';
   html += '<div class="chunk-text">' + (ch.text || ch.chunk || '') + '</div>';
   html += '<div class="chunk-badges">';
   html += '<span class="chunk-freq ' + freqClass + '">' + freqLabel + '</span>';
-  var chType = ch.type || ch.tipo || '';
+  var chType = ch.tipo || ch.type || '';
   if (chType) html += '<span class="chunk-type">' + chType + '</span>';
   if (fromDb && ch.source) html += '<span class="chunk-source">' + ch.source + '</span>';
   html += '</div>';
@@ -3520,6 +3550,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path.startswith("/api/search/word/"):
             word_id = int(path.split("/")[4])
             self._dict_word(word_id)
+        elif path == "/api/search/live":
+            q = query.get("q", [""])[0]
+            self._dict_live_lookup(q)
         elif path == "/api/search/history":
             self._dict_history()
 
@@ -4166,6 +4199,33 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             return
         results = search_word(q)
         self._json({"results": results, "query": q})
+
+    def _dict_live_lookup(self, word):
+        """Live GPT lookup for words not in word_bank."""
+        if not word or not word.strip():
+            self._json({"error": "Palavra vazia"}, status=400)
+            return
+        word = word.strip()
+        try:
+            from dictionary_engine import (
+                get_definition, get_examples, get_pronunciation_data,
+                get_expressions, get_conjugation, get_synonyms, get_word_chunks,
+            )
+            result = {
+                "word": word,
+                "word_id": -1,
+                "is_live": True,
+                "definition": get_definition(word),
+                "examples": get_examples(word),
+                "pronunciation": get_pronunciation_data(word),
+                "expressions": get_expressions(word),
+                "conjugation": get_conjugation(word),
+                "synonyms": get_synonyms(word),
+                "chunks": get_word_chunks(word),
+            }
+            self._json(result)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
 
     def _dict_word(self, word_id):
         try:

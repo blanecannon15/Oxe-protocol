@@ -241,6 +241,18 @@ def search_word(query, db_path=DB_PATH):
     results.sort(key=lambda x: (x["_match_type"], x["frequency_rank"]))
     for r in results:
         del r["_match_type"]
+
+    # If no exact match found, offer a live GPT lookup option
+    has_exact = any(r["word"].lower() == query for r in results)
+    if not has_exact:
+        results.insert(0, {
+            "word_id": -1,
+            "word": query,
+            "frequency_rank": 0,
+            "difficulty_tier": 0,
+            "is_live_lookup": True,
+        })
+
     return results[:10]
 
 
