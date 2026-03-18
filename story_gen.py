@@ -524,7 +524,7 @@ def generate_story_audio(story_id):
             try:
                 audio_iter = client.text_to_speech.convert(
                     text=chunk,
-                    voice_id="pNInz6obpgDQGcFmaJgB",
+                    voice_id="CwhRBWXzGAHq8TQ4Fs17",  # Roger — casual Baiano vibe
                     model_id="eleven_multilingual_v2",
                     output_format="mp3_44100_128",
                     voice_settings={
@@ -577,7 +577,7 @@ def generate_story_audio(story_id):
             try:
                 audio_iter = client.text_to_speech.convert(
                     text=q_text,
-                    voice_id="pNInz6obpgDQGcFmaJgB",
+                    voice_id="CwhRBWXzGAHq8TQ4Fs17",  # Roger — casual Baiano vibe
                     model_id="eleven_multilingual_v2",
                     output_format="mp3_44100_128",
                     voice_settings={

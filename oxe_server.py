@@ -2194,19 +2194,21 @@ async function selectWord(wordId, word, tier, rank) {
     try {
       const res = await fetch('/api/search/live?q=' + encodeURIComponent(word));
       const data = await res.json();
-      if (data.definition) { tabCache[0] = data.definition; renderTabData(0, data.definition); }
-      if (data.examples) { tabCache[1] = data.examples; renderTabData(1, data.examples); }
-      if (data.pronunciation) { tabCache[2] = data.pronunciation; renderTabData(2, data.pronunciation); }
-      if (data.expressions) { tabCache[3] = data.expressions; renderTabData(3, data.expressions); }
+      if (data.definition) { tabCache[0] = data.definition; try { renderTabData(0, data.definition); } catch(e){} }
+      if (data.examples) { tabCache[1] = data.examples; try { renderTabData(1, data.examples); } catch(e){} }
+      if (data.pronunciation) { tabCache[2] = data.pronunciation; try { renderTabData(2, data.pronunciation); } catch(e){} }
+      if (data.expressions) { tabCache[3] = data.expressions; try { renderTabData(3, data.expressions); } catch(e){} }
       if (data.conjugation) {
         tabCache[4] = data.conjugation;
-        renderTabData(4, data.conjugation);
+        try { renderTabData(4, data.conjugation); } catch(e){}
         var conjBtn = document.getElementById('tab-btn-conj');
         conjBtn.style.display = (data.conjugation && data.conjugation.is_verb) ? '' : 'none';
       }
-      if (data.synonyms) { tabCache[5] = data.synonyms; renderTabData(5, data.synonyms); }
-      if (data.chunks) { tabCache[6] = data.chunks; renderTabData(6, data.chunks); }
-    } catch(e) {}
+      if (data.synonyms) { tabCache[5] = data.synonyms; try { renderTabData(5, data.synonyms); } catch(e){} }
+      if (data.chunks) { tabCache[6] = data.chunks; try { renderTabData(6, data.chunks); } catch(e){} }
+      // Set audio from live response
+      if (data.audio_file) { currentData.audio_file = data.audio_file; }
+    } catch(e) { console.error('Live lookup error:', e); }
     return;
   }
 
@@ -4199,7 +4201,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         self._json({"results": results, "query": q})
 
     def _dict_live_lookup(self, word):
-        """Live GPT lookup for words not in word_bank."""
+        """Live GPT lookup for words not in word_bank. Parallelized for speed."""
         if not word or not word.strip():
             self._json({"error": "Palavra vazia"}, status=400)
             return
@@ -4208,18 +4210,33 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             from dictionary_engine import (
                 get_definition, get_examples, get_pronunciation_data,
                 get_expressions, get_conjugation, get_synonyms, get_word_chunks,
+                generate_tts,
             )
+            from concurrent.futures import ThreadPoolExecutor
+
+            # Run all 7 GPT calls + TTS in parallel
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                f_def = executor.submit(get_definition, word)
+                f_ex = executor.submit(get_examples, word)
+                f_pron = executor.submit(get_pronunciation_data, word)
+                f_expr = executor.submit(get_expressions, word)
+                f_conj = executor.submit(get_conjugation, word)
+                f_syn = executor.submit(get_synonyms, word)
+                f_chunks = executor.submit(get_word_chunks, word)
+                f_audio = executor.submit(generate_tts, word)
+
             result = {
                 "word": word,
                 "word_id": -1,
                 "is_live": True,
-                "definition": get_definition(word),
-                "examples": get_examples(word),
-                "pronunciation": get_pronunciation_data(word),
-                "expressions": get_expressions(word),
-                "conjugation": get_conjugation(word),
-                "synonyms": get_synonyms(word),
-                "chunks": get_word_chunks(word),
+                "definition": f_def.result(),
+                "examples": f_ex.result(),
+                "pronunciation": f_pron.result(),
+                "expressions": f_expr.result(),
+                "conjugation": f_conj.result(),
+                "synonyms": f_syn.result(),
+                "chunks": f_chunks.result(),
+                "audio_file": f_audio.result(),
             }
             self._json(result)
         except Exception as e:

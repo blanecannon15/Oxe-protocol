@@ -126,13 +126,13 @@ def generate_tts(text):
 
     audio_iter = client.text_to_speech.convert(
         text=text,
-        voice_id="pNInz6obpgDQGcFmaJgB",
+        voice_id="CwhRBWXzGAHq8TQ4Fs17",  # Roger — casual Baiano vibe
         model_id="eleven_multilingual_v2",
         output_format="mp3_44100_128",
         voice_settings={
-            "stability": 0.55,
-            "similarity_boost": 0.90,
-            "style": 0.45,
+            "stability": 0.45,
+            "similarity_boost": 0.85,
+            "style": 0.55,
             "use_speaker_boost": True,
         },
     )
