@@ -73,7 +73,7 @@ def _chat(system, user, json_mode=True):
 
 # ── TTS Helper ──────────────────────────────────────────────────────
 
-BAIANO_VOICE_ID = "CwhRBWXzGAHq8TQ4Fs17"  # Roger — laid-back, casual (best for Baiano vibe)
+BAIANO_VOICE_ID = "ELBrtmIkk40wCZ5YnlwM"  # Thiago — native Brazilian male, warm and inviting
 
 def generate_tts(text):
     """Generate ElevenLabs TTS audio with Bahian voice. Returns the filename or None."""

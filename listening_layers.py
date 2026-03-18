@@ -87,7 +87,7 @@ LAYER_ORDER = ["clean", "native_clear", "native_fast", "noisy"]
 _layer_progress = {}  # type: Dict[int, str]
 
 # Voice ID used for TTS generation (same as drill_server.py)
-VOICE_ID = "CwhRBWXzGAHq8TQ4Fs17"  # Roger — casual Baiano vibe
+VOICE_ID = "ELBrtmIkk40wCZ5YnlwM"  # Thiago — native Brazilian male, warm and inviting
 MODEL_ID = "eleven_multilingual_v2"
 
 

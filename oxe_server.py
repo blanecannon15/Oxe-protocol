@@ -2208,6 +2208,14 @@ async function selectWord(wordId, word, tier, rank) {
       if (data.chunks) { tabCache[6] = data.chunks; try { renderTabData(6, data.chunks); } catch(e){} }
       // Set audio from live response
       if (data.audio_file) { currentData.audio_file = data.audio_file; }
+      // Update word_id if backend saved to library
+      if (data.word_id && data.word_id !== -1) {
+        currentWordId = data.word_id;
+        currentData.word_id = data.word_id;
+      }
+      if (data.saved_to_library) {
+        showWordHeader(word, currentWordId, 1, 0);
+      }
     } catch(e) { console.error('Live lookup error:', e); }
     return;
   }
@@ -4201,7 +4209,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         self._json({"results": results, "query": q})
 
     def _dict_live_lookup(self, word):
-        """Live GPT lookup for words not in word_bank. Parallelized for speed."""
+        """Live GPT lookup for words not in word_bank. Auto-saves to library."""
         if not word or not word.strip():
             self._json({"error": "Palavra vazia"}, status=400)
             return
@@ -4213,6 +4221,34 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 generate_tts,
             )
             from concurrent.futures import ThreadPoolExecutor
+            import json as _json_mod
+
+            # Check if word already exists in word_bank
+            conn = get_conn()
+            existing = conn.execute(
+                "SELECT id FROM word_bank WHERE LOWER(word) = LOWER(?)", (word,)
+            ).fetchone()
+            conn.close()
+
+            if existing:
+                word_id = existing["id"]
+            else:
+                # Auto-save to word_bank with high frequency_rank (end of list)
+                conn = get_conn()
+                max_rank = conn.execute(
+                    "SELECT COALESCE(MAX(frequency_rank), 20000) FROM word_bank"
+                ).fetchone()[0]
+                conn.execute(
+                    """INSERT INTO word_bank (word, frequency_rank, frequency_count,
+                       difficulty_tier, srs_state)
+                       VALUES (?, ?, 0, 1, 'new')""",
+                    (word, max_rank + 1),
+                )
+                conn.commit()
+                word_id = conn.execute(
+                    "SELECT id FROM word_bank WHERE LOWER(word) = LOWER(?)", (word,)
+                ).fetchone()["id"]
+                conn.close()
 
             # Run all 7 GPT calls + TTS in parallel
             with ThreadPoolExecutor(max_workers=8) as executor:
@@ -4225,10 +4261,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 f_chunks = executor.submit(get_word_chunks, word)
                 f_audio = executor.submit(generate_tts, word)
 
-            result = {
-                "word": word,
-                "word_id": -1,
-                "is_live": True,
+            tab_results = {
                 "definition": f_def.result(),
                 "examples": f_ex.result(),
                 "pronunciation": f_pron.result(),
@@ -4236,8 +4269,32 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 "conjugation": f_conj.result(),
                 "synonyms": f_syn.result(),
                 "chunks": f_chunks.result(),
-                "audio_file": f_audio.result(),
             }
+
+            # Cache all tabs in dictionary_cache
+            tab_names = ["definition", "examples", "pronunciation",
+                         "expressions", "conjugation", "synonyms", "chunks"]
+            conn = get_conn()
+            for tab_name in tab_names:
+                data = tab_results.get(tab_name)
+                if data:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO dictionary_cache
+                           (word_id, tab_name, data_json)
+                           VALUES (?, ?, ?)""",
+                        (word_id, tab_name, _json_mod.dumps(data, ensure_ascii=False)),
+                    )
+            conn.commit()
+            conn.close()
+
+            result = {
+                "word": word,
+                "word_id": word_id,
+                "is_live": True,
+                "saved_to_library": True,
+            }
+            result.update(tab_results)
+            result["audio_file"] = f_audio.result()
             self._json(result)
         except Exception as e:
             self._json({"error": str(e)}, status=500)
