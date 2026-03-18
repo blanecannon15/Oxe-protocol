@@ -73,8 +73,10 @@ def _chat(system, user, json_mode=True):
 
 # ── TTS Helper ──────────────────────────────────────────────────────
 
+BAIANO_VOICE_ID = "CwhRBWXzGAHq8TQ4Fs17"  # Roger — laid-back, casual (best for Baiano vibe)
+
 def generate_tts(text):
-    """Generate ElevenLabs TTS audio. Returns the filename or None."""
+    """Generate ElevenLabs TTS audio with Bahian voice. Returns the filename or None."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
         return None
@@ -83,13 +85,13 @@ def generate_tts(text):
         client = ElevenLabs(api_key=api_key)
         audio_iter = client.text_to_speech.convert(
             text=text,
-            voice_id="pNInz6obpgDQGcFmaJgB",
+            voice_id=BAIANO_VOICE_ID,
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
             voice_settings={
-                "stability": 0.55,
-                "similarity_boost": 0.90,
-                "style": 0.45,
+                "stability": 0.45,
+                "similarity_boost": 0.85,
+                "style": 0.55,
                 "use_speaker_boost": True,
             },
         )
