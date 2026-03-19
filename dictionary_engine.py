@@ -53,7 +53,7 @@ def _chat(system, user, json_mode=True):
     try:
         client = _get_openai_client()
         kwargs = dict(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -605,6 +605,142 @@ def get_word_chunks(word, db_path=DB_PATH):
         "chunks_from_db": chunks_from_db,
         "chunks_generated": chunks_generated,
     }
+
+
+# ── Bulk generation (all 7 tabs in one call) ─────────────────────
+
+def get_all_tabs(word, db_path=DB_PATH):
+    """Generate all 7 dictionary tabs in a SINGLE GPT call.
+
+    Returns a dict with keys: definition, examples, pronunciation,
+    expressions, conjugation, synonyms, chunks.
+    Much faster than 7 separate calls for bulk precaching.
+    """
+    user_prompt = (
+        f'Gera TODOS os dados de dicionário para a palavra "{word}".\n\n'
+        "NUNCA usa inglês. Usa estilo baiano de Salvador.\n\n"
+        "Responde em JSON com EXATAMENTE estas 7 chaves:\n\n"
+        '1. "definition": {{\n'
+        '   "definicao": explicação curta usando palavras comuns,\n'
+        '   "uso_regional": "baiano" ou "geral",\n'
+        '   "exemplo_chunk": frase curta natural usando a palavra\n'
+        '}}\n\n'
+        '2. "examples": lista de 5 objetos, cada um com:\n'
+        '   "texto": frase completa, "chunk_destaque": chunk que contém a palavra\n\n'
+        '3. "pronunciation": {{\n'
+        '   "silabas": separação silábica (ex: "ba-ru-lho"),\n'
+        '   "guia_fonetico": guia usando palavras conhecidas\n'
+        '}}\n\n'
+        '4. "expressions": lista de expressões/gírias baianas. Cada:\n'
+        '   "expressao", "significado", "exemplo"\n\n'
+        '5. "conjugation": se for verbo: {{"is_verb": true, "infinitivo": "...", '
+        '"irregular": true/false, "tenses": {{presente, preterito_perfeito, '
+        'preterito_imperfeito, futuro_informal, subjuntivo_presente, imperativo}} '
+        'cada tempo com: eu, voce, ele, a_gente, voces, eles}}.\n'
+        '   Se NÃO for verbo: {{"is_verb": false}}\n\n'
+        '6. "synonyms": {{\n'
+        '   "sinonimos": lista de 5-8 com "palavra", "nota", "baiano" (bool),\n'
+        '   "antonimos": lista de 2-3 com "palavra", "nota",\n'
+        '   "palavras_relacionadas": lista de 3-5 com "palavra", "relacao",\n'
+        '   "registro": formal/informal/gíria/técnico\n'
+        '}}\n\n'
+        '7. "chunks": {{\n'
+        '   "chunks_generated": lista de 8 chunks de ALTA FREQUÊNCIA (2-4 palavras, '
+        'uso diário), cada com "chunk", "tipo", "frequencia": "alta"\n'
+        '}}\n\n'
+        "Responde SOMENTE em JSON."
+    )
+
+    result = _chat(SYSTEM_PROMPT, user_prompt, json_mode=True)
+    if result is None:
+        return None
+
+    # Normalize the result to match individual function output formats
+    tabs = {}
+
+    # Definition
+    d = result.get("definition", {})
+    tabs["definition"] = {
+        "definicao": d.get("definicao", ""),
+        "uso_regional": d.get("uso_regional", ""),
+        "exemplo_chunk": d.get("exemplo_chunk", ""),
+    }
+
+    # Examples
+    exs = result.get("examples", [])
+    if isinstance(exs, dict):
+        exs = exs.get("exemplos", [])
+    examples = []
+    for ex in exs[:5]:
+        if isinstance(ex, dict):
+            examples.append({
+                "texto": ex.get("texto", ""),
+                "chunk_destaque": ex.get("chunk_destaque", ""),
+            })
+    while len(examples) < 5:
+        examples.append({"texto": "", "chunk_destaque": ""})
+    tabs["examples"] = examples
+
+    # Pronunciation
+    p = result.get("pronunciation", {})
+    tabs["pronunciation"] = {
+        "silabas": p.get("silabas", ""),
+        "guia_fonetico": p.get("guia_fonetico", ""),
+        "audio_path": None,
+    }
+
+    # Expressions
+    exprs = result.get("expressions", [])
+    if isinstance(exprs, dict):
+        exprs = exprs.get("expressoes", [])
+    tabs["expressions"] = [
+        {
+            "expressao": ex.get("expressao", ""),
+            "significado": ex.get("significado", ""),
+            "exemplo": ex.get("exemplo", ""),
+        }
+        for ex in exprs if isinstance(ex, dict)
+    ]
+
+    # Conjugation
+    conj = result.get("conjugation", {})
+    if conj.get("is_verb", False):
+        tabs["conjugation"] = {
+            "is_verb": True,
+            "infinitivo": conj.get("infinitivo", word),
+            "irregular": conj.get("irregular", False),
+            "tenses": conj.get("tenses", {}),
+        }
+    else:
+        tabs["conjugation"] = {"is_verb": False}
+
+    # Synonyms
+    s = result.get("synonyms", {})
+    tabs["synonyms"] = {
+        "sinonimos": s.get("sinonimos", []),
+        "antonimos": s.get("antonimos", []),
+        "palavras_relacionadas": s.get("palavras_relacionadas", []),
+        "registro": s.get("registro", ""),
+    }
+
+    # Chunks
+    ch = result.get("chunks", {})
+    chunks_gen = ch.get("chunks_generated", ch.get("chunks", []))
+    if isinstance(chunks_gen, dict):
+        chunks_gen = chunks_gen.get("chunks", [])
+    tabs["chunks"] = {
+        "chunks_from_db": [],
+        "chunks_generated": [
+            {
+                "chunk": c.get("chunk", ""),
+                "tipo": c.get("tipo", ""),
+                "frequencia": c.get("frequencia", "alta"),
+            }
+            for c in chunks_gen if isinstance(c, dict)
+        ],
+    }
+
+    return tabs
 
 
 # ── Cached wrappers ───────────────────────────────────────────────

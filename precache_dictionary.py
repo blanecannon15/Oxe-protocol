@@ -25,6 +25,7 @@ from dictionary_engine import (
     get_conjugation,
     get_synonyms,
     get_word_chunks,
+    get_all_tabs,
 )
 from srs_engine import DB_PATH, get_connection
 
@@ -131,7 +132,10 @@ def generate_tab(word, tab_name, tab_delay):
 # ── Cache a single word ──────────────────────────────────────────────────────
 
 def cache_word(word_id, word, tab_delay, db_path=DB_PATH):
-    """Generate and cache all missing tabs for a word using parallel workers.
+    """Generate and cache all missing tabs for a word.
+
+    Uses get_all_tabs() for a single GPT call when all 7 tabs are needed,
+    falls back to individual calls for partial caching.
 
     Returns (tabs_cached, tabs_failed, errors).
     """
@@ -145,27 +149,24 @@ def cache_word(word_id, word, tab_delay, db_path=DB_PATH):
     tabs_failed = 0
     errors = []
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=7) as executor:
         futures = {
             executor.submit(generate_tab, word, tab, tab_delay): tab
             for tab in tabs_to_generate
         }
-
         for future in as_completed(futures):
             tab_name = futures[future]
             try:
                 result = future.result()
                 if len(result) == 3:
-                    # Error case: (tab_name, None, error_msg)
                     tabs_failed += 1
                     errors.append("  [ERROR] {}: {}".format(result[0], result[2]))
                 elif result[1] is not None:
                     insert_cache(word_id, result[0], result[1], db_path)
                     tabs_cached += 1
                 else:
-                    # Function returned None (GPT-4o failure handled internally)
                     tabs_failed += 1
-                    errors.append("  [ERROR] {}: GPT-4o returned None".format(result[0]))
+                    errors.append("  [ERROR] {}: returned None".format(result[0]))
             except Exception as e:
                 tabs_failed += 1
                 errors.append("  [ERROR] {}: {}".format(tab_name, str(e)))
@@ -284,34 +285,53 @@ def main():
     total_failed = 0
     start_time = time.time()
 
-    for i, word_info in enumerate(words, 1):
-        word_id = word_info["id"]
-        word = word_info["word"]
-        rank = word_info["frequency_rank"]
+    # Process words in parallel batches for much higher throughput
+    batch_size = 5  # 5 words × 7 tabs = 35 concurrent GPT calls
+    for batch_start in range(0, len(words), batch_size):
+        batch = words[batch_start:batch_start + batch_size]
+        batch_results = {}
 
-        tabs_cached, tabs_failed, errors = cache_word(
-            word_id, word, args.tab_delay
-        )
+        with ThreadPoolExecutor(max_workers=batch_size) as word_executor:
+            word_futures = {
+                word_executor.submit(
+                    cache_word, w["id"], w["word"], args.tab_delay
+                ): w
+                for w in batch
+            }
+            for future in as_completed(word_futures):
+                w = word_futures[future]
+                try:
+                    batch_results[w["id"]] = future.result()
+                except Exception as e:
+                    batch_results[w["id"]] = (0, 7, ["  [ERROR] {}".format(str(e))])
 
-        total_cached += tabs_cached
-        total_failed += tabs_failed
+        for j, w in enumerate(batch):
+            i = batch_start + j + 1
+            tabs_cached, tabs_failed, errors = batch_results.get(w["id"], (0, 7, []))
+            total_cached += tabs_cached
+            total_failed += tabs_failed
 
-        print("Word {}/{}: '{}' (rank {}) — {}/7 tabs cached{}".format(
-            i, len(words), word, rank, tabs_cached,
-            ", {} failed".format(tabs_failed) if tabs_failed else ""
-        ))
+            if i % 50 == 0 or i == 1:
+                elapsed_so_far = time.time() - start_time
+                rate = i / elapsed_so_far if elapsed_so_far > 0 else 0
+                remaining = len(words) - i
+                eta_min = remaining / rate / 60 if rate > 0 else 0
+                print("Word {}/{}: '{}' (rank {}) — {}/7 tabs | {:.1f} words/min | ETA {:.0f}min{}".format(
+                    i, len(words), w["word"], w["frequency_rank"], tabs_cached,
+                    rate * 60, eta_min,
+                    " | {} failed".format(tabs_failed) if tabs_failed else ""
+                ), flush=True)
 
-        for err in errors:
-            print(err)
+            for err in errors:
+                print(err, flush=True)
 
-        # Delay between words (skip after last word)
-        if i < len(words):
-            time.sleep(args.delay)
+        # Small delay between batches
+        time.sleep(args.delay)
 
     elapsed = time.time() - start_time
     print("=" * 70)
-    print("Done. {} tabs cached, {} failed. Elapsed: {:.1f}s".format(
-        total_cached, total_failed, elapsed
+    print("Done. {} tabs cached, {} failed. Elapsed: {:.1f}s ({:.1f} words/min)".format(
+        total_cached, total_failed, elapsed, len(words) / elapsed * 60 if elapsed > 0 else 0
     ))
 
 
