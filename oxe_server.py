@@ -5427,15 +5427,23 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     def _drill_next_chunk(self):
         chunk = get_next_chunk()
         if chunk is None:
-            # Cold start: auto-seed from word_bank Tier 1
-            conn = get_conn()
-            words = conn.execute(
-                "SELECT id, word FROM word_bank WHERE difficulty_tier = 1 ORDER BY frequency_rank LIMIT 10"
-            ).fetchall()
-            conn.close()
-            for w in words:
-                carrier = build_carrier(w["word"])
-                add_chunk(w["id"], w["word"], carrier, "corpus")
+            # Cold start: seed from chunk_families if available, else extract from stories
+            try:
+                from chunk_engine import get_next_chunks_for_srs, add_chunks_to_queue, extract_chunks_from_story, rank_chunk_families
+                top_chunks = get_next_chunks_for_srs(limit=20)
+                if not top_chunks:
+                    # No chunk families yet — extract from first few stories
+                    conn = get_conn()
+                    stories = conn.execute("SELECT id FROM story_library ORDER BY id LIMIT 5").fetchall()
+                    conn.close()
+                    for s in stories:
+                        extract_chunks_from_story(s["id"])
+                    rank_chunk_families()
+                    top_chunks = get_next_chunks_for_srs(limit=20)
+                if top_chunks:
+                    add_chunks_to_queue(top_chunks)
+            except Exception as e:
+                print(f"[DRILL] Cold start chunk seeding error: {e}")
             chunk = get_next_chunk()
 
         if chunk is None:
