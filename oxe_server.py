@@ -4063,6 +4063,23 @@ body{
   min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;
   -webkit-font-smoothing:antialiased;
 }
+/* Latency warning pulse */
+@keyframes latencyPulse{0%,100%{box-shadow:0 0 0 0 rgba(249,115,22,0.4)}50%{box-shadow:0 0 0 12px rgba(249,115,22,0)}}
+.timer.slow{color:#f97316;animation:latencyPulse 1.5s infinite}
+/* Text reveal flash */
+.text-reveal{
+  font-size:22px;font-weight:700;text-align:center;padding:12px 20px;
+  background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);
+  border-radius:16px;color:#ef4444;max-width:320px;
+  animation:fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+/* Explanation audio banner */
+.explain-banner{
+  font-size:13px;color:rgba(255,255,255,0.5);text-align:center;
+  padding:8px 16px;background:rgba(249,115,22,0.08);border-radius:12px;
+  max-width:320px;
+}
 .safe-top{height:env(safe-area-inset-top,20px)}
 .header{
   display:flex;align-items:center;justify-content:space-between;
@@ -4253,9 +4270,12 @@ body{
 (function(){
   let currentChunk = null;
   let audio = null;
+  let explainAudio = null;
   let timerStart = 0;
   let timerInterval = null;
   let session = { reviewed: 0, good: 0 };
+  let againStreak = {};  // chunk_id -> consecutive Again count (3-failure text reveal)
+  const LATENCY_THRESHOLD = 1000; // 1s — spec: auto-mark Hard if exceeded
 
   function updateStats() {
     document.getElementById('sessionCount').textContent = session.reviewed;
@@ -4270,13 +4290,19 @@ body{
       el.textContent = '0.0s';
       clearInterval(timerInterval);
       timerInterval = setInterval(() => {
-        el.textContent = ((Date.now() - timerStart) / 1000).toFixed(1) + 's';
+        const elapsed = (Date.now() - timerStart) / 1000;
+        el.textContent = elapsed.toFixed(1) + 's';
+        // Visual warning when latency exceeds 1s
+        if (elapsed > 1.0) el.classList.add('slow');
+        else el.classList.remove('slow');
       }, 100);
     }
   }
 
   function stopTimer() {
     clearInterval(timerInterval);
+    const el = document.getElementById('timerEl');
+    if (el) el.classList.remove('slow');
     return Date.now() - timerStart;
   }
 
@@ -4290,18 +4316,30 @@ body{
   function renderDrill(data) {
     currentChunk = data;
     const area = document.getElementById('drillArea');
+    const cid = data.chunk_id;
+
+    // Check if this chunk has hit 3 consecutive Again → show text (spec: 3-failure reveal)
+    const showText = (againStreak[cid] || 0) >= 3;
 
     const imgSrc = data.image_file
       ? '/images/' + data.image_file.split('/').pop()
       : null;
 
-    area.innerHTML = `
+    // Build HTML — NO text by default (Zero-Reading Mode from spec)
+    let html = `
       <div class="image-card">
         ${imgSrc
           ? '<img src="' + imgSrc + '" alt="">'
           : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>'
         }
-      </div>
+      </div>`;
+
+    // 3-failure text reveal — spec: show chunk text ONLY after 3x Again
+    if (showText) {
+      html += '<div class="text-reveal">' + (data.target_chunk || data.word || '') + '</div>';
+    }
+
+    html += `
       <div class="timer" id="timerEl">0.0s</div>
       <div class="replay-btn" onclick="window._srsReplay()">
         <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
@@ -4323,6 +4361,7 @@ body{
       </div>
     `;
 
+    area.innerHTML = html;
     document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
     startTimer();
 
@@ -4373,6 +4412,22 @@ body{
   window._srsRate = function(ratingVal) {
     if (!currentChunk) return;
     const latency = stopTimer();
+    const cid = currentChunk.chunk_id;
+
+    // Spec: latency > 1s → auto-mark Hard (override user's rating)
+    let finalRating = ratingVal;
+    let latencyOverride = false;
+    if (latency > LATENCY_THRESHOLD && ratingVal > 2) {
+      finalRating = 2; // Hard
+      latencyOverride = true;
+    }
+
+    // Track consecutive Again for 3-failure text reveal
+    if (finalRating === 1) {
+      againStreak[cid] = (againStreak[cid] || 0) + 1;
+    } else {
+      againStreak[cid] = 0; // reset on non-Again
+    }
 
     // Disable buttons immediately
     const row = document.getElementById('ratingRow');
@@ -4381,25 +4436,42 @@ body{
     const ratingNames = {1: 'De Novo', 2: 'Difícil', 3: 'Bom', 4: 'Fácil'};
 
     session.reviewed++;
-    if (ratingVal >= 3) session.good++;
+    if (finalRating >= 3) session.good++;
     updateStats();
 
     fetch('/api/drill/complete', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        chunk_id: currentChunk.chunk_id,
+        chunk_id: cid,
         latency_ms: Math.round(latency),
         retries: 0,
-        rating: ratingVal
+        rating: finalRating
       })
     })
     .then(r => r.json())
     .then(res => {
-      revealAnswer(ratingVal, ratingNames[ratingVal]);
+      let displayName = ratingNames[finalRating];
+      if (latencyOverride) displayName += ' (lento)';
+      revealAnswer(finalRating, displayName);
+
+      // Spec: on Hard/Again, play recursive explanation (audio, never text)
+      if (finalRating <= 2 && res && currentChunk.word) {
+        // Request an audio explanation — play after reveal
+        fetch('/api/drill/explain?word=' + encodeURIComponent(currentChunk.word || currentChunk.target_chunk))
+          .then(r2 => r2.json())
+          .then(exp => {
+            if (exp && exp.audio_file) {
+              if (explainAudio) { explainAudio.pause(); }
+              explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
+              explainAudio.play().catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
     })
     .catch(() => {
-      revealAnswer(ratingVal, ratingNames[ratingVal]);
+      revealAnswer(finalRating, ratingNames[finalRating]);
     });
   };
 
@@ -4484,6 +4556,13 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._html(SRS_DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
         elif path == "/api/drill/next":
             self._drill_next_chunk()
+        elif path.startswith("/api/drill/explain"):
+            word = query.get("word", [""])[0]
+            if word:
+                explanation, audio_fname = generate_explanation(word)
+                self._json({"explanation": explanation, "audio_file": audio_fname})
+            else:
+                self._json({"error": "word required"}, status=400)
 
         # ── Shadowing (5-pass cycle from drill_server.py) ──
         elif path == "/shadowing":
