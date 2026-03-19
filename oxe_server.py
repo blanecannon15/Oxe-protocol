@@ -408,6 +408,14 @@ HOME_HTML = r"""<!DOCTYPE html>
       </div>
       <div class="nav-arrow">&#x203a;</div>
     </a>
+    <a href="/shadowing" class="nav-link">
+      <div class="nav-ico" style="background:rgba(248,113,113,0.10)">&#x1f5e3;&#xfe0f;</div>
+      <div class="nav-text">
+        <div class="nav-title">Sombreamento</div>
+        <div class="nav-sub">Repita e pratique pron&#xfa;ncia</div>
+      </div>
+      <div class="nav-arrow">&#x203a;</div>
+    </a>
     <a href="/assembly" class="nav-link">
       <div class="nav-ico" style="background:rgba(52,211,153,0.10)">&#x1f9e9;</div>
       <div class="nav-text">
@@ -2849,7 +2857,8 @@ function startBlock() {
   if (!currentBlock) return;
   var t = currentBlock.type;
   if (t === 'srs_drill') window.location.href = '/drill';
-  else if (t === 'listening' || t === 'shadowing') window.location.href = '/library';
+  else if (t === 'shadowing') window.location.href = '/shadowing';
+  else if (t === 'listening') window.location.href = '/library';
   else if (t === 'conversa') window.location.href = '/conversa';
   else if (t === 'break') completeBlock();
   else window.location.href = '/drill';
@@ -3536,6 +3545,510 @@ loadStats();
 </body></html>"""
 
 
+# ── Shadowing Page ─────────────────────────────────────────────
+
+SHADOWING_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Sombreamento — Oxe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#0a0a0b;color:#e2e2e2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  min-height:100vh;overflow-x:hidden;padding-bottom:80px;
+}
+.back-btn{
+  position:fixed;top:12px;left:12px;z-index:50;
+  background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
+  border-radius:10px;padding:8px 14px;color:#e2e2e2;font-size:0.85em;
+  text-decoration:none;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+.header{
+  text-align:center;padding:56px 20px 12px;
+}
+.header h1{font-size:1.3em;font-weight:700;color:#f87171;margin-bottom:4px}
+.header .sub{font-size:0.78em;color:rgba(255,255,255,0.4)}
+
+/* Session stats bar */
+.stats-bar{
+  display:flex;justify-content:center;gap:24px;padding:8px 20px 16px;
+}
+.stat{text-align:center}
+.stat-val{font-size:1.4em;font-weight:700;color:#f87171}
+.stat-lbl{font-size:0.65em;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px}
+
+/* Layer pills */
+.layer-bar{
+  display:flex;gap:6px;padding:0 20px 16px;overflow-x:auto;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+}
+.layer-bar::-webkit-scrollbar{display:none}
+.layer-pill{
+  flex-shrink:0;padding:7px 14px;border-radius:20px;font-size:0.75em;font-weight:600;
+  border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);
+  color:rgba(255,255,255,0.5);cursor:pointer;transition:all 0.25s;
+  -webkit-tap-highlight-color:transparent;
+}
+.layer-pill.active{
+  background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.3);color:#f87171;
+}
+
+/* Waveform area */
+.wave-container{
+  margin:0 20px 20px;padding:32px 16px;border-radius:20px;
+  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+}
+.wave-bars{
+  display:flex;align-items:center;gap:3px;height:80px;
+}
+.wave-bar{
+  width:4px;border-radius:2px;background:#f87171;opacity:0.3;
+  transition:height 0.1s ease;
+}
+.wave-bar.active{opacity:1}
+.wave-status{
+  font-size:0.72em;color:rgba(255,255,255,0.3);margin-top:12px;
+  text-transform:uppercase;letter-spacing:1px;
+}
+.wave-progress{
+  position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#f87171,#fb923c);
+  border-radius:0 2px 0 0;transition:width 0.15s linear;width:0%;
+}
+
+/* Chunk text */
+.chunk-display{
+  margin:0 20px 24px;padding:20px;border-radius:16px;
+  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+  text-align:center;
+}
+.chunk-carrier{font-size:1.1em;font-weight:500;line-height:1.5;color:#e2e2e2}
+.chunk-target{
+  display:inline;background:rgba(248,113,113,0.15);border-radius:6px;
+  padding:2px 6px;color:#f87171;font-weight:700;
+}
+.chunk-word{
+  margin-top:8px;font-size:0.75em;color:rgba(255,255,255,0.3);
+}
+
+/* Score display */
+.score-panel{
+  margin:0 20px 20px;padding:16px;border-radius:16px;
+  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+  text-align:center;display:none;
+}
+.score-big{font-size:2.8em;font-weight:800;line-height:1}
+.score-label{font-size:0.72em;color:rgba(255,255,255,0.35);margin-top:4px;text-transform:uppercase;letter-spacing:0.5px}
+.score-details{margin-top:10px;font-size:0.75em;color:rgba(255,255,255,0.4)}
+.score-green{color:#34d399}
+.score-yellow{color:#fbbf24}
+.score-red{color:#f87171}
+
+/* Buttons */
+.btn-row{
+  display:flex;gap:12px;padding:0 20px;margin-bottom:16px;
+}
+.btn{
+  flex:1;padding:14px 0;border-radius:14px;font-size:0.9em;font-weight:700;
+  border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:all 0.2s;-webkit-tap-highlight-color:transparent;
+}
+.btn-listen{
+  background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.25);color:#f87171;
+}
+.btn-listen:active{background:rgba(248,113,113,0.25)}
+.btn-record{
+  background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);color:#3b82f6;
+}
+.btn-record:active{background:rgba(59,130,246,0.25)}
+.btn-record.recording{
+  background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.4);color:#ef4444;
+  animation:pulse-rec 1.2s infinite;
+}
+@keyframes pulse-rec{
+  0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.3)}
+  50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}
+}
+.btn-next{
+  background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.25);color:#34d399;
+}
+.btn-next:active{background:rgba(52,211,153,0.25)}
+.btn:disabled{opacity:0.3;cursor:default}
+
+/* Empty / loading states */
+.empty-state{
+  text-align:center;padding:60px 20px;color:rgba(255,255,255,0.3);
+}
+.empty-state .emoji{font-size:3em;margin-bottom:12px}
+.loading{text-align:center;padding:40px;color:rgba(255,255,255,0.3)}
+
+/* Tab Bar injected */
+</style>
+</head><body>
+
+<a href="/" class="back-btn">&#x2190; Inicio</a>
+
+<div class="header">
+  <h1>Sombreamento</h1>
+  <div class="sub">Repita, pratique pronuncia e prosódia</div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-val" id="stat-done">0</div>
+    <div class="stat-lbl">Feitos</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="stat-avg">--</div>
+    <div class="stat-lbl">Media</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="stat-best">--</div>
+    <div class="stat-lbl">Melhor</div>
+  </div>
+</div>
+
+<div class="layer-bar" id="layer-bar"></div>
+
+<div class="wave-container" id="wave-container">
+  <div class="wave-bars" id="wave-bars"></div>
+  <div class="wave-status" id="wave-status">Pronto</div>
+  <div class="wave-progress" id="wave-progress"></div>
+</div>
+
+<div class="chunk-display" id="chunk-display">
+  <div class="chunk-carrier" id="chunk-carrier">Carregando...</div>
+  <div class="chunk-word" id="chunk-word"></div>
+</div>
+
+<div class="score-panel" id="score-panel">
+  <div class="score-big" id="score-big">--</div>
+  <div class="score-label">Pronuncia</div>
+  <div class="score-details" id="score-details"></div>
+</div>
+
+<div class="btn-row">
+  <button class="btn btn-listen" id="btn-listen" onclick="playAudio()">
+    &#x1f50a; Ouvir
+  </button>
+  <button class="btn btn-record" id="btn-record" onclick="toggleRecord()">
+    &#x1f3a4; Gravar
+  </button>
+</div>
+<div class="btn-row">
+  <button class="btn btn-next" id="btn-next" onclick="nextChunk()" disabled>
+    Proximo &#x203a;
+  </button>
+</div>
+
+<div class="empty-state" id="empty-state" style="display:none">
+  <div class="emoji">&#x2728;</div>
+  <div>Nenhum chunk pendente.<br>Volte mais tarde!</div>
+</div>
+
+{tab_bar}
+
+<script>
+var currentChunk = null;
+var audioEl = new Audio();
+var mediaRecorder = null;
+var recordedChunks = [];
+var isRecording = false;
+var sessionScores = [];
+var activeLayer = 'clean';
+var waveAnimId = null;
+
+// ── Layer pills ──
+var LAYERS = [
+  {key:'clean', label:'Limpo'},
+  {key:'native_clear', label:'Nativo'},
+  {key:'native_fast', label:'Rapido'},
+  {key:'noisy', label:'Ruidoso'}
+];
+
+function renderLayers() {
+  var bar = document.getElementById('layer-bar');
+  var html = '';
+  for (var i = 0; i < LAYERS.length; i++) {
+    var l = LAYERS[i];
+    var cls = l.key === activeLayer ? 'layer-pill active' : 'layer-pill';
+    html += '<div class="' + cls + '" onclick="setLayer(\'' + l.key + '\')">' + l.label + '</div>';
+  }
+  bar.innerHTML = html;
+}
+
+function setLayer(key) {
+  activeLayer = key;
+  renderLayers();
+  // Re-generate audio with new layer if we have a chunk
+  if (currentChunk) {
+    generateLayerAudio();
+  }
+}
+
+// ── Waveform ──
+function initWaveBars() {
+  var container = document.getElementById('wave-bars');
+  var html = '';
+  for (var i = 0; i < 40; i++) {
+    html += '<div class="wave-bar" style="height:8px" id="wb' + i + '"></div>';
+  }
+  container.innerHTML = html;
+}
+
+function animateWave(playing) {
+  if (waveAnimId) { cancelAnimationFrame(waveAnimId); waveAnimId = null; }
+  if (!playing) {
+    for (var i = 0; i < 40; i++) {
+      var b = document.getElementById('wb' + i);
+      if (b) { b.style.height = '8px'; b.classList.remove('active'); }
+    }
+    return;
+  }
+  function step() {
+    for (var i = 0; i < 40; i++) {
+      var b = document.getElementById('wb' + i);
+      if (b) {
+        var h = 8 + Math.random() * 60;
+        b.style.height = h + 'px';
+        b.classList.add('active');
+      }
+    }
+    waveAnimId = requestAnimationFrame(step);
+  }
+  step();
+}
+
+function updateProgress() {
+  if (audioEl.duration && audioEl.currentTime) {
+    var pct = (audioEl.currentTime / audioEl.duration) * 100;
+    document.getElementById('wave-progress').style.width = pct + '%';
+  }
+  if (!audioEl.paused) requestAnimationFrame(updateProgress);
+}
+
+// ── Audio ──
+audioEl.addEventListener('play', function() {
+  animateWave(true);
+  document.getElementById('wave-status').textContent = 'Reproduzindo...';
+  updateProgress();
+});
+audioEl.addEventListener('ended', function() {
+  animateWave(false);
+  document.getElementById('wave-status').textContent = 'Pronto';
+  document.getElementById('wave-progress').style.width = '0%';
+});
+audioEl.addEventListener('pause', function() {
+  animateWave(false);
+  document.getElementById('wave-status').textContent = 'Pausado';
+});
+
+function playAudio() {
+  if (!currentChunk || !currentChunk.audio_file) return;
+  audioEl.src = '/audio/' + currentChunk.audio_file;
+  audioEl.play().catch(function(){});
+}
+
+function generateLayerAudio() {
+  if (!currentChunk) return;
+  // Fetch layer-specific audio via listening drill endpoint
+  fetch('/api/listening/drill/' + currentChunk.chunk_id)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.layers && data.layers[activeLayer]) {
+        var layerAudio = data.layers[activeLayer];
+        if (layerAudio) {
+          currentChunk._layer_audio = layerAudio;
+        }
+      }
+    })
+    .catch(function(){});
+}
+
+// ── Recording ──
+function toggleRecord() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+function startRecording() {
+  if (!navigator.mediaDevices) {
+    alert('Microfone nao disponivel');
+    return;
+  }
+  recordedChunks = [];
+  navigator.mediaDevices.getUserMedia({audio: true})
+    .then(function(stream) {
+      mediaRecorder = new MediaRecorder(stream, {mimeType: 'audio/webm;codecs=opus'});
+      mediaRecorder.ondataavailable = function(e) {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = function() {
+        stream.getTracks().forEach(function(t) { t.stop(); });
+        submitRecording();
+      };
+      mediaRecorder.start();
+      isRecording = true;
+      document.getElementById('btn-record').classList.add('recording');
+      document.getElementById('btn-record').innerHTML = '&#x23f9; Parar';
+      document.getElementById('wave-status').textContent = 'Gravando...';
+      animateWave(true);
+    })
+    .catch(function(err) {
+      console.error('Mic error:', err);
+    });
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+  isRecording = false;
+  document.getElementById('btn-record').classList.remove('recording');
+  document.getElementById('btn-record').innerHTML = '&#x1f3a4; Gravar';
+  animateWave(false);
+  document.getElementById('wave-status').textContent = 'Analisando...';
+}
+
+function submitRecording() {
+  if (!currentChunk || recordedChunks.length === 0) return;
+
+  var blob = new Blob(recordedChunks, {type: 'audio/webm'});
+  var fd = new FormData();
+  fd.append('audio', blob, 'shadow_attempt.webm');
+  fd.append('word_id', String(currentChunk.word_id || 0));
+  fd.append('native_audio', currentChunk.audio_file || '');
+
+  fetch('/api/shadow-score', {method: 'POST', body: fd})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      showScore(data);
+      document.getElementById('wave-status').textContent = 'Pronto';
+    })
+    .catch(function(err) {
+      console.error('Score error:', err);
+      document.getElementById('wave-status').textContent = 'Erro na analise';
+    });
+}
+
+// ── Score ──
+function showScore(data) {
+  var score = data.score || 0;
+  var panel = document.getElementById('score-panel');
+  var big = document.getElementById('score-big');
+  var details = document.getElementById('score-details');
+
+  big.textContent = Math.round(score);
+  big.className = 'score-big ' + (score >= 85 ? 'score-green' : score >= 60 ? 'score-yellow' : 'score-red');
+
+  var detailLines = [];
+  if (data.details && data.details.length) {
+    for (var i = 0; i < data.details.length; i++) {
+      detailLines.push(data.details[i]);
+    }
+  }
+  if (data.force_redrill) {
+    detailLines.push('Repita ate conseguir >= 85');
+  }
+  details.textContent = detailLines.join(' | ');
+
+  panel.style.display = 'block';
+
+  // Update session stats
+  sessionScores.push(score);
+  updateStats();
+
+  // Enable next button (unless force_redrill)
+  if (!data.force_redrill) {
+    document.getElementById('btn-next').disabled = false;
+  }
+}
+
+function updateStats() {
+  document.getElementById('stat-done').textContent = sessionScores.length;
+  if (sessionScores.length > 0) {
+    var sum = 0;
+    var best = 0;
+    for (var i = 0; i < sessionScores.length; i++) {
+      sum += sessionScores[i];
+      if (sessionScores[i] > best) best = sessionScores[i];
+    }
+    document.getElementById('stat-avg').textContent = Math.round(sum / sessionScores.length);
+    document.getElementById('stat-best').textContent = Math.round(best);
+  }
+}
+
+// ── Load / Next ──
+function loadChunk() {
+  document.getElementById('score-panel').style.display = 'none';
+  document.getElementById('btn-next').disabled = true;
+  document.getElementById('chunk-carrier').textContent = 'Carregando...';
+  document.getElementById('chunk-word').textContent = '';
+  document.getElementById('wave-status').textContent = 'Buscando...';
+  animateWave(false);
+  document.getElementById('wave-progress').style.width = '0%';
+
+  fetch('/api/drill/next')
+    .then(function(r) {
+      if (!r.ok) throw new Error('empty');
+      return r.json();
+    })
+    .then(function(data) {
+      if (data.error) {
+        showEmpty();
+        return;
+      }
+      currentChunk = data;
+      renderChunk(data);
+    })
+    .catch(function() {
+      showEmpty();
+    });
+}
+
+function renderChunk(data) {
+  var carrier = data.carrier_sentence || data.target_chunk || data.word || '';
+  var target = data.target_chunk || data.word || '';
+
+  // Highlight the target word/chunk within the carrier sentence
+  var highlighted = carrier.replace(
+    new RegExp('(' + target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'),
+    '<span class="chunk-target">$1</span>'
+  );
+  document.getElementById('chunk-carrier').innerHTML = highlighted;
+  document.getElementById('chunk-word').textContent = data.word ? 'Palavra: ' + data.word : '';
+  document.getElementById('wave-status').textContent = 'Pronto — toque Ouvir';
+  document.getElementById('empty-state').style.display = 'none';
+
+  // Auto-play first time
+  setTimeout(function() { playAudio(); }, 400);
+}
+
+function showEmpty() {
+  document.getElementById('chunk-display').style.display = 'none';
+  document.getElementById('empty-state').style.display = 'block';
+  document.getElementById('btn-listen').disabled = true;
+  document.getElementById('btn-record').disabled = true;
+}
+
+function nextChunk() {
+  loadChunk();
+}
+
+// ── Init ──
+initWaveBars();
+renderLayers();
+loadChunk();
+</script>
+</body></html>"""
+
+
 # ── Unified Handler ────────────────────────────────────────────
 
 class OxeHandler(http.server.BaseHTTPRequestHandler):
@@ -3598,6 +4111,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._html(DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
         elif path == "/api/drill/next":
             self._drill_next_chunk()
+
+        # ── Shadowing ──
+        elif path == "/shadowing":
+            self._html(SHADOWING_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
 
         # ── Speech Ladder ──
         elif path == "/speech":
