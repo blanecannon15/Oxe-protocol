@@ -23,13 +23,14 @@ from srs_engine import DB_PATH, get_connection, add_chunk
 # GPT-4o chunk extraction
 # ---------------------------------------------------------------------------
 
-def extract_chunks_from_text(text, min_words=2, max_words=6):
+def extract_chunks_from_text(text, min_words=2, max_words=6, exclude_roots=None):
     """Use GPT-4o to extract multiword chunks from a text passage.
 
     Args:
         text: The source text (Portuguese) to extract chunks from.
         min_words: Minimum number of words per chunk.
         max_words: Maximum number of words per chunk.
+        exclude_roots: Optional set of root_forms to exclude from results.
 
     Returns:
         List of dicts, each with keys: chunk, root_form, word_count, is_baiano, bahia_relevance.
@@ -38,18 +39,37 @@ def extract_chunks_from_text(text, min_words=2, max_words=6):
     client = openai.OpenAI()
 
     system_prompt = (
-        "Tu é um linguista computacional baiano. "
-        "Extrai chunks (unidades multipalavra) do texto. "
+        "Tu é um linguista computacional baiano especialista em aquisição de língua. "
+        "Extrai TODAS as colocações e chunks (unidades multipalavra) do texto. "
         "NUNCA usa inglês."
     )
+
+    exclude_block = ""
+    if exclude_roots:
+        sample = list(exclude_roots)[:50]
+        exclude_block = (
+            f"\n\nJÁ CONHEÇO ESSES — NÃO repita nenhum deles:\n"
+            + ", ".join(f'"{r}"' for r in sample) + "\n"
+        )
+
     user_prompt = (
-        f"Extrai os chunks (unidades multipalavra) de ALTA FREQUÊNCIA do texto abaixo.\n"
+        f"Extrai TODOS os chunks (colocações, expressões, frases feitas, verbos com complemento, "
+        f"preposições fixas) do texto abaixo.\n"
         f"Cada chunk deve ter entre {min_words} e {max_words} palavras.\n\n"
+        f"TIPOS que quero:\n"
+        f"- Colocações verbais: 'dar um rolê', 'tomar um banho', 'fazer questão'\n"
+        f"- Expressões populares: 'por conta de', 'na hora de', 'do jeito que'\n"
+        f"- Gírias/slang baiano: 'massa demais', 'barril dobrado', 'tá ligado'\n"
+        f"- Frases de transição: 'aí depois', 'quando eu vi', 'no final das contas'\n"
+        f"- Verbo + preposição fixa: 'pensar em', 'gostar de', 'lidar com'\n"
+        f"- Quantificadores/hedges: 'um bocado de', 'um monte de', 'mais ou menos'\n\n"
         f"REGRAS:\n"
-        f"- SÓ chunks que um brasileiro ouviria TODO DIA em conversa\n"
-        f"- Prioriza colocações naturais, expressões populares, gírias comuns\n"
-        f"- IGNORA combinações raras, formais, ou literárias\n"
-        f"- Prioriza uso baiano/soteropolitano\n\n"
+        f"- MÍNIMO 15 chunks por texto (se o texto tiver material suficiente)\n"
+        f"- Prioriza colocações naturais do dia a dia\n"
+        f"- IGNORA nomes próprios isolados (mas aceita 'ir pro Pelô', 'lá na Barra')\n"
+        f"- NUNCA retorna chunks de 1 palavra\n"
+        f"- Cada chunk deve ser algo que um aprendiz de português PRECISA saber como unidade\n"
+        f"{exclude_block}\n"
         f"Retorna SOMENTE um JSON array. Cada elemento deve ter:\n"
         f'- "chunk": a forma exata encontrada no texto\n'
         f'- "root_form": a forma canônica/base (ex: "por causa de", "tá ligado")\n'
@@ -179,12 +199,16 @@ def extract_chunks_from_story(story_id, db_path=DB_PATH):
     row = conn.execute(
         "SELECT body FROM story_library WHERE id = ?", (story_id,)
     ).fetchone()
+
+    # Get existing root_forms to pass as exclusion list
+    existing = conn.execute("SELECT root_form FROM chunk_families").fetchall()
+    exclude_roots = {r["root_form"] for r in existing}
     conn.close()
 
     if not row:
         return 0
 
-    chunks = extract_chunks_from_text(row["body"])
+    chunks = extract_chunks_from_text(row["body"], exclude_roots=exclude_roots)
     added = 0
 
     for chunk_data in chunks:
@@ -343,11 +367,63 @@ def get_next_chunks_for_srs(limit=10, db_path=DB_PATH):
     ]
 
 
-def add_chunks_to_queue(chunk_list, db_path=DB_PATH):
-    """Add chunks to the SRS chunk_queue.
+def _generate_carrier_sentences(chunks, batch_size=20):
+    """Generate natural Baiano carrier sentences for a batch of chunks via GPT.
 
-    For each chunk, attempts to find a matching word_id by checking if any word
-    in the root_form exists in word_bank. Builds a simple Baiano carrier sentence.
+    Args:
+        chunks: List of chunk strings.
+        batch_size: Max chunks per GPT call.
+
+    Returns:
+        Dict mapping chunk string → carrier sentence.
+    """
+    client = openai.OpenAI()
+    results = {}
+
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i + batch_size]
+        numbered = "\n".join(f"{j+1}. {c}" for j, c in enumerate(batch))
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": (
+                        "Tu é um baiano de Salvador. Gera frases naturais do dia a dia "
+                        "usando cada chunk dado. As frases devem soar como conversa real "
+                        "de rua em Salvador — usa gírias, interjeições (oxe, eita, vixe, "
+                        "meu rei, véi), locais de Salvador. Cada frase 8-15 palavras. "
+                        "NUNCA usa inglês."
+                    )},
+                    {"role": "user", "content": (
+                        f"Gera UMA frase natural pra cada chunk. O chunk DEVE aparecer "
+                        f"na frase exatamente como está.\n\n"
+                        f"Retorna JSON: {{\"sentences\": [\"frase1\", \"frase2\", ...]}}\n\n"
+                        f"Chunks:\n{numbered}"
+                    )},
+                ],
+                temperature=0.8,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(response.choices[0].message.content)
+            sentences = data.get("sentences", [])
+            for j, chunk_str in enumerate(batch):
+                if j < len(sentences):
+                    results[chunk_str] = sentences[j]
+                else:
+                    results[chunk_str] = f"Oxe, {chunk_str} — tá ligado?"
+        except Exception:
+            for chunk_str in batch:
+                results[chunk_str] = f"Oxe, {chunk_str} — tá ligado?"
+
+    return results
+
+
+def add_chunks_to_queue(chunk_list, db_path=DB_PATH):
+    """Add chunks to the SRS chunk_queue with GPT-generated carrier sentences.
+
+    For each chunk, finds a matching word_id from word_bank and generates
+    a natural Baiano carrier sentence via GPT.
 
     Args:
         chunk_list: List of dicts from get_next_chunks_for_srs().
@@ -356,29 +432,43 @@ def add_chunks_to_queue(chunk_list, db_path=DB_PATH):
     Returns:
         Count of chunks successfully added to the queue.
     """
-    conn = get_connection(db_path)
-    added = 0
+    if not chunk_list:
+        return 0
 
+    conn = get_connection(db_path)
+
+    # Collect chunk strings for batch carrier generation
+    chunk_strings = []
+    chunk_meta = []
     for chunk in chunk_list:
         variant = chunk.get("best_variant") or chunk.get("root_form", "")
         root_form = chunk.get("root_form", variant)
 
-        # Try to find a matching word_id from root_form words
+        # Find matching word_id from root_form words
         word_id = None
         for token in root_form.split():
             row = conn.execute(
-                "SELECT id FROM word_bank WHERE word = ? LIMIT 1", (token,)
+                "SELECT id FROM word_bank WHERE LOWER(word) = ? LIMIT 1", (token.lower(),)
             ).fetchone()
             if row:
                 word_id = row["id"]
                 break
 
-        carrier = f"Oxe, {variant} — tá ligado?"
-        result = add_chunk(word_id, variant, carrier, "corpus", db_path)
+        chunk_strings.append(variant)
+        chunk_meta.append({"variant": variant, "word_id": word_id})
+
+    conn.close()
+
+    # Generate carrier sentences in batch
+    carriers = _generate_carrier_sentences(chunk_strings)
+
+    added = 0
+    for meta in chunk_meta:
+        carrier = carriers.get(meta["variant"], f"Oxe, {meta['variant']} — tá ligado?")
+        result = add_chunk(meta["word_id"], meta["variant"], carrier, "corpus", db_path)
         if result is not None:
             added += 1
 
-    conn.close()
     return added
 
 
