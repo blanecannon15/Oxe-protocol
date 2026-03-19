@@ -119,10 +119,31 @@ def insert_cache(word_id, tab_name, data, db_path=DB_PATH):
 
 # ── Generate a single tab ────────────────────────────────────────────────────
 
+def _is_empty_result(tab_name, data):
+    """Check if a tab result is an empty/fallback that shouldn't be cached."""
+    if data is None:
+        return True
+    if tab_name == "definition":
+        return not data.get("definicao")
+    if tab_name == "pronunciation":
+        return not data.get("silabas")
+    if tab_name == "synonyms":
+        return not data.get("sinonimos")
+    if tab_name == "expressions":
+        return isinstance(data, list) and len(data) == 0
+    if tab_name == "chunks":
+        return (not data.get("chunks_generated") and not data.get("chunks_from_db"))
+    # conjugation and examples: trust non-None results
+    return False
+
+
 def generate_tab(word, tab_name, tab_delay):
     """Generate data for a single tab. Returns (tab_name, data) or (tab_name, None) on error."""
     try:
         data = TAB_FUNCTIONS[tab_name](word)
+        # Don't return empty/fallback results — let them retry later
+        if _is_empty_result(tab_name, data):
+            return (tab_name, None, "empty fallback result")
         time.sleep(tab_delay)
         return (tab_name, data)
     except Exception as e:

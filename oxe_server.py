@@ -133,7 +133,7 @@ def TAB_BAR_HTML(active_tab):
          '<svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>'),
         ("buscar", "/search", "Buscar",
          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'),
-        ("treinar", "/drill", "Treinar",
+        ("treinar", "/train", "Treinar",
          '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>'),
         ("biblioteca", "/library", "Biblioteca",
          '<svg viewBox="0 0 24 24"><path d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1z"/></svg>'),
@@ -366,7 +366,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   </div>
 
   <!-- Train button -->
-  <a href="/drill" class="train-btn">
+  <a href="/train" class="train-btn">
     <span>Treinar</span>
     <span class="due-count" id="due-count">0 pendentes</span>
   </a>
@@ -2861,7 +2861,7 @@ function startBlock() {
   else if (t === 'listening') window.location.href = '/library';
   else if (t === 'conversa') window.location.href = '/conversa';
   else if (t === 'break') completeBlock();
-  else window.location.href = '/drill';
+  else window.location.href = '/train';
 }
 
 function completeBlock() {
@@ -4051,6 +4051,91 @@ loadChunk();
 
 # ── SRS Drill Page ────────────────────────────────────────────
 
+TRAIN_HUB_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Treinar — Oxe Protocol</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5f5f5;
+  min-height:100vh;padding:16px 16px 90px}
+.header{text-align:center;padding:20px 0 10px}
+.header h1{font-size:22px;font-weight:600;color:#f5f5f5}
+.header p{font-size:13px;color:#888;margin-top:4px}
+.cards{display:flex;flex-direction:column;gap:14px;max-width:480px;margin:24px auto}
+.card{display:flex;align-items:center;gap:16px;background:#161618;border:1px solid #222;
+  border-radius:16px;padding:20px;text-decoration:none;color:inherit;
+  transition:transform 0.15s,border-color 0.15s}
+.card:active{transform:scale(0.98);border-color:#5E6AD2}
+.card-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;
+  justify-content:center;font-size:28px;flex-shrink:0}
+.card-text{flex:1}
+.card-title{font-size:17px;font-weight:600;margin-bottom:4px}
+.card-sub{font-size:13px;color:#888;line-height:1.4}
+.card-count{font-size:13px;font-weight:600;color:#5E6AD2;margin-top:6px}
+.card-arrow{color:#555;font-size:22px}
+.srs .card-icon{background:rgba(94,106,210,0.12);color:#5E6AD2}
+.shadow .card-icon{background:rgba(248,113,113,0.12);color:#f87171}
+.assembly .card-icon{background:rgba(52,211,153,0.12);color:#34d399}
+.stats{display:flex;justify-content:center;gap:20px;margin-top:24px}
+.stat{text-align:center}
+.stat-val{font-size:24px;font-weight:700}
+.stat-lbl{font-size:11px;color:#888;margin-top:2px}
+</style></head><body>
+<div class="header">
+  <h1>Treinar</h1>
+  <p>Escolha seu modo de treino</p>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-val blue" id="s-due">—</div><div class="stat-lbl">Pendentes</div></div>
+  <div class="stat"><div class="stat-val green" id="s-today">—</div><div class="stat-lbl">Hoje</div></div>
+  <div class="stat"><div class="stat-val purple" id="s-streak">—</div><div class="stat-lbl">Sequência</div></div>
+</div>
+
+<div class="cards">
+  <a href="/drill" class="card srs">
+    <div class="card-icon">&#x1f3af;</div>
+    <div class="card-text">
+      <div class="card-title">SRS Drill</div>
+      <div class="card-sub">Flashcard de chunks — ouça, reconheça, avalie</div>
+      <div class="card-count" id="srs-count"></div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
+
+  <a href="/shadowing" class="card shadow">
+    <div class="card-icon">&#x1f5e3;&#xfe0f;</div>
+    <div class="card-text">
+      <div class="card-title">Sombreamento</div>
+      <div class="card-sub">5 passes — Ouvindo, Murmurando, Lendo, Sombreando, Maestria</div>
+      <div class="card-count" id="shadow-count"></div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
+
+  <a href="/assembly" class="card assembly">
+    <div class="card-icon">&#x1f9e9;</div>
+    <div class="card-text">
+      <div class="card-title">Montar Frases</div>
+      <div class="card-sub">Monte frases reorganizando os chunks</div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
+</div>
+
+{tab_bar}
+<script>
+fetch('/api/home').then(r=>r.json()).then(d=>{
+  document.getElementById('s-due').textContent = d.due_count || 0;
+  document.getElementById('s-today').textContent = (d.daily_stats||{}).words_reviewed || 0;
+  document.getElementById('s-streak').textContent = d.streak || 0;
+  document.getElementById('srs-count').textContent = (d.due_count||0) + ' chunks pendentes';
+}).catch(()=>{});
+</script>
+</body></html>
+"""
+
 SRS_DRILL_HTML = r"""<!DOCTYPE html>
 <html lang="pt-BR"><head>
 <meta charset="utf-8">
@@ -4550,6 +4635,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path.startswith("/api/word/") and path.endswith("/state"):
             word_id = int(path.split("/")[3])
             self._dict_state(word_id)
+
+        # ── Training Hub ──
+        elif path == "/train":
+            self._html(TRAIN_HUB_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
 
         # ── Drill ──
         elif path == "/drill":
