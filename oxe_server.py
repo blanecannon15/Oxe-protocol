@@ -4148,10 +4148,8 @@ body{
   min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;
   -webkit-font-smoothing:antialiased;
 }
-/* Latency warning pulse */
 @keyframes latencyPulse{0%,100%{box-shadow:0 0 0 0 rgba(249,115,22,0.4)}50%{box-shadow:0 0 0 12px rgba(249,115,22,0)}}
 .timer.slow{color:#f97316;animation:latencyPulse 1.5s infinite}
-/* Text reveal flash */
 .text-reveal{
   font-size:22px;font-weight:700;text-align:center;padding:12px 20px;
   background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);
@@ -4159,12 +4157,7 @@ body{
   animation:fadeIn 0.3s ease-out;
 }
 @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
-/* Explanation audio banner */
-.explain-banner{
-  font-size:13px;color:rgba(255,255,255,0.5);text-align:center;
-  padding:8px 16px;background:rgba(249,115,22,0.08);border-radius:12px;
-  max-width:320px;
-}
+@keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)}50%{box-shadow:0 0 0 10px rgba(248,113,113,0)}}
 .safe-top{height:env(safe-area-inset-top,20px)}
 .header{
   display:flex;align-items:center;justify-content:space-between;
@@ -4182,53 +4175,45 @@ body{
   background:linear-gradient(135deg,#3B82F6,#8B5CF6);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
 }
-.header-stats{
-  display:flex;gap:12px;font-size:12px;color:rgba(255,255,255,0.5);
-}
+.header-stats{display:flex;gap:12px;font-size:12px;color:rgba(255,255,255,0.5)}
 .header-stats .val{color:#fff;font-weight:600}
-
-/* Main content area */
 .drill-content{
   flex:1;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;padding:20px;gap:20px;
+  justify-content:center;padding:20px;gap:16px;
 }
-
-/* Image card */
 .image-card{
-  width:280px;height:280px;border-radius:24px;overflow:hidden;
+  width:260px;height:260px;border-radius:24px;overflow:hidden;
   background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
-  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
   display:flex;align-items:center;justify-content:center;
-  position:relative;
 }
 .image-card img{width:100%;height:100%;object-fit:cover}
-.image-placeholder{
-  width:80px;height:80px;opacity:0.15;
-}
+.image-placeholder{width:80px;height:80px;opacity:0.15}
 .image-placeholder svg{width:100%;height:100%;fill:#fff}
-
-/* Timer */
-.timer{
-  font-size:14px;color:rgba(255,255,255,0.4);font-variant-numeric:tabular-nums;
-  height:20px;
-}
-
-/* Replay button */
-.replay-btn{
-  display:flex;align-items:center;gap:8px;
-  padding:10px 24px;border-radius:14px;
+.timer{font-size:14px;color:rgba(255,255,255,0.4);font-variant-numeric:tabular-nums;height:20px}
+.action-row{display:flex;gap:10px;align-items:center}
+.replay-btn,.record-btn{
+  display:flex;align-items:center;gap:6px;
+  padding:10px 20px;border-radius:14px;
   background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
-  color:rgba(255,255,255,0.7);font-size:14px;font-weight:500;
-  cursor:pointer;-webkit-tap-highlight-color:transparent;
-  transition:all 0.2s;
+  color:rgba(255,255,255,0.7);font-size:13px;font-weight:500;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;transition:all 0.2s;
 }
-.replay-btn:active{transform:scale(0.95);background:rgba(255,255,255,0.1)}
-.replay-btn svg{width:18px;height:18px;fill:currentColor}
-
-/* Rating buttons */
-.rating-row{
-  display:flex;gap:10px;width:100%;max-width:400px;padding:0 10px;
+.replay-btn:active,.record-btn:active{transform:scale(0.95);background:rgba(255,255,255,0.1)}
+.replay-btn svg,.record-btn svg{width:16px;height:16px;fill:currentColor}
+.record-btn.recording{color:#f87171;border-color:#f87171;animation:micPulse 1.2s infinite}
+.bio-score{
+  display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:12px;
+  font-size:13px;font-weight:600;
 }
+.bio-score.pass{background:rgba(34,197,94,0.1);color:#22c55e}
+.bio-score.fail{background:rgba(239,68,68,0.1);color:#ef4444}
+.bio-score .score-num{font-size:20px;font-weight:700}
+.chorus-banner{
+  font-size:12px;color:rgba(255,255,255,0.5);text-align:center;
+  padding:8px 16px;background:rgba(124,92,252,0.08);border-radius:12px;
+  max-width:320px;
+}
+.rating-row{display:flex;gap:10px;width:100%;max-width:400px;padding:0 10px}
 .rating-btn{
   flex:1;padding:14px 8px;border-radius:14px;border:none;
   font-size:13px;font-weight:600;cursor:pointer;
@@ -4238,18 +4223,14 @@ body{
 .rating-btn:active{transform:scale(0.93)}
 .rating-btn .label{font-size:13px}
 .rating-btn .sub{font-size:10px;opacity:0.7}
-
 .btn-again{background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.25)}
 .btn-hard{background:rgba(249,115,22,0.15);color:#f97316;border:1px solid rgba(249,115,22,0.25)}
 .btn-good{background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.25)}
 .btn-easy{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.25)}
-
 .btn-again:active{background:rgba(239,68,68,0.3)}
 .btn-hard:active{background:rgba(249,115,22,0.3)}
 .btn-good:active{background:rgba(34,197,94,0.3)}
 .btn-easy:active{background:rgba(59,130,246,0.3)}
-
-/* Reveal overlay */
 .reveal-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(10,10,11,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
@@ -4263,26 +4244,14 @@ body{
   background:linear-gradient(135deg,#3B82F6,#8B5CF6);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
 }
-.reveal-sentence{
-  font-size:16px;color:rgba(255,255,255,0.6);text-align:center;
-  max-width:320px;line-height:1.5;
-}
-.reveal-rating{
-  font-size:14px;font-weight:600;padding:6px 16px;border-radius:20px;
-  margin-top:8px;
-}
+.reveal-sentence{font-size:16px;color:rgba(255,255,255,0.6);text-align:center;max-width:320px;line-height:1.5}
+.reveal-rating{font-size:14px;font-weight:600;padding:6px 16px;border-radius:20px;margin-top:8px}
 .reveal-rating.r1{background:rgba(239,68,68,0.2);color:#ef4444}
 .reveal-rating.r2{background:rgba(249,115,22,0.2);color:#f97316}
 .reveal-rating.r3{background:rgba(34,197,94,0.2);color:#22c55e}
 .reveal-rating.r4{background:rgba(59,130,246,0.2);color:#3B82F6}
-
-/* Due count footer */
-.due-footer{
-  text-align:center;padding:8px;font-size:12px;
-  color:rgba(255,255,255,0.3);
-}
-
-/* Empty state */
+.reveal-bio{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px}
+.due-footer{text-align:center;padding:8px;font-size:12px;color:rgba(255,255,255,0.3)}
 .empty-state{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:16px;padding:40px;text-align:center;
@@ -4290,44 +4259,26 @@ body{
 .empty-state .icon{font-size:48px;opacity:0.3}
 .empty-state .msg{font-size:18px;font-weight:600;color:rgba(255,255,255,0.5)}
 .empty-state .sub{font-size:14px;color:rgba(255,255,255,0.3);max-width:260px;line-height:1.5}
-
-/* Loading spinner */
 .loading{display:flex;align-items:center;justify-content:center;flex:1}
-.spinner{
-  width:40px;height:40px;border:3px solid rgba(255,255,255,0.1);
-  border-top-color:#3B82F6;border-radius:50%;
-  animation:spin 0.8s linear infinite;
-}
+.spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,0.1);border-top-color:#3B82F6;border-radius:50%;animation:spin 0.8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* Rating disabled state */
 .rating-row.disabled .rating-btn{opacity:0.3;pointer-events:none}
-
-/* Tab bar spacing */
 .tab-spacer{height:90px}
-
-/* ── Tab Bar — injected by TAB_BAR_HTML ── */
 .tab-bar{
-  position:fixed;bottom:0;left:0;right:0;
-  display:flex;justify-content:space-around;
+  position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-around;
   padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));
   background:rgba(10,10,11,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   border-top:1px solid rgba(255,255,255,0.06);z-index:200;
 }
-.tab{
-  display:flex;flex-direction:column;align-items:center;gap:2px;
-  text-decoration:none;font-size:10px;color:rgba(255,255,255,0.4);
-  -webkit-tap-highlight-color:transparent;
-}
+.tab{display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none;font-size:10px;color:rgba(255,255,255,0.4);-webkit-tap-highlight-color:transparent}
 .tab svg{width:22px;height:22px;fill:currentColor}
 .tab.active{color:#3B82F6}
 </style>
 </head>
 <body>
 <div class="safe-top"></div>
-
 <div class="header">
-  <div class="back-btn" onclick="location.href='/'">
+  <div class="back-btn" onclick="location.href='/train'">
     <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
   </div>
   <div class="header-title">SRS Drill</div>
@@ -4336,17 +4287,13 @@ body{
     <span><span class="val" id="accuracy">—</span>%</span>
   </div>
 </div>
-
-<div id="drillArea" class="drill-content">
-  <div class="loading"><div class="spinner"></div></div>
-</div>
-
+<div id="drillArea" class="drill-content"><div class="loading"><div class="spinner"></div></div></div>
 <div class="reveal-overlay" id="revealOverlay">
   <div class="reveal-chunk" id="revealChunk"></div>
   <div class="reveal-sentence" id="revealSentence"></div>
   <div class="reveal-rating" id="revealRating"></div>
+  <div class="reveal-bio" id="revealBio"></div>
 </div>
-
 <div class="due-footer" id="dueFooter"></div>
 <div class="tab-spacer"></div>
 {tab_bar}
@@ -4359,8 +4306,12 @@ body{
   let timerStart = 0;
   let timerInterval = null;
   let session = { reviewed: 0, good: 0 };
-  let againStreak = {};  // chunk_id -> consecutive Again count (3-failure text reveal)
-  const LATENCY_THRESHOLD = 1000; // 1s — spec: auto-mark Hard if exceeded
+  let againStreak = {};
+  let mediaRecorder = null;
+  let recordedBlob = null;
+  let lastBioScore = null;
+  const LATENCY_THRESHOLD = 1000;
+  const BIO_THRESHOLD = 85;
 
   function updateStats() {
     document.getElementById('sessionCount').textContent = session.reviewed;
@@ -4377,7 +4328,6 @@ body{
       timerInterval = setInterval(() => {
         const elapsed = (Date.now() - timerStart) / 1000;
         el.textContent = elapsed.toFixed(1) + 's';
-        // Visual warning when latency exceeds 1s
         if (elapsed > 1.0) el.classList.add('slow');
         else el.classList.remove('slow');
       }, 100);
@@ -4391,107 +4341,171 @@ body{
     return Date.now() - timerStart;
   }
 
-  function playAudio() {
+  function playAudio(rate) {
     if (!currentChunk || !currentChunk.audio_file) return;
     if (audio) { audio.pause(); audio = null; }
     audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
+    if (rate) audio.playbackRate = rate;
     audio.play().catch(() => {});
+  }
+
+  // ── Recording for biometric scoring ──
+  function startRecording() {
+    recordedBlob = null;
+    const btn = document.getElementById('recBtn');
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        mediaRecorder = new MediaRecorder(stream, {mimeType: 'audio/webm;codecs=opus'});
+        let chunks = [];
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(chunks, {type: 'audio/webm'});
+          stream.getTracks().forEach(t => t.stop());
+          if (btn) btn.classList.remove('recording');
+          // Auto-score after recording
+          scorePronunciation();
+        };
+        mediaRecorder.start();
+        if (btn) btn.classList.add('recording');
+      })
+      .catch(() => {});
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    const btn = document.getElementById('recBtn');
+    if (btn) btn.classList.remove('recording');
+  }
+
+  function scorePronunciation() {
+    if (!recordedBlob || !currentChunk || !currentChunk.audio_file) return;
+    const fd = new FormData();
+    fd.append('audio', recordedBlob, 'recording.webm');
+    fd.append('word_id', currentChunk.word_id || '0');
+    fd.append('native_audio', currentChunk.audio_file.split('/').pop());
+
+    fetch('/api/drill/score', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(result => {
+        lastBioScore = result.score || 0;
+        const el = document.getElementById('bioResult');
+        if (el) {
+          const pass = lastBioScore >= BIO_THRESHOLD;
+          el.className = 'bio-score ' + (pass ? 'pass' : 'fail');
+          el.innerHTML = '<span class="score-num">' + Math.round(lastBioScore) + '</span>/100';
+          el.style.display = 'flex';
+
+          // Spec: below 85 → mandatory chorusing
+          if (!pass) {
+            startChorusing();
+          }
+        }
+      })
+      .catch(() => { lastBioScore = null; });
+  }
+
+  // ── Chorusing Loop (spec: 0.75x → 1.0x → shadow → re-score until ≥85) ──
+  function startChorusing() {
+    const area = document.getElementById('drillArea');
+    const chorusEl = document.createElement('div');
+    chorusEl.className = 'chorus-banner';
+    chorusEl.id = 'chorusBanner';
+    chorusEl.textContent = 'Chorusing: ouvindo a 0.75x...';
+    area.appendChild(chorusEl);
+
+    // Step 1: play at 0.75x
+    setTimeout(() => {
+      playAudio(0.75);
+      if (audio) {
+        audio.onended = () => {
+          // Step 2: play at 1.0x
+          chorusEl.textContent = 'Chorusing: ouvindo a 1.0x...';
+          setTimeout(() => {
+            playAudio(1.0);
+            if (audio) {
+              audio.onended = () => {
+                // Step 3: prompt to shadow
+                chorusEl.textContent = 'Agora repita junto! Grave e tente de novo.';
+              };
+            }
+          }, 500);
+        };
+      }
+    }, 300);
   }
 
   function renderDrill(data) {
     currentChunk = data;
+    lastBioScore = null;
     const area = document.getElementById('drillArea');
     const cid = data.chunk_id;
-
-    // Check if this chunk has hit 3 consecutive Again → show text (spec: 3-failure reveal)
     const showText = (againStreak[cid] || 0) >= 3;
+    const imgSrc = data.image_file ? '/images/' + data.image_file.split('/').pop() : null;
 
-    const imgSrc = data.image_file
-      ? '/images/' + data.image_file.split('/').pop()
-      : null;
+    let html = '<div class="image-card">' +
+      (imgSrc ? '<img src="' + imgSrc + '" alt="">'
+        : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>')
+      + '</div>';
 
-    // Build HTML — NO text by default (Zero-Reading Mode from spec)
-    let html = `
-      <div class="image-card">
-        ${imgSrc
-          ? '<img src="' + imgSrc + '" alt="">'
-          : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>'
-        }
-      </div>`;
-
-    // 3-failure text reveal — spec: show chunk text ONLY after 3x Again
     if (showText) {
       html += '<div class="text-reveal">' + (data.target_chunk || data.word || '') + '</div>';
     }
 
-    html += `
-      <div class="timer" id="timerEl">0.0s</div>
-      <div class="replay-btn" onclick="window._srsReplay()">
-        <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-        Ouvir de novo
-      </div>
-      <div class="rating-row" id="ratingRow">
-        <button class="rating-btn btn-again" onclick="window._srsRate(1)">
-          <span class="label">De Novo</span><span class="sub">1</span>
-        </button>
-        <button class="rating-btn btn-hard" onclick="window._srsRate(2)">
-          <span class="label">Difícil</span><span class="sub">2</span>
-        </button>
-        <button class="rating-btn btn-good" onclick="window._srsRate(3)">
-          <span class="label">Bom</span><span class="sub">3</span>
-        </button>
-        <button class="rating-btn btn-easy" onclick="window._srsRate(4)">
-          <span class="label">Fácil</span><span class="sub">4</span>
-        </button>
-      </div>
-    `;
+    html += '<div class="timer" id="timerEl">0.0s</div>';
+    html += '<div class="action-row">';
+    html += '<div class="replay-btn" onclick="window._srsReplay()">' +
+      '<svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>' +
+      'Ouvir</div>';
+    html += '<div class="record-btn" id="recBtn" onclick="window._srsToggleRec()">' +
+      '<svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' +
+      'Gravar</div>';
+    html += '</div>';
+
+    // Biometric score display (hidden until scored)
+    html += '<div class="bio-score" id="bioResult" style="display:none"></div>';
+
+    html += '<div class="rating-row" id="ratingRow">' +
+      '<button class="rating-btn btn-again" onclick="window._srsRate(1)"><span class="label">De Novo</span><span class="sub">1</span></button>' +
+      '<button class="rating-btn btn-hard" onclick="window._srsRate(2)"><span class="label">Difícil</span><span class="sub">2</span></button>' +
+      '<button class="rating-btn btn-good" onclick="window._srsRate(3)"><span class="label">Bom</span><span class="sub">3</span></button>' +
+      '<button class="rating-btn btn-easy" onclick="window._srsRate(4)"><span class="label">Fácil</span><span class="sub">4</span></button>' +
+      '</div>';
 
     area.innerHTML = html;
     document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
     startTimer();
-
-    // Auto-play audio
     setTimeout(() => playAudio(), 300);
   }
 
   function renderEmpty() {
-    document.getElementById('drillArea').innerHTML = `
-      <div class="empty-state">
-        <div class="icon">&#10003;</div>
-        <div class="msg">Tudo revisado!</div>
-        <div class="sub">Nenhum chunk pendente agora. Volte mais tarde ou adicione novos chunks.</div>
-      </div>
-    `;
+    document.getElementById('drillArea').innerHTML =
+      '<div class="empty-state"><div class="icon">&#10003;</div>' +
+      '<div class="msg">Tudo revisado!</div>' +
+      '<div class="sub">Nenhum chunk pendente agora. Volte mais tarde ou adicione novos chunks.</div></div>';
     document.getElementById('dueFooter').textContent = '';
   }
 
   function fetchNext() {
     document.getElementById('drillArea').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     fetch('/api/drill/next')
-      .then(r => {
-        if (r.status === 404) { renderEmpty(); return null; }
-        return r.json();
-      })
-      .then(data => {
-        if (data && !data.error) renderDrill(data);
-        else if (data && data.error) renderEmpty();
-      })
+      .then(r => { if (r.status === 404) { renderEmpty(); return null; } return r.json(); })
+      .then(data => { if (data && !data.error) renderDrill(data); else renderEmpty(); })
       .catch(() => renderEmpty());
   }
 
-  function revealAnswer(ratingVal, ratingName) {
+  function revealAnswer(ratingVal, ratingName, bioScore) {
     const overlay = document.getElementById('revealOverlay');
     document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
     document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
     rEl.className = 'reveal-rating r' + ratingVal;
+    const bEl = document.getElementById('revealBio');
+    bEl.textContent = bioScore !== null ? 'Nativeness: ' + Math.round(bioScore) + '/100' : '';
     overlay.classList.add('visible');
-
-    setTimeout(() => {
-      overlay.classList.remove('visible');
-      fetchNext();
-    }, 1500);
+    setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1800);
   }
 
   window._srsRate = function(ratingVal) {
@@ -4499,27 +4513,25 @@ body{
     const latency = stopTimer();
     const cid = currentChunk.chunk_id;
 
-    // Spec: latency > 1s → auto-mark Hard (override user's rating)
     let finalRating = ratingVal;
     let latencyOverride = false;
     if (latency > LATENCY_THRESHOLD && ratingVal > 2) {
-      finalRating = 2; // Hard
+      finalRating = 2;
       latencyOverride = true;
     }
 
-    // Track consecutive Again for 3-failure text reveal
-    if (finalRating === 1) {
-      againStreak[cid] = (againStreak[cid] || 0) + 1;
-    } else {
-      againStreak[cid] = 0; // reset on non-Again
+    // Spec: biometric < 85 → auto-mark Hard
+    if (lastBioScore !== null && lastBioScore < BIO_THRESHOLD && finalRating > 2) {
+      finalRating = 2;
     }
 
-    // Disable buttons immediately
+    if (finalRating === 1) { againStreak[cid] = (againStreak[cid] || 0) + 1; }
+    else { againStreak[cid] = 0; }
+
     const row = document.getElementById('ratingRow');
     if (row) row.classList.add('disabled');
 
     const ratingNames = {1: 'De Novo', 2: 'Difícil', 3: 'Bom', 4: 'Fácil'};
-
     session.reviewed++;
     if (finalRating >= 3) session.good++;
     updateStats();
@@ -4531,19 +4543,19 @@ body{
         chunk_id: cid,
         latency_ms: Math.round(latency),
         retries: 0,
-        rating: finalRating
+        rating: finalRating,
+        biometric_score: lastBioScore
       })
     })
     .then(r => r.json())
     .then(res => {
       let displayName = ratingNames[finalRating];
       if (latencyOverride) displayName += ' (lento)';
-      revealAnswer(finalRating, displayName);
+      revealAnswer(finalRating, displayName, lastBioScore);
 
       // Spec: on Hard/Again, play recursive explanation (audio, never text)
-      if (finalRating <= 2 && res && currentChunk.word) {
-        // Request an audio explanation — play after reveal
-        fetch('/api/drill/explain?word=' + encodeURIComponent(currentChunk.word || currentChunk.target_chunk))
+      if (finalRating <= 2 && currentChunk.word) {
+        fetch('/api/drill/explain?word=' + encodeURIComponent(currentChunk.target_chunk || currentChunk.word))
           .then(r2 => r2.json())
           .then(exp => {
             if (exp && exp.audio_file) {
@@ -4555,21 +4567,26 @@ body{
           .catch(() => {});
       }
     })
-    .catch(() => {
-      revealAnswer(finalRating, ratingNames[finalRating]);
-    });
+    .catch(() => { revealAnswer(finalRating, ratingNames[finalRating], lastBioScore); });
   };
 
   window._srsReplay = function() { playAudio(); };
 
-  // Keyboard shortcuts: 1-4 for ratings
+  window._srsToggleRec = function() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
   document.addEventListener('keydown', function(e) {
     if (e.key >= '1' && e.key <= '4' && currentChunk) {
       const row = document.getElementById('ratingRow');
-      if (row && !row.classList.contains('disabled')) {
-        window._srsRate(parseInt(e.key));
-      }
+      if (row && !row.classList.contains('disabled')) window._srsRate(parseInt(e.key));
     }
+    if (e.key === 'r' || e.key === 'R') window._srsReplay();
+    if (e.key === ' ' && currentChunk) { e.preventDefault(); window._srsToggleRec(); }
   });
 
   updateStats();
