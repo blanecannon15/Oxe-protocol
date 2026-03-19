@@ -4049,6 +4049,379 @@ loadChunk();
 </body></html>"""
 
 
+# ── SRS Drill Page ────────────────────────────────────────────
+
+SRS_DRILL_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SRS Drill — Oxe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#0a0a0b;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+.safe-top{height:env(safe-area-inset-top,20px)}
+.header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 20px 8px;position:relative;
+}
+.back-btn{
+  width:36px;height:36px;border-radius:50%;
+  background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.back-btn svg{width:18px;height:18px;fill:#fff}
+.header-title{
+  font-size:18px;font-weight:700;
+  background:linear-gradient(135deg,#3B82F6,#8B5CF6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.header-stats{
+  display:flex;gap:12px;font-size:12px;color:rgba(255,255,255,0.5);
+}
+.header-stats .val{color:#fff;font-weight:600}
+
+/* Main content area */
+.drill-content{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:20px;gap:20px;
+}
+
+/* Image card */
+.image-card{
+  width:280px;height:280px;border-radius:24px;overflow:hidden;
+  background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+}
+.image-card img{width:100%;height:100%;object-fit:cover}
+.image-placeholder{
+  width:80px;height:80px;opacity:0.15;
+}
+.image-placeholder svg{width:100%;height:100%;fill:#fff}
+
+/* Timer */
+.timer{
+  font-size:14px;color:rgba(255,255,255,0.4);font-variant-numeric:tabular-nums;
+  height:20px;
+}
+
+/* Replay button */
+.replay-btn{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 24px;border-radius:14px;
+  background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);
+  color:rgba(255,255,255,0.7);font-size:14px;font-weight:500;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;
+  transition:all 0.2s;
+}
+.replay-btn:active{transform:scale(0.95);background:rgba(255,255,255,0.1)}
+.replay-btn svg{width:18px;height:18px;fill:currentColor}
+
+/* Rating buttons */
+.rating-row{
+  display:flex;gap:10px;width:100%;max-width:400px;padding:0 10px;
+}
+.rating-btn{
+  flex:1;padding:14px 8px;border-radius:14px;border:none;
+  font-size:13px;font-weight:600;cursor:pointer;
+  transition:all 0.2s;-webkit-tap-highlight-color:transparent;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.rating-btn:active{transform:scale(0.93)}
+.rating-btn .label{font-size:13px}
+.rating-btn .sub{font-size:10px;opacity:0.7}
+
+.btn-again{background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.25)}
+.btn-hard{background:rgba(249,115,22,0.15);color:#f97316;border:1px solid rgba(249,115,22,0.25)}
+.btn-good{background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid rgba(34,197,94,0.25)}
+.btn-easy{background:rgba(59,130,246,0.15);color:#3B82F6;border:1px solid rgba(59,130,246,0.25)}
+
+.btn-again:active{background:rgba(239,68,68,0.3)}
+.btn-hard:active{background:rgba(249,115,22,0.3)}
+.btn-good:active{background:rgba(34,197,94,0.3)}
+.btn-easy:active{background:rgba(59,130,246,0.3)}
+
+/* Reveal overlay */
+.reveal-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(10,10,11,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;z-index:100;opacity:0;pointer-events:none;
+  transition:opacity 0.3s;padding:40px 20px;
+}
+.reveal-overlay.visible{opacity:1;pointer-events:auto}
+.reveal-chunk{
+  font-size:28px;font-weight:700;text-align:center;
+  background:linear-gradient(135deg,#3B82F6,#8B5CF6);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.reveal-sentence{
+  font-size:16px;color:rgba(255,255,255,0.6);text-align:center;
+  max-width:320px;line-height:1.5;
+}
+.reveal-rating{
+  font-size:14px;font-weight:600;padding:6px 16px;border-radius:20px;
+  margin-top:8px;
+}
+.reveal-rating.r1{background:rgba(239,68,68,0.2);color:#ef4444}
+.reveal-rating.r2{background:rgba(249,115,22,0.2);color:#f97316}
+.reveal-rating.r3{background:rgba(34,197,94,0.2);color:#22c55e}
+.reveal-rating.r4{background:rgba(59,130,246,0.2);color:#3B82F6}
+
+/* Due count footer */
+.due-footer{
+  text-align:center;padding:8px;font-size:12px;
+  color:rgba(255,255,255,0.3);
+}
+
+/* Empty state */
+.empty-state{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;padding:40px;text-align:center;
+}
+.empty-state .icon{font-size:48px;opacity:0.3}
+.empty-state .msg{font-size:18px;font-weight:600;color:rgba(255,255,255,0.5)}
+.empty-state .sub{font-size:14px;color:rgba(255,255,255,0.3);max-width:260px;line-height:1.5}
+
+/* Loading spinner */
+.loading{display:flex;align-items:center;justify-content:center;flex:1}
+.spinner{
+  width:40px;height:40px;border:3px solid rgba(255,255,255,0.1);
+  border-top-color:#3B82F6;border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Rating disabled state */
+.rating-row.disabled .rating-btn{opacity:0.3;pointer-events:none}
+
+/* Tab bar spacing */
+.tab-spacer{height:90px}
+
+/* ── Tab Bar — injected by TAB_BAR_HTML ── */
+.tab-bar{
+  position:fixed;bottom:0;left:0;right:0;
+  display:flex;justify-content:space-around;
+  padding:8px 0 calc(8px + env(safe-area-inset-bottom,0px));
+  background:rgba(10,10,11,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid rgba(255,255,255,0.06);z-index:200;
+}
+.tab{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  text-decoration:none;font-size:10px;color:rgba(255,255,255,0.4);
+  -webkit-tap-highlight-color:transparent;
+}
+.tab svg{width:22px;height:22px;fill:currentColor}
+.tab.active{color:#3B82F6}
+</style>
+</head>
+<body>
+<div class="safe-top"></div>
+
+<div class="header">
+  <div class="back-btn" onclick="location.href='/'">
+    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </div>
+  <div class="header-title">SRS Drill</div>
+  <div class="header-stats">
+    <span><span class="val" id="sessionCount">0</span> revisados</span>
+    <span><span class="val" id="accuracy">—</span>%</span>
+  </div>
+</div>
+
+<div id="drillArea" class="drill-content">
+  <div class="loading"><div class="spinner"></div></div>
+</div>
+
+<div class="reveal-overlay" id="revealOverlay">
+  <div class="reveal-chunk" id="revealChunk"></div>
+  <div class="reveal-sentence" id="revealSentence"></div>
+  <div class="reveal-rating" id="revealRating"></div>
+</div>
+
+<div class="due-footer" id="dueFooter"></div>
+<div class="tab-spacer"></div>
+{tab_bar}
+
+<script>
+(function(){
+  let currentChunk = null;
+  let audio = null;
+  let timerStart = 0;
+  let timerInterval = null;
+  let session = { reviewed: 0, good: 0 };
+
+  function updateStats() {
+    document.getElementById('sessionCount').textContent = session.reviewed;
+    const pct = session.reviewed > 0 ? Math.round((session.good / session.reviewed) * 100) : 0;
+    document.getElementById('accuracy').textContent = session.reviewed > 0 ? pct : '—';
+  }
+
+  function startTimer() {
+    timerStart = Date.now();
+    const el = document.getElementById('timerEl');
+    if (el) {
+      el.textContent = '0.0s';
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        el.textContent = ((Date.now() - timerStart) / 1000).toFixed(1) + 's';
+      }, 100);
+    }
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+    return Date.now() - timerStart;
+  }
+
+  function playAudio() {
+    if (!currentChunk || !currentChunk.audio_file) return;
+    if (audio) { audio.pause(); audio = null; }
+    audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
+    audio.play().catch(() => {});
+  }
+
+  function renderDrill(data) {
+    currentChunk = data;
+    const area = document.getElementById('drillArea');
+
+    const imgSrc = data.image_file
+      ? '/images/' + data.image_file.split('/').pop()
+      : null;
+
+    area.innerHTML = `
+      <div class="image-card">
+        ${imgSrc
+          ? '<img src="' + imgSrc + '" alt="">'
+          : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>'
+        }
+      </div>
+      <div class="timer" id="timerEl">0.0s</div>
+      <div class="replay-btn" onclick="window._srsReplay()">
+        <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+        Ouvir de novo
+      </div>
+      <div class="rating-row" id="ratingRow">
+        <button class="rating-btn btn-again" onclick="window._srsRate(1)">
+          <span class="label">De Novo</span><span class="sub">1</span>
+        </button>
+        <button class="rating-btn btn-hard" onclick="window._srsRate(2)">
+          <span class="label">Difícil</span><span class="sub">2</span>
+        </button>
+        <button class="rating-btn btn-good" onclick="window._srsRate(3)">
+          <span class="label">Bom</span><span class="sub">3</span>
+        </button>
+        <button class="rating-btn btn-easy" onclick="window._srsRate(4)">
+          <span class="label">Fácil</span><span class="sub">4</span>
+        </button>
+      </div>
+    `;
+
+    document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
+    startTimer();
+
+    // Auto-play audio
+    setTimeout(() => playAudio(), 300);
+  }
+
+  function renderEmpty() {
+    document.getElementById('drillArea').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">&#10003;</div>
+        <div class="msg">Tudo revisado!</div>
+        <div class="sub">Nenhum chunk pendente agora. Volte mais tarde ou adicione novos chunks.</div>
+      </div>
+    `;
+    document.getElementById('dueFooter').textContent = '';
+  }
+
+  function fetchNext() {
+    document.getElementById('drillArea').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    fetch('/api/drill/next')
+      .then(r => {
+        if (r.status === 404) { renderEmpty(); return null; }
+        return r.json();
+      })
+      .then(data => {
+        if (data && !data.error) renderDrill(data);
+        else if (data && data.error) renderEmpty();
+      })
+      .catch(() => renderEmpty());
+  }
+
+  function revealAnswer(ratingVal, ratingName) {
+    const overlay = document.getElementById('revealOverlay');
+    document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
+    document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
+    const rEl = document.getElementById('revealRating');
+    rEl.textContent = ratingName;
+    rEl.className = 'reveal-rating r' + ratingVal;
+    overlay.classList.add('visible');
+
+    setTimeout(() => {
+      overlay.classList.remove('visible');
+      fetchNext();
+    }, 1500);
+  }
+
+  window._srsRate = function(ratingVal) {
+    if (!currentChunk) return;
+    const latency = stopTimer();
+
+    // Disable buttons immediately
+    const row = document.getElementById('ratingRow');
+    if (row) row.classList.add('disabled');
+
+    const ratingNames = {1: 'De Novo', 2: 'Difícil', 3: 'Bom', 4: 'Fácil'};
+
+    session.reviewed++;
+    if (ratingVal >= 3) session.good++;
+    updateStats();
+
+    fetch('/api/drill/complete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chunk_id: currentChunk.chunk_id,
+        latency_ms: Math.round(latency),
+        retries: 0,
+        rating: ratingVal
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      revealAnswer(ratingVal, ratingNames[ratingVal]);
+    })
+    .catch(() => {
+      revealAnswer(ratingVal, ratingNames[ratingVal]);
+    });
+  };
+
+  window._srsReplay = function() { playAudio(); };
+
+  // Keyboard shortcuts: 1-4 for ratings
+  document.addEventListener('keydown', function(e) {
+    if (e.key >= '1' && e.key <= '4' && currentChunk) {
+      const row = document.getElementById('ratingRow');
+      if (row && !row.classList.contains('disabled')) {
+        window._srsRate(parseInt(e.key));
+      }
+    }
+  });
+
+  updateStats();
+  fetchNext();
+})();
+</script>
+</body></html>"""
+
+
 # ── Unified Handler ────────────────────────────────────────────
 
 class OxeHandler(http.server.BaseHTTPRequestHandler):
@@ -4108,13 +4481,13 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         # ── Drill ──
         elif path == "/drill":
-            self._html(DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
+            self._html(SRS_DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
         elif path == "/api/drill/next":
             self._drill_next_chunk()
 
-        # ── Shadowing ──
+        # ── Shadowing (5-pass cycle from drill_server.py) ──
         elif path == "/shadowing":
-            self._html(SHADOWING_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
+            self._html(DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
 
         # ── Speech Ladder ──
         elif path == "/speech":
@@ -5052,13 +5425,17 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         latency_ms = body.get("latency_ms")
         retries = body.get("retries", 0)
         biometric = body.get("biometric_score")
+        explicit_rating = body.get("rating")
 
         if not chunk_id:
             self._json({"error": "chunk_id obrigatorio"}, status=400)
             return
 
-        # Determine rating
-        if retries >= 3:
+        # Determine rating — use explicit rating if provided, otherwise auto-compute
+        if explicit_rating and explicit_rating in (1, 2, 3, 4):
+            rating_map = {1: Rating.Again, 2: Rating.Hard, 3: Rating.Good, 4: Rating.Easy}
+            rating = rating_map[explicit_rating]
+        elif retries >= 3:
             rating = Rating.Again
         elif latency_ms and latency_ms > LATENCY_THRESHOLD_MS:
             rating = Rating.Hard
