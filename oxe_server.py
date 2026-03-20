@@ -4389,6 +4389,8 @@ body{
   let mediaRecorder = null;
   let recordedBlob = null;
   let lastBioScore = null;
+  let forceRedrill = false;
+  let latencyExplainFired = false;
   const LATENCY_THRESHOLD = 1000;
   const BIO_THRESHOLD = 85;
 
@@ -4400,6 +4402,7 @@ body{
 
   function startTimer() {
     timerStart = Date.now();
+    latencyExplainFired = false;
     const el = document.getElementById('timerEl');
     if (el) {
       el.textContent = '0.0s';
@@ -4407,10 +4410,35 @@ body{
       timerInterval = setInterval(() => {
         const elapsed = (Date.now() - timerStart) / 1000;
         el.textContent = elapsed.toFixed(1) + 's';
-        if (elapsed > 1.0) el.classList.add('slow');
-        else el.classList.remove('slow');
+        if (elapsed > 1.0) {
+          el.classList.add('slow');
+          // Gap 2 fix: auto-trigger recursive explanation the moment latency crosses 1s
+          if (!latencyExplainFired && currentChunk) {
+            latencyExplainFired = true;
+            fireRecursiveExplanation();
+          }
+        } else {
+          el.classList.remove('slow');
+        }
       }, 100);
     }
+  }
+
+  // Spec: latency >1s → deliver spoken explanation using top 1000 PT words (audio, never text)
+  function fireRecursiveExplanation() {
+    if (!currentChunk) return;
+    const word = currentChunk.target_chunk || currentChunk.word;
+    if (!word) return;
+    fetch('/api/drill/explain?word=' + encodeURIComponent(word))
+      .then(r => r.json())
+      .then(exp => {
+        if (exp && exp.audio_file) {
+          if (explainAudio) { explainAudio.pause(); }
+          explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
+          explainAudio.play().catch(() => {});
+        }
+      })
+      .catch(() => {});
   }
 
   function stopTimer() {
@@ -4469,11 +4497,14 @@ body{
       .then(r => r.json())
       .then(result => {
         lastBioScore = result.score || 0;
+        // Gap 4 fix: enforce force_redrill from nPVI detection
+        forceRedrill = result.force_redrill || false;
         const el = document.getElementById('bioResult');
         if (el) {
           const pass = lastBioScore >= BIO_THRESHOLD;
           el.className = 'bio-score ' + (pass ? 'pass' : 'fail');
-          el.innerHTML = '<span class="score-num">' + Math.round(lastBioScore) + '</span>/100';
+          el.innerHTML = '<span class="score-num">' + Math.round(lastBioScore) + '</span>/100'
+            + (forceRedrill ? '<br><span style="font-size:11px">nPVI alto — repita</span>' : '');
           el.style.display = 'flex';
 
           // Spec: below 85 → mandatory chorusing
@@ -4518,16 +4549,20 @@ body{
   function renderDrill(data) {
     currentChunk = data;
     lastBioScore = null;
+    forceRedrill = false;
     const area = document.getElementById('drillArea');
     const cid = data.chunk_id;
+    // Gap 1 fix: Zero-Reading Mode — text ONLY after 3 consecutive Again
     const showText = (againStreak[cid] || 0) >= 3;
     const imgSrc = data.image_file ? '/images/' + data.image_file.split('/').pop() : null;
 
+    // Spec: only DALL-E image + audio. No text unless 3x Again.
     let html = '<div class="image-card">' +
       (imgSrc ? '<img src="' + imgSrc + '" alt="">'
         : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>')
       + '</div>';
 
+    // 3-failure text reveal: only show after 3 consecutive Again ratings
     if (showText) {
       html += '<div class="text-reveal">' + (data.target_chunk || data.word || '') + '</div>';
     }
@@ -4576,15 +4611,29 @@ body{
 
   function revealAnswer(ratingVal, ratingName, bioScore) {
     const overlay = document.getElementById('revealOverlay');
-    document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
-    document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
+    const cid = currentChunk ? currentChunk.chunk_id : null;
+    const streak = cid ? (againStreak[cid] || 0) : 0;
+    // Zero-Reading Mode: only show text in reveal if 3+ consecutive Again
+    if (streak >= 3) {
+      document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
+      document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
+    } else {
+      document.getElementById('revealChunk').textContent = '';
+      document.getElementById('revealSentence').textContent = '';
+    }
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
     rEl.className = 'reveal-rating r' + ratingVal;
     const bEl = document.getElementById('revealBio');
-    bEl.textContent = bioScore !== null ? 'Nativeness: ' + Math.round(bioScore) + '/100' : '';
+    bEl.textContent = bioScore !== null ? Math.round(bioScore) + '/100' : '';
     overlay.classList.add('visible');
-    setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1800);
+
+    // Gap 4 fix: if force_redrill from biometric, re-present same chunk
+    if (forceRedrill) {
+      setTimeout(() => { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2000);
+    } else {
+      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1800);
+    }
   }
 
   window._srsRate = function(ratingVal) {
@@ -4632,18 +4681,9 @@ body{
       if (latencyOverride) displayName += ' (lento)';
       revealAnswer(finalRating, displayName, lastBioScore);
 
-      // Spec: on Hard/Again, play recursive explanation (audio, never text)
-      if (finalRating <= 2 && currentChunk.word) {
-        fetch('/api/drill/explain?word=' + encodeURIComponent(currentChunk.target_chunk || currentChunk.word))
-          .then(r2 => r2.json())
-          .then(exp => {
-            if (exp && exp.audio_file) {
-              if (explainAudio) { explainAudio.pause(); }
-              explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
-              explainAudio.play().catch(() => {});
-            }
-          })
-          .catch(() => {});
+      // Spec: on Hard/Again, play recursive explanation if not already fired by latency timer
+      if (finalRating <= 2 && !latencyExplainFired && currentChunk.word) {
+        fireRecursiveExplanation();
       }
     })
     .catch(() => { revealAnswer(finalRating, ratingNames[finalRating], lastBioScore); });

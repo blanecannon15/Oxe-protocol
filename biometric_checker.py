@@ -692,22 +692,24 @@ def enhanced_nativeness_score(user_audio, native_audio, clone_audio=None):
 
 def nativeness_score(user_audio, native_audio):
     """
-    Compute nativeness score (0-100) with isochrony as primary metric.
+    Compute nativeness score (0-100).
 
-    Weights:
-      50% — Syllable-duration DTW (isochrony match)
-      25% — Pitch contour DTW
-      10% — Speech rate similarity
-      15% — Rhythm regularity (nPVI comparison)
+    Delegates to enhanced_nativeness_score() which uses 10 prosody dimensions.
+    Returns just the scalar score for backwards compatibility.
 
-    If stress-timed pattern detected → score capped at 65, open-mid vowel
-    re-drill flagged.
+    If stress-timed pattern detected → score capped at 65.
     """
-    # --- Isochrony (syllable duration DTW) ---
+    try:
+        result = enhanced_nativeness_score(user_audio, native_audio)
+        return result["total_score"]
+    except Exception:
+        pass
+
+    # Fallback: basic 4-dimension scoring (spec weights: 50/25/10/15)
     iso_dtw, user_npvi, native_npvi, user_durs, native_durs = isochrony_dtw(
         user_audio, native_audio
     )
-    iso_score = 100.0 / (1.0 + iso_dtw * 2.0)  # Scale DTW → 0-100
+    iso_score = 100.0 / (1.0 + iso_dtw * 2.0)
 
     # --- Pitch contour DTW ---
     f0_user = extract_f0(user_audio)
