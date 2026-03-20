@@ -532,6 +532,28 @@ def migrate_v2(db_path=DB_PATH):
         CREATE INDEX IF NOT EXISTS idx_review_hist_item ON review_history(item_type, item_id);
         CREATE INDEX IF NOT EXISTS idx_review_hist_ts ON review_history(timestamp);
 
+        -- Activity time tracking (real clock time per activity per day)
+        CREATE TABLE IF NOT EXISTS activity_timer (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            date            TEXT NOT NULL,
+            activity        TEXT NOT NULL CHECK(activity IN (
+                'srs_drill','listening','shadowing','conversa','assembly','dictionary'
+            )),
+            started_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            ended_at        TEXT,
+            seconds_spent   INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(date, activity, started_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_activity_timer_date ON activity_timer(date);
+
+        -- Cumulative listening hours baseline
+        CREATE TABLE IF NOT EXISTS learner_profile (
+            key             TEXT PRIMARY KEY,
+            value           TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO learner_profile (key, value) VALUES ('listening_hours_baseline', '900');
+        INSERT OR IGNORE INTO learner_profile (key, value) VALUES ('daily_target_minutes', '600');
+
         -- Dictionary cache for per-tab GPT-4o results
         CREATE TABLE IF NOT EXISTS dictionary_cache (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

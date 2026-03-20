@@ -54,6 +54,8 @@ from acquisition_engine import (
 from daily_router import (
     get_today_plan, get_next_block, record_block_completion,
     adjust_plan_mid_session, get_plan_progress,
+    start_activity, stop_activity, get_time_by_activity,
+    get_cumulative_listening_hours, get_daily_target_minutes,
 )
 from training_modes import (
     select_mode_for_item, get_drill_config, get_available_modes,
@@ -2638,6 +2640,7 @@ async function addToSRS() {
 
 PLAN_HTML = r"""<!DOCTYPE html>
 <html><head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -2645,6 +2648,7 @@ PLAN_HTML = r"""<!DOCTYPE html>
 <style>
   @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
   @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.4)} 50%{box-shadow:0 0 0 10px rgba(59,130,246,0)} }
+  @keyframes timerPulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
@@ -2666,72 +2670,93 @@ PLAN_HTML = r"""<!DOCTYPE html>
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
     border-radius: 20px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   }
-  .progress-header {
-    padding: 20px 24px; margin-bottom: 16px; animation: fadeIn 0.3s ease-out;
+
+  /* ── Listening hours hero ── */
+  .listening-hero {
+    padding: 20px 24px; margin-bottom: 16px; text-align: center;
+    animation: fadeIn 0.3s ease-out;
   }
-  .progress-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .progress-pct { font-size: 2em; font-weight: 800; color: #3B82F6; }
-  .progress-label { color: #7a7a8e; font-size: 0.8em; }
-  .progress-track {
-    width: 100%; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08);
+  .listening-hours { font-size: 2.4em; font-weight: 800; color: #7C5CFC; }
+  .listening-sub { color: #7a7a8e; font-size: 0.8em; margin-top: 2px; }
+
+  /* ── Time tracker cards ── */
+  .time-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    margin-bottom: 16px; animation: fadeIn 0.3s ease-out 0.05s both;
   }
-  .progress-fill {
-    height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3B82F6, #7C5CFC);
-    transition: width 0.6s ease;
+  .time-card {
+    padding: 14px 10px; text-align: center; border-radius: 16px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
   }
+  .time-card .tc-icon { font-size: 1.4em; margin-bottom: 4px; }
+  .time-card .tc-mins { font-size: 1.3em; font-weight: 700; }
+  .time-card .tc-label { font-size: 0.7em; color: #7a7a8e; margin-top: 2px; }
+  .time-card .tc-target { font-size: 0.65em; color: #555; margin-top: 2px; }
+  .time-card.active { border-color: #3B82F6; }
+  .time-card.active .tc-mins { color: #3B82F6; animation: timerPulse 2s infinite; }
+
+  /* ── Total day progress ── */
+  .day-progress {
+    padding: 16px 24px; margin-bottom: 16px; animation: fadeIn 0.3s ease-out 0.1s both;
+  }
+  .day-progress-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .day-pct { font-size: 1.6em; font-weight: 800; color: #3B82F6; }
+  .day-label { color: #7a7a8e; font-size: 0.8em; }
+  .day-time { font-size: 1.1em; font-weight: 700; }
+  .progress-track { width: 100%; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08); }
+  .progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3B82F6, #7C5CFC); transition: width 0.6s ease; }
+
+  /* ── Activity buttons (funnel to each section) ── */
+  .activity-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-bottom: 16px; animation: fadeIn 0.3s ease-out 0.15s both;
+  }
+  .activity-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 18px 12px; border-radius: 18px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    text-decoration: none; color: #fafafa; cursor: pointer;
+    -webkit-tap-highlight-color: transparent; transition: all 0.2s;
+  }
+  .activity-btn:active { transform: scale(0.96); background: rgba(255,255,255,0.08); }
+  .activity-btn .ab-icon { font-size: 1.8em; }
+  .activity-btn .ab-name { font-weight: 600; font-size: 0.9em; }
+  .activity-btn .ab-sub { color: #7a7a8e; font-size: 0.72em; text-align: center; }
+
+  /* ── Block timeline ── */
+  .section-title { font-size: 0.85em; font-weight: 600; color: #7a7a8e; margin: 20px 0 10px 4px; }
   .timeline { position: relative; padding-left: 28px; margin-bottom: 16px; }
   .timeline::before {
     content: ''; position: absolute; left: 11px; top: 0; bottom: 0;
     width: 2px; background: rgba(255,255,255,0.08);
   }
   .block-card {
-    position: relative; padding: 16px 20px; margin-bottom: 12px;
-    animation: fadeIn 0.3s ease-out both;
+    position: relative; padding: 12px 16px; margin-bottom: 8px;
+    border-radius: 14px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
   .block-card::before {
-    content: ''; position: absolute; left: -22px; top: 20px;
+    content: ''; position: absolute; left: -22px; top: 16px;
     width: 10px; height: 10px; border-radius: 50%;
     background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.1);
   }
-  .block-card.completed { opacity: 0.5; }
+  .block-card.completed { opacity: 0.4; }
   .block-card.completed::before { background: #34d399; border-color: #34d399; }
-  .block-card.current { border-color: #3B82F6 !important; animation: pulse 2s infinite, fadeIn 0.3s ease-out both; }
+  .block-card.current { border-color: #3B82F6 !important; animation: pulse 2s infinite; }
   .block-card.current::before { background: #3B82F6; border-color: #3B82F6; }
-  .block-card.upcoming { opacity: 0.6; }
-  .block-card.upcoming::before { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.06); }
-  .block-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-  .block-icon { font-size: 1.3em; }
-  .block-type { font-weight: 600; font-size: 0.95em; flex:1; }
-  .block-duration { color: #7a7a8e; font-size: 0.8em; }
-  .block-mode { color: #7a7a8e; font-size: 0.78em; margin-top: 2px; }
-  .block-status { font-size: 0.75em; margin-top: 6px; }
-  .block-status.done { color: #34d399; }
-  .block-status.active { color: #3B82F6; }
-  .current-detail {
-    padding: 20px 24px; margin-bottom: 16px; border: 1px solid #3B82F6;
-    animation: fadeIn 0.4s ease-out 0.1s both;
-  }
-  .current-title { font-size: 1.1em; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-  .current-meta { color: #7a7a8e; font-size: 0.82em; margin-bottom: 12px; }
-  .current-meta span { margin-right: 16px; }
-  .btn-start {
-    display: inline-block; padding: 12px 28px; border-radius: 14px;
-    background: linear-gradient(135deg, #3B82F6, #7C5CFC); color: #fff;
-    font-weight: 700; font-size: 0.95em; text-decoration: none; border: none; cursor: pointer;
-  }
-  .btn-start:active { transform: scale(0.97); }
-  .fatigue-widget {
-    padding: 16px 20px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.15s both;
-  }
-  .fatigue-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .fatigue-bar-track {
-    flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08);
-  }
-  .fatigue-bar-fill {
-    height: 100%; border-radius: 3px; transition: width 0.5s ease, background 0.5s ease;
-  }
+  .block-card.upcoming { opacity: 0.5; }
+  .block-top { display: flex; align-items: center; gap: 8px; }
+  .block-icon { font-size: 1.1em; }
+  .block-type { font-weight: 600; font-size: 0.85em; flex:1; }
+  .block-duration { color: #7a7a8e; font-size: 0.75em; }
+
+  /* ── Fatigue ── */
+  .fatigue-widget { padding: 16px 20px; margin-bottom: 16px; animation: fadeIn 0.4s ease-out 0.2s both; }
+  .fatigue-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .fatigue-bar-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); }
+  .fatigue-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease, background 0.5s ease; }
   .fatigue-score { font-weight: 700; font-size: 1.1em; min-width: 32px; }
-  .fatigue-minutes { color: #7a7a8e; font-size: 0.78em; }
+  .fatigue-meta { color: #7a7a8e; font-size: 0.78em; }
   .btn-adjust {
     padding: 8px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
     background: rgba(255,255,255,0.06); color: #fafafa; font-size: 0.82em; cursor: pointer;
@@ -2748,37 +2773,90 @@ PLAN_HTML = r"""<!DOCTYPE html>
   <div class="date-label" id="plan-date"></div>
 </div>
 
-<div class="progress-header glass-card">
-  <div class="progress-row">
+<!-- Cumulative listening hours -->
+<div class="listening-hero glass-card">
+  <div class="listening-hours" id="listen-hours">900.0h</div>
+  <div class="listening-sub">horas de escuta acumuladas</div>
+</div>
+
+<!-- Time spent per activity today -->
+<div class="time-grid" id="time-grid">
+  <div class="time-card" id="tc-drill">
+    <div class="tc-icon">&#127919;</div>
+    <div class="tc-mins" id="tm-drill">0</div>
+    <div class="tc-label">SRS Drill</div>
+    <div class="tc-target">meta: 150 min</div>
+  </div>
+  <div class="time-card" id="tc-listen">
+    <div class="tc-icon">&#127911;</div>
+    <div class="tc-mins" id="tm-listen">0</div>
+    <div class="tc-label">Escuta</div>
+    <div class="tc-target">meta: 270 min</div>
+  </div>
+  <div class="time-card" id="tc-shadow">
+    <div class="tc-icon">&#128483;</div>
+    <div class="tc-mins" id="tm-shadow">0</div>
+    <div class="tc-label">Sombreamento</div>
+    <div class="tc-target">meta: 90 min</div>
+  </div>
+</div>
+
+<!-- Day progress -->
+<div class="day-progress glass-card">
+  <div class="day-progress-row">
     <div>
-      <div class="progress-pct" id="overall-pct">0%</div>
-      <div class="progress-label">completo</div>
+      <div class="day-pct" id="day-pct">0%</div>
+      <div class="day-label">do dia (10h)</div>
     </div>
     <div style="text-align:right">
-      <div style="font-size:1.4em;font-weight:700" id="blocks-done">0</div>
-      <div class="progress-label" id="blocks-total">de 0 blocos</div>
+      <div class="day-time" id="day-time">0h 0min</div>
+      <div class="day-label" id="day-target">de 10h</div>
     </div>
   </div>
   <div class="progress-track">
-    <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    <div class="progress-fill" id="day-fill" style="width:0%"></div>
   </div>
 </div>
 
+<!-- Activity funnel buttons -->
+<div class="activity-grid">
+  <a href="/drill" class="activity-btn" onclick="timerStart('srs_drill')">
+    <span class="ab-icon">&#127919;</span>
+    <span class="ab-name">SRS Drill</span>
+    <span class="ab-sub">Chunks + automaticidade</span>
+  </a>
+  <a href="/library" class="activity-btn" onclick="timerStart('listening')">
+    <span class="ab-icon">&#127911;</span>
+    <span class="ab-name">Escuta</span>
+    <span class="ab-sub">Historias + podcasts</span>
+  </a>
+  <a href="/shadowing" class="activity-btn" onclick="timerStart('shadowing')">
+    <span class="ab-icon">&#128483;</span>
+    <span class="ab-name">Sombreamento</span>
+    <span class="ab-sub">5-pass ciclo</span>
+  </a>
+  <a href="/conversa" class="activity-btn" onclick="timerStart('conversa')">
+    <span class="ab-icon">&#128172;</span>
+    <span class="ab-name">Conversa</span>
+    <span class="ab-sub">Pratica guiada</span>
+  </a>
+  <a href="/assembly" class="activity-btn" onclick="timerStart('assembly')">
+    <span class="ab-icon">&#129513;</span>
+    <span class="ab-name">Montar Frases</span>
+    <span class="ab-sub">Chunk assembly</span>
+  </a>
+  <a href="/search" class="activity-btn" onclick="timerStart('dictionary')">
+    <span class="ab-icon">&#128218;</span>
+    <span class="ab-name">Dicionario</span>
+    <span class="ab-sub">Busca + definicoes</span>
+  </a>
+</div>
+
+<!-- Block timeline -->
+<div class="section-title">Blocos do dia</div>
 <div class="timeline" id="timeline"></div>
 
-<div class="current-detail glass-card" id="current-detail" style="display:none">
-  <div class="current-title">
-    <span id="cur-icon"></span>
-    <span id="cur-type"></span>
-  </div>
-  <div class="current-meta">
-    <span id="cur-mode"></span>
-    <span id="cur-duration"></span>
-    <span id="cur-items"></span>
-  </div>
-  <button class="btn-start" id="btn-start" onclick="startBlock()">Começar</button>
-</div>
-
+<!-- Fatigue -->
 <div class="fatigue-widget glass-card">
   <div style="font-weight:600;font-size:0.85em;margin-bottom:10px;color:#7a7a8e">Fadiga</div>
   <div class="fatigue-row">
@@ -2788,7 +2866,7 @@ PLAN_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <div class="fatigue-minutes" id="fat-minutes">0 min ativo</div>
+    <div class="fatigue-meta" id="fat-minutes">0 min ativo</div>
     <button class="btn-adjust" onclick="adjustPlan()">Ajustar plano</button>
   </div>
   <div class="adjust-msg" id="adjust-msg">Plano ajustado!</div>
@@ -2804,74 +2882,80 @@ PLAN_HTML = r"""<!DOCTYPE html>
 <script>
 var TYPE_ICONS = {srs_drill:'\u{1F3AF}',listening:'\u{1F3A7}',shadowing:'\u{1F5E3}',break:'\u{2615}',conversa:'\u{1F4AC}'};
 var TYPE_LABELS = {srs_drill:'SRS Drill',listening:'Escuta',shadowing:'Sombreamento',break:'Pausa',conversa:'Conversa'};
-var currentBlock = null;
+var ACTIVITY_ROUTES = {srs_drill:'/drill',listening:'/library',shadowing:'/shadowing',conversa:'/conversa',break:null};
+
+function timerStart(activity) {
+  fetch('/api/plan/timer/start', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({activity: activity})
+  }).catch(function(){});
+}
+
+function fmtMin(m) {
+  m = Math.round(m);
+  if (m < 60) return m + ' min';
+  return Math.floor(m/60) + 'h ' + (m % 60) + 'min';
+}
+
+function renderTime(data) {
+  var ta = data.time_by_activity || {};
+  var drill = ta.srs_drill || 0;
+  var listen = ta.listening || 0;
+  var shadow = ta.shadowing || 0;
+  var conversa = ta.conversa || 0;
+  var assembly = ta.assembly || 0;
+  var dict = ta.dictionary || 0;
+  var total = drill + listen + shadow + conversa + assembly + dict;
+  var target = data.daily_target_minutes || 600;
+
+  document.getElementById('tm-drill').textContent = fmtMin(drill);
+  document.getElementById('tm-listen').textContent = fmtMin(listen);
+  document.getElementById('tm-shadow').textContent = fmtMin(shadow);
+
+  document.getElementById('listen-hours').textContent = (data.listening_hours_total || 900).toFixed(1) + 'h';
+
+  var pct = Math.min(100, Math.round(total / target * 100));
+  document.getElementById('day-pct').textContent = pct + '%';
+  document.getElementById('day-time').textContent = fmtMin(total);
+  document.getElementById('day-target').textContent = 'de ' + fmtMin(target);
+  document.getElementById('day-fill').style.width = pct + '%';
+}
 
 function renderPlan(data) {
   document.getElementById('plan-date').textContent = data.date || '';
-  var pct = Math.round(data.completed_pct || 0);
-  document.getElementById('overall-pct').textContent = pct + '%';
-  document.getElementById('progress-fill').style.width = pct + '%';
-  document.getElementById('blocks-done').textContent = data.completed_blocks || 0;
-  document.getElementById('blocks-total').textContent = 'de ' + (data.total_blocks || 0) + ' blocos';
-
   var blocks = data.blocks || [];
   if (blocks.length === 0) {
     document.getElementById('no-plan').style.display = 'block';
     document.getElementById('timeline').style.display = 'none';
-    document.getElementById('current-detail').style.display = 'none';
     return;
   }
-
+  var completedIds = {};
+  if (data.completed_block_ids) {
+    for (var c = 0; c < data.completed_block_ids.length; c++) completedIds[data.completed_block_ids[c]] = true;
+  }
+  var currentId = data.current_block ? data.current_block.block_id : -1;
   var html = '';
   for (var i = 0; i < blocks.length; i++) {
     var b = blocks[i];
-    var status = b.completed ? 'completed' : (data.current_block && data.current_block.block_id === b.block_id ? 'current' : 'upcoming');
+    var done = b.completed || completedIds[b.block_id];
+    var isCurrent = b.block_id === currentId;
+    var status = done ? 'completed' : (isCurrent ? 'current' : 'upcoming');
     var icon = TYPE_ICONS[b.type] || '\u{1F4CB}';
     var label = TYPE_LABELS[b.type] || b.type;
-    var statusText = b.completed ? '<span class="block-status done">\u2713 Completo</span>' :
-      (status === 'current' ? '<span class="block-status active">\u25B6 Agora</span>' : '');
-    html += '<div class="block-card glass-card ' + status + '" style="animation-delay:' + (i * 0.05) + 's">'
+    var route = ACTIVITY_ROUTES[b.type];
+    var onclick = route ? ' onclick="timerStart(\'' + b.type + '\');location.href=\'' + route + '\'"' : '';
+    html += '<div class="block-card glass-card ' + status + '"' + onclick + '>'
       + '<div class="block-top"><span class="block-icon">' + icon + '</span>'
       + '<span class="block-type">' + label + '</span>'
       + '<span class="block-duration">' + (b.duration_minutes || 0) + ' min</span></div>'
-      + (b.mode ? '<div class="block-mode">' + b.mode + '</div>' : '')
-      + statusText + '</div>';
+      + '</div>';
   }
   document.getElementById('timeline').innerHTML = html;
-
-  if (data.current_block) {
-    currentBlock = data.current_block;
-    var cb = data.current_block;
-    document.getElementById('cur-icon').textContent = TYPE_ICONS[cb.type] || '';
-    document.getElementById('cur-type').textContent = TYPE_LABELS[cb.type] || cb.type;
-    document.getElementById('cur-mode').textContent = cb.mode || '';
-    document.getElementById('cur-duration').textContent = (cb.duration_minutes || 0) + ' min';
-    document.getElementById('cur-items').textContent = cb.target_items ? cb.target_items + ' itens' : '';
-    document.getElementById('current-detail').style.display = 'block';
-  } else {
-    document.getElementById('current-detail').style.display = 'none';
-  }
 }
 
-function startBlock() {
-  if (!currentBlock) return;
-  var t = currentBlock.type;
-  if (t === 'srs_drill') window.location.href = '/drill';
-  else if (t === 'shadowing') window.location.href = '/shadowing';
-  else if (t === 'listening') window.location.href = '/library';
-  else if (t === 'conversa') window.location.href = '/conversa';
-  else if (t === 'break') completeBlock();
-  else window.location.href = '/train';
-}
-
-function completeBlock() {
-  fetch('/api/plan/block/complete', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
-    .then(function(r){return r.json()})
-    .then(function(){loadPlan()});
-}
-
-function loadPlan() {
-  fetch('/api/plan/today').then(function(r){return r.json()}).then(renderPlan);
+function loadAll() {
+  fetch('/api/plan/today').then(function(r){return r.json()}).then(renderPlan).catch(function(){});
+  fetch('/api/plan/time').then(function(r){return r.json()}).then(renderTime).catch(function(){});
 }
 
 function loadFatigue() {
@@ -2883,8 +2967,8 @@ function loadFatigue() {
     document.getElementById('fat-fill').style.background = color;
     document.getElementById('fat-score').style.color = color;
     var mins = d.minutes_active || d.session_minutes || 0;
-    document.getElementById('fat-minutes').textContent = Math.round(mins) + ' min ativo';
-  });
+    document.getElementById('fat-minutes').textContent = fmtMin(mins) + ' ativo';
+  }).catch(function(){});
 }
 
 function adjustPlan() {
@@ -2896,21 +2980,16 @@ function adjustPlan() {
       document.getElementById('adjust-msg').style.display = 'block';
       btn.textContent = 'Ajustar plano'; btn.disabled = false;
       setTimeout(function(){document.getElementById('adjust-msg').style.display='none'}, 2000);
-      loadPlan();
+      loadAll();
     })
     .catch(function(){btn.textContent='Ajustar plano';btn.disabled=false;});
 }
 
-loadPlan();
+loadAll();
 loadFatigue();
+// Refresh time tracking every 30s
 setInterval(function(){
-  fetch('/api/plan/progress').then(function(r){return r.json()}).then(function(d){
-    var pct = Math.round(d.completed_pct || 0);
-    document.getElementById('overall-pct').textContent = pct + '%';
-    document.getElementById('progress-fill').style.width = pct + '%';
-    document.getElementById('blocks-done').textContent = d.completed_blocks || 0;
-    document.getElementById('blocks-total').textContent = 'de ' + (d.total_blocks || 0) + ' blocos';
-  });
+  fetch('/api/plan/time').then(function(r){return r.json()}).then(renderTime).catch(function(){});
 }, 30000);
 </script>
 </body></html>"""
@@ -4761,6 +4840,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json(block if block else {"done": True})
         elif path == "/api/plan/progress":
             self._json(get_plan_progress())
+        elif path == "/api/plan/time":
+            self._json({
+                "time_by_activity": get_time_by_activity(),
+                "listening_hours_total": round(get_cumulative_listening_hours(), 1),
+                "daily_target_minutes": get_daily_target_minutes(),
+            })
 
         # ── Chunks ──
         elif path == "/api/chunks/families":
@@ -4925,6 +5010,14 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             fatigue = body.get("fatigue_score", 50)
             plan = adjust_plan_mid_session(fatigue)
             self._json(plan)
+        elif path == "/api/plan/timer/start":
+            activity = body.get("activity", "srs_drill")
+            timer_id = start_activity(activity)
+            self._json({"ok": True, "timer_id": timer_id, "activity": activity})
+        elif path == "/api/plan/timer/stop":
+            activity = body.get("activity", "srs_drill")
+            total_secs = stop_activity(activity)
+            self._json({"ok": True, "activity": activity, "total_seconds": total_secs})
         elif path == "/api/chunks/extract":
             src = body.get("source", "story")
             src_id = body.get("source_id", 0)
