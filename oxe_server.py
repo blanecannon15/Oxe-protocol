@@ -360,8 +360,8 @@ HOME_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Word of Day -->
-  <div class="wod" id="wod">
+  <!-- Word of Day — clickable to dictionary -->
+  <div class="wod" id="wod" style="cursor:pointer" onclick="if(this.dataset.wordId)location.href='/search?wod='+this.dataset.wordId">
     <div class="wod-label">Palavra do Dia</div>
     <div class="wod-word" id="wod-word"></div>
     <div class="wod-sentence" id="wod-sentence"></div>
@@ -477,6 +477,7 @@ fetch('/api/home-stats').then(function(r){return r.json()}).then(function(d){
     document.getElementById('wod-word').textContent = d.word_of_day.text||'';
     document.getElementById('wod-sentence').textContent = d.word_of_day.sentence||'';
     document.getElementById('wod').style.display = 'block';
+    if(d.word_of_day.word_id) document.getElementById('wod').dataset.wordId = d.word_of_day.word_id;
   }
   if(d.mastery_pct !== undefined){
     document.getElementById('prog-pct').textContent = d.mastery_pct + '%';
@@ -2632,6 +2633,22 @@ async function addToSRS() {
     btn.disabled = false;
   }
 }
+
+// Auto-open word from URL param (e.g. ?wod=123 from home page)
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var wodId = params.get('wod');
+  if (wodId) {
+    fetch('/api/search/word/' + wodId)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.word) {
+          selectWord(parseInt(wodId), d.word, d.difficulty_tier || 1, d.frequency_rank || 0);
+        }
+      })
+      .catch(function() {});
+  }
+})();
 </script>
 </body></html>"""
 
@@ -5380,11 +5397,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         if total_words > 0:
             idx = day_seed % total_words
             row = conn2.execute(
-                "SELECT word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?",
+                "SELECT id, word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?",
                 (tier, idx)
             ).fetchone()
             if row:
-                wod = {"text": row[0], "sentence": ""}
+                wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
         conn2.close()
         resp = {
             "tier": tier,
