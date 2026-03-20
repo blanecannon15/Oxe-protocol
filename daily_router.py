@@ -4,7 +4,10 @@ daily_router.py — Daily plan generator and session orchestrator for the Oxe Pr
 Generates a structured daily training plan based on learner state, SRS due items,
 fragility data, and yesterday's performance. Orchestrates blocks of drills,
 listening, shadowing, breaks, and conversation practice across a configurable
-session duration (default 240 minutes).
+session duration (default 600 minutes / 10 hours).
+
+Tracks real time spent per activity via the activity_timer table.
+Learner baseline: 900 listening hours.
 
 Usage:
     from daily_router import get_today_plan, get_next_block, record_block_completion
@@ -157,7 +160,7 @@ def _select_mode_for_block(items, block_type, is_fragile=False):
 # Core plan generation
 # ---------------------------------------------------------------------------
 
-def generate_daily_plan(total_minutes=240, db_path=DB_PATH):
+def generate_daily_plan(total_minutes=600, db_path=DB_PATH):
     """Generate a structured daily training plan.
 
     Algorithm:
@@ -268,27 +271,55 @@ def generate_daily_plan(total_minutes=240, db_path=DB_PATH):
     #
     # We scale linearly for non-240 sessions.
 
+    # 10-hour template (~600 min): heavy CI listening, SRS drills, shadowing, conversa
+    # Pattern: 3 sessions of ~3h20m each with breaks
+    # Session 1 (Morning): drill-heavy to clear SRS queue
+    # Session 2 (Midday): listening-heavy for CI
+    # Session 3 (Afternoon): mix of shadow, conversa, listening
     template = [
+        # ── Session 1: Morning (drill-heavy) ── ~200 min
         ("srs_drill", 25),
         ("break", 5),
         ("srs_drill", 25),
         ("break", 5),
-        ("listening", 25),
+        ("listening", 30),
         ("break", 5),
         ("srs_drill", 25),
         ("break", 5),
-        ("listening", 25),
-        ("break", 5),
+        ("listening", 30),
+        ("break", 10),
         ("shadowing", 20),
         ("break", 5),
+        # ── Session 2: Midday (listening-heavy) ── ~200 min
+        ("listening", 30),
+        ("break", 5),
         ("srs_drill", 25),
         ("break", 5),
-        ("listening", 25),
+        ("listening", 30),
+        ("break", 5),
+        ("shadowing", 25),
+        ("break", 5),
+        ("listening", 30),
+        ("break", 10),
+        ("srs_drill", 25),
+        ("break", 5),
+        # ── Session 3: Afternoon (output + CI) ── ~200 min
+        ("listening", 30),
+        ("break", 5),
+        ("srs_drill", 25),
+        ("break", 5),
+        ("shadowing", 25),
+        ("break", 5),
+        ("listening", 30),
+        ("break", 5),
+        ("srs_drill", 25),
+        ("break", 10),
+        ("listening", 30),
         ("break", 5),
     ]
 
     if conversa_eligible:
-        template.append(("conversa", 15))
+        template.append(("conversa", 20))
 
     # Compute total template minutes for scaling
     template_total = sum(dur for _, dur in template)
@@ -793,6 +824,11 @@ def get_plan_progress(db_path=DB_PATH):
     except Exception:
         pass
 
+    # Time spent per activity today
+    time_by_activity = get_time_by_activity(today, db_path)
+    total_minutes_today = sum(time_by_activity.values())
+    listening_hours_total = get_cumulative_listening_hours(db_path)
+
     return {
         "date": today,
         "total_blocks": total_blocks,
@@ -801,4 +837,132 @@ def get_plan_progress(db_path=DB_PATH):
         "current_block": current_block,
         "items_reviewed_today": items_reviewed,
         "items_promoted_today": items_promoted,
+        "time_by_activity": time_by_activity,
+        "total_minutes_today": round(total_minutes_today, 1),
+        "listening_hours_total": round(listening_hours_total, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# Activity time tracking
+# ---------------------------------------------------------------------------
+
+def start_activity(activity, db_path=DB_PATH):
+    """Record the start of an activity. Returns the timer row id."""
+    today = _today_str()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection(db_path)
+
+    # Close any open timer for this activity today
+    conn.execute(
+        """UPDATE activity_timer SET ended_at = ?, seconds_spent = CAST(
+            (julianday(?) - julianday(started_at)) * 86400 AS INTEGER
+        ) WHERE date = ? AND activity = ? AND ended_at IS NULL""",
+        (now, now, today, activity),
+    )
+
+    conn.execute(
+        "INSERT INTO activity_timer (date, activity, started_at) VALUES (?, ?, ?)",
+        (today, activity, now),
+    )
+    conn.commit()
+    row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return row_id
+
+
+def stop_activity(activity, db_path=DB_PATH):
+    """Stop any open timer for this activity today. Returns seconds spent."""
+    today = _today_str()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_connection(db_path)
+    conn.execute(
+        """UPDATE activity_timer SET ended_at = ?, seconds_spent = CAST(
+            (julianday(?) - julianday(started_at)) * 86400 AS INTEGER
+        ) WHERE date = ? AND activity = ? AND ended_at IS NULL""",
+        (now, now, today, activity),
+    )
+    conn.commit()
+
+    # Return total seconds for this activity today
+    total = conn.execute(
+        "SELECT COALESCE(SUM(seconds_spent), 0) FROM activity_timer WHERE date = ? AND activity = ?",
+        (today, activity),
+    ).fetchone()[0]
+    conn.close()
+    return total
+
+
+def get_time_by_activity(date=None, db_path=DB_PATH):
+    """Return dict of activity → minutes spent for a given date (default today)."""
+    if date is None:
+        date = _today_str()
+    conn = get_connection(db_path)
+
+    # For open timers, compute live elapsed
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        """SELECT activity,
+            COALESCE(SUM(
+                CASE WHEN ended_at IS NULL
+                    THEN CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
+                    ELSE seconds_spent
+                END
+            ), 0) as total_secs
+        FROM activity_timer WHERE date = ? GROUP BY activity""",
+        (now, date),
+    ).fetchall()
+    conn.close()
+
+    result = {}
+    for r in rows:
+        result[r["activity"]] = round(r["total_secs"] / 60.0, 1)
+    return result
+
+
+def get_cumulative_listening_hours(db_path=DB_PATH):
+    """Return total listening hours = baseline + all tracked listening minutes."""
+    conn = get_connection(db_path)
+
+    # Get baseline
+    baseline = 900.0
+    try:
+        row = conn.execute(
+            "SELECT value FROM learner_profile WHERE key = 'listening_hours_baseline'"
+        ).fetchone()
+        if row:
+            baseline = float(row["value"])
+    except Exception:
+        pass
+
+    # Sum all listening activity across all days
+    try:
+        total_secs = conn.execute(
+            """SELECT COALESCE(SUM(
+                CASE WHEN ended_at IS NULL
+                    THEN CAST((julianday('now') - julianday(started_at)) * 86400 AS INTEGER)
+                    ELSE seconds_spent
+                END
+            ), 0) FROM activity_timer WHERE activity = 'listening'"""
+        ).fetchone()[0]
+    except Exception:
+        total_secs = 0
+
+    conn.close()
+    return baseline + (total_secs / 3600.0)
+
+
+def get_daily_target_minutes(db_path=DB_PATH):
+    """Return the daily target in minutes (default 600)."""
+    conn = get_connection(db_path)
+    try:
+        row = conn.execute(
+            "SELECT value FROM learner_profile WHERE key = 'daily_target_minutes'"
+        ).fetchone()
+        if row:
+            return int(row["value"])
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return 600
