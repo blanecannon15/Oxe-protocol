@@ -97,6 +97,7 @@ from sentence_assembly import (
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
+PWA_DIR = Path(__file__).parent / "pwa"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -4995,6 +4996,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._serve_audio(path[7:])
         elif path.startswith("/image/"):
             self._serve_image(path[7:])
+
+        # ── PWA assets ──
+        elif path == "/manifest.json" or path.startswith("/pwa/"):
+            self._serve_pwa(path)
         else:
             self.send_error(404)
 
@@ -6815,6 +6820,34 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         with open(filepath, "rb") as f:
             self.wfile.write(f.read())
 
+    def _serve_pwa(self, path):
+        if path == "/manifest.json":
+            filepath = PWA_DIR / "manifest.json"
+            ct = "application/manifest+json"
+        elif path == "/pwa/sw.js":
+            filepath = PWA_DIR / "sw.js"
+            ct = "application/javascript"
+        elif path.startswith("/pwa/icon-"):
+            filepath = PWA_DIR / path.split("/")[-1]
+            ct = "image/png"
+        else:
+            self.send_error(404)
+            return
+        if not filepath.exists():
+            self.send_error(404)
+            return
+        data = filepath.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(len(data)))
+        if ct == "application/javascript":
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Service-Worker-Allowed", "/")
+        else:
+            self.send_header("Cache-Control", "public, max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
+
     # ── Neural Mapping handlers ─────────────────────────────
 
     def _neural_status(self):
@@ -6849,7 +6882,20 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
     # ── Helpers ────────────────────────────────────────────────
 
+    _PWA_HEAD = (
+        '<link rel="manifest" href="/manifest.json">'
+        '<meta name="theme-color" content="#0a0a0b">'
+        '<link rel="apple-touch-icon" href="/pwa/icon-192.png">'
+    )
+    _PWA_SCRIPT = (
+        "<script>if('serviceWorker' in navigator)"
+        "{navigator.serviceWorker.register('/pwa/sw.js')}</script>"
+    )
+
     def _html(self, content):
+        # Inject PWA tags into every page
+        content = content.replace("</head>", self._PWA_HEAD + "</head>", 1)
+        content = content.replace("</body>", self._PWA_SCRIPT + "</body>", 1)
         body = content.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
