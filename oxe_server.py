@@ -28,7 +28,7 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -454,6 +454,28 @@ HOME_HTML = r"""<!DOCTYPE html>
     </a>
   </div>
 
+  <!-- Offline Sync -->
+  <div class="sync-row" style="margin:0 0 16px;padding:14px 16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;animation:fadeIn 0.3s ease-out 0.2s both">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:0.75em;color:#7a7a8e;font-weight:600">MODO OFFLINE</div>
+      <div id="sync-status" style="font-size:0.7em;color:#525263"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="sync-btn" onclick="syncForOffline()" style="flex:1;padding:12px;background:linear-gradient(135deg,#4F7BEF,#7C5CFC);color:#fff;border:none;border-radius:10px;font-size:0.85em;font-weight:700;cursor:pointer">
+        Baixar Sessao Offline
+      </button>
+      <button id="upload-btn" onclick="uploadReviews()" style="padding:12px 16px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.2);border-radius:10px;font-size:0.85em;font-weight:600;cursor:pointer;display:none">
+        Enviar <span id="pending-count">0</span>
+      </button>
+    </div>
+    <div id="sync-progress" style="display:none;margin-top:10px">
+      <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden">
+        <div id="sync-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#4F7BEF,#7C5CFC);transition:width 0.3s"></div>
+      </div>
+      <div id="sync-msg" style="font-size:0.7em;color:#7a7a8e;margin-top:4px;text-align:center"></div>
+    </div>
+  </div>
+
   <!-- Progress bar (one line) -->
   <div class="progress-row">
     <div class="progress-bar-wrap">
@@ -551,6 +573,127 @@ requestAnimationFrame(function(){
       lockEl.style.borderColor = 'rgba(52,211,153,0.15)';
     }
   }).catch(function(){});
+});
+
+// ── Offline Sync ──
+var syncDB;
+function openSyncDB(){
+  return new Promise(function(resolve,reject){
+    if(syncDB){resolve(syncDB);return}
+    var req=indexedDB.open('oxe-offline',1);
+    req.onupgradeneeded=function(e){
+      var db=e.target.result;
+      if(!db.objectStoreNames.contains('drill_items'))db.createObjectStore('drill_items',{keyPath:'chunk_id'});
+      if(!db.objectStoreNames.contains('pending_reviews'))db.createObjectStore('pending_reviews',{autoIncrement:true});
+    };
+    req.onsuccess=function(){syncDB=req.result;resolve(syncDB)};
+    req.onerror=function(){reject(req.error)};
+  });
+}
+
+function updateSyncStatus(){
+  openSyncDB().then(function(db){
+    var tx=db.transaction(['drill_items','pending_reviews'],'readonly');
+    var drillReq=tx.objectStore('drill_items').count();
+    var pendReq=tx.objectStore('pending_reviews').count();
+    drillReq.onsuccess=function(){
+      var cnt=drillReq.result;
+      document.getElementById('sync-status').textContent=cnt>0?cnt+' chunks prontos':'Nao sincronizado';
+    };
+    pendReq.onsuccess=function(){
+      var cnt=pendReq.result;
+      var btn=document.getElementById('upload-btn');
+      var badge=document.getElementById('pending-count');
+      if(cnt>0){btn.style.display='block';badge.textContent=cnt}
+      else{btn.style.display='none'}
+    };
+  }).catch(function(){});
+}
+
+function syncForOffline(){
+  var btn=document.getElementById('sync-btn');
+  var prog=document.getElementById('sync-progress');
+  var fill=document.getElementById('sync-fill');
+  var msg=document.getElementById('sync-msg');
+  btn.disabled=true;btn.textContent='Baixando...';
+  prog.style.display='block';fill.style.width='10%';
+  msg.textContent='Gerando audio e imagens...';
+
+  fetch('/api/sync/download?count=50').then(function(r){return r.json()}).then(function(data){
+    fill.style.width='60%';msg.textContent='Salvando '+data.items.length+' chunks...';
+    return openSyncDB().then(function(db){
+      // Clear old items first
+      var clearTx=db.transaction('drill_items','readwrite');
+      clearTx.objectStore('drill_items').clear();
+      return new Promise(function(resolve){clearTx.oncomplete=resolve});
+    }).then(function(){
+      return openSyncDB();
+    }).then(function(db){
+      var tx=db.transaction('drill_items','readwrite');
+      var store=tx.objectStore('drill_items');
+      data.items.forEach(function(item){store.put(item)});
+      return new Promise(function(resolve){tx.oncomplete=resolve});
+    }).then(function(){
+      fill.style.width='100%';
+      msg.textContent=data.items.length+' chunks prontos! (de '+data.total_due+' pendentes)';
+      btn.textContent='Baixar Sessao Offline';btn.disabled=false;
+      updateSyncStatus();
+    });
+  }).catch(function(e){
+    msg.textContent='Erro: '+e.message;btn.textContent='Tentar de novo';btn.disabled=false;
+  });
+}
+
+function uploadReviews(){
+  var btn=document.getElementById('upload-btn');
+  btn.disabled=true;btn.textContent='Enviando...';
+  openSyncDB().then(function(db){
+    var tx=db.transaction('pending_reviews','readonly');
+    var req=tx.objectStore('pending_reviews').getAll();
+    req.onsuccess=function(){
+      var reviews=req.result;
+      if(!reviews.length){btn.disabled=false;btn.style.display='none';return}
+      fetch('/api/sync/upload',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({reviews:reviews})
+      }).then(function(r){return r.json()}).then(function(d){
+        return openSyncDB().then(function(db2){
+          var clr=db2.transaction('pending_reviews','readwrite');
+          clr.objectStore('pending_reviews').clear();
+          return new Promise(function(resolve){clr.oncomplete=resolve});
+        });
+      }).then(function(){
+        btn.textContent='Enviado!';btn.style.display='none';
+        updateSyncStatus();
+      });
+    };
+  }).catch(function(){btn.disabled=false;btn.textContent='Erro'});
+}
+
+// Listen for SW sync completion
+if(navigator.serviceWorker){
+  navigator.serviceWorker.addEventListener('message',function(e){
+    if(e.data&&e.data.type==='sync-complete')updateSyncStatus();
+  });
+}
+
+// Check offline status on load
+updateSyncStatus();
+if(!navigator.onLine){
+  document.getElementById('sync-status').textContent='OFFLINE';
+  document.getElementById('sync-status').style.color='#f97316';
+}
+window.addEventListener('online',function(){
+  document.getElementById('sync-status').style.color='#525263';
+  updateSyncStatus();
+  // Auto-upload pending reviews when back online
+  if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+    navigator.serviceWorker.controller.postMessage('sync-reviews');
+  }
+});
+window.addEventListener('offline',function(){
+  document.getElementById('sync-status').textContent='OFFLINE';
+  document.getElementById('sync-status').style.color='#f97316';
 });
 </script>
 </body></html>"""
@@ -4375,6 +4518,7 @@ body{
 </head>
 <body>
 <div class="safe-top"></div>
+<div id="offline-banner" style="display:none;background:#f97316;color:#fff;text-align:center;padding:4px;font-size:0.7em;font-weight:700">MODO OFFLINE</div>
 <div class="header">
   <div class="back-btn" onclick="location.href='/train'">
     <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
@@ -4729,6 +4873,15 @@ body{
 
   updateStats();
   fetchNext();
+  // Offline indicator
+  function showOfflineBanner(show) {
+    var b = document.getElementById('offline-banner');
+    if (b) b.style.display = show ? 'block' : 'none';
+  }
+  if (!navigator.onLine) showOfflineBanner(true);
+  window.addEventListener('offline', function() { showOfflineBanner(true); });
+  window.addEventListener('online', function() { showOfflineBanner(false); });
+
 })();
 </script>
 </body></html>"""
@@ -4988,6 +5141,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             days = int(query.get("days", ["7"])[0])
             self._json(get_assembly_stats(days))
 
+        # ── Offline Sync ──
+        elif path == "/api/sync/download":
+            count = int(query.get("count", ["50"])[0])
+            self._sync_download(min(count, 100))
+
         # ── Shared ──
         elif path == "/api/daily-stats":
             self._daily_stats()
@@ -5188,8 +5346,103 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             order = body.get("submitted_order", [])
             self._json(check_assembly(cid, order))
 
+        # ── Offline Sync Upload ──
+        elif path == "/api/sync/upload":
+            self._sync_upload(body)
+
         else:
             self.send_error(404)
+
+    # ── Offline Sync Endpoints ────────────────────────────
+
+    def _sync_download(self, count):
+        """Bundle N due chunks with audio+image as base64 for offline use."""
+        import base64
+        chunks = get_due_chunks()[:count]
+        items = []
+        for chunk in chunks:
+            # Generate audio if needed
+            audio_file = generate_tts(chunk["carrier_sentence"])
+            image_file = None
+            try:
+                image_file = generate_image(chunk["word"])
+            except Exception:
+                pass
+
+            # Pre-generate explanation
+            explain_text, explain_audio = "", None
+            try:
+                explain_text, explain_audio = generate_explanation(chunk["target_chunk"])
+            except Exception:
+                pass
+
+            # Read audio bytes → base64
+            audio_b64 = ""
+            if audio_file:
+                apath = AUDIO_DIR / audio_file
+                if apath.exists():
+                    audio_b64 = base64.b64encode(apath.read_bytes()).decode()
+
+            # Read image bytes → base64
+            image_b64 = ""
+            if image_file:
+                ipath = IMAGE_DIR / image_file
+                if ipath.exists():
+                    image_b64 = base64.b64encode(ipath.read_bytes()).decode()
+
+            # Read explanation audio → base64
+            explain_audio_b64 = ""
+            if explain_audio:
+                epath = AUDIO_DIR / explain_audio
+                if epath.exists():
+                    explain_audio_b64 = base64.b64encode(epath.read_bytes()).decode()
+
+            items.append({
+                "chunk_id": chunk["id"],
+                "word": chunk["word"],
+                "word_id": chunk["word_id"],
+                "target_chunk": chunk["target_chunk"],
+                "carrier_sentence": chunk["carrier_sentence"],
+                "current_pass": chunk["current_pass"],
+                "tier": chunk["difficulty_tier"],
+                "audio_b64": audio_b64,
+                "audio_mime": "audio/mpeg",
+                "image_b64": image_b64,
+                "image_mime": "image/png",
+                "explain_text": explain_text,
+                "explain_audio_b64": explain_audio_b64,
+            })
+
+        self._json({
+            "sync_id": datetime.now(timezone.utc).isoformat(),
+            "items": items,
+            "total_due": len(get_due_chunks()),
+        })
+
+    def _sync_upload(self, body):
+        """Accept batched reviews from offline sessions."""
+        reviews = body.get("reviews", [])
+        results = []
+        for r in reviews:
+            chunk_id = r.get("chunk_id")
+            rating_val = r.get("rating", 3)
+            latency_ms = r.get("latency_ms")
+            biometric = r.get("biometric_score")
+            if not chunk_id:
+                results.append({"chunk_id": chunk_id, "ok": False, "error": "missing chunk_id"})
+                continue
+            try:
+                rating_map = {1: Rating.Again, 2: Rating.Hard, 3: Rating.Good, 4: Rating.Easy}
+                rating = rating_map.get(rating_val, Rating.Good)
+                record_chunk_review(chunk_id, rating, latency_ms, biometric)
+                try:
+                    update_state_after_review('chunk', chunk_id, rating, latency_ms or 0, 'clean', biometric)
+                except Exception:
+                    pass
+                results.append({"chunk_id": chunk_id, "ok": True})
+            except Exception as e:
+                results.append({"chunk_id": chunk_id, "ok": False, "error": str(e)})
+        self._json({"synced": len([r for r in results if r["ok"]]), "failed": len([r for r in results if not r["ok"]]), "details": results})
 
     # ── Podcast Endpoints ──────────────────────────────────
 
