@@ -18,6 +18,7 @@ import gzip
 import http.server
 import json
 import os
+import ssl
 import random
 import re
 import socket
@@ -6946,13 +6947,28 @@ def main():
     ip = get_local_ip()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", port), OxeHandler)
 
+    # ── HTTPS for PWA install (service workers require secure context) ──
+    cert_dir = Path(__file__).parent / "certs"
+    cert_file = cert_dir / "cert.pem"
+    key_file = cert_dir / "key.pem"
+    use_https = cert_file.exists() and key_file.exists()
+    if use_https:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(str(cert_file), str(key_file))
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        proto = "https"
+    else:
+        proto = "http"
+
     tier = get_unlocked_tier()
     due = len(list(get_due_words()))
 
     print(f"\n  Oxe Protocol — Unified Server")
     print(f"  {'='*44}")
-    print(f"  Phone:   http://{ip}:{port}")
-    print(f"  Mac:     http://localhost:{port}")
+    print(f"  Phone:   {proto}://{ip}:{port}")
+    print(f"  Mac:     {proto}://localhost:{port}")
+    if use_https:
+        print(f"  HTTPS:   ON (self-signed cert)")
     print(f"  Tier:    {tier} ({TIER_LABELS[tier]})")
     print(f"  Due:     {due} words")
     print(f"  {'='*44}")
