@@ -456,13 +456,14 @@ HOME_HTML = r"""<!DOCTYPE html>
 
   <!-- Offline Sync -->
   <div class="sync-row" style="margin:0 0 16px;padding:14px 16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;animation:fadeIn 0.3s ease-out 0.2s both">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <div style="font-size:0.75em;color:#7a7a8e;font-weight:600">MODO OFFLINE</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:0.75em;color:#7a7a8e;font-weight:600">MODO AVIAO</div>
       <div id="sync-status" style="font-size:0.7em;color:#525263"></div>
     </div>
+    <div id="sync-info" style="font-size:0.72em;color:#525263;margin-bottom:10px"></div>
     <div style="display:flex;gap:8px">
-      <button id="sync-btn" onclick="syncForOffline()" style="flex:1;padding:12px;background:linear-gradient(135deg,#4F7BEF,#7C5CFC);color:#fff;border:none;border-radius:10px;font-size:0.85em;font-weight:700;cursor:pointer">
-        Baixar Sessao Offline
+      <button id="sync-btn" onclick="fullSync()" style="flex:1;padding:12px;background:linear-gradient(135deg,#4F7BEF,#7C5CFC);color:#fff;border:none;border-radius:10px;font-size:0.85em;font-weight:700;cursor:pointer">
+        Baixar Tudo
       </button>
       <button id="upload-btn" onclick="uploadReviews()" style="padding:12px 16px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.2);border-radius:10px;font-size:0.85em;font-weight:600;cursor:pointer;display:none">
         Enviar <span id="pending-count">0</span>
@@ -575,72 +576,134 @@ requestAnimationFrame(function(){
   }).catch(function(){});
 });
 
-// ── Offline Sync ──
+// ── Full Offline Sync ──
 var syncDB;
 function openSyncDB(){
   return new Promise(function(resolve,reject){
     if(syncDB){resolve(syncDB);return}
-    var req=indexedDB.open('oxe-offline',1);
+    var req=indexedDB.open('oxe-offline',2);
     req.onupgradeneeded=function(e){
       var db=e.target.result;
-      if(!db.objectStoreNames.contains('drill_items'))db.createObjectStore('drill_items',{keyPath:'chunk_id'});
-      if(!db.objectStoreNames.contains('pending_reviews'))db.createObjectStore('pending_reviews',{autoIncrement:true});
+      var stores=['drill_items','pending_reviews','stories','dictionary','stats','api_cache'];
+      stores.forEach(function(name){
+        if(!db.objectStoreNames.contains(name)){
+          if(name==='drill_items')db.createObjectStore(name,{keyPath:'chunk_id'});
+          else if(name==='pending_reviews')db.createObjectStore(name,{autoIncrement:true});
+          else if(name==='stories')db.createObjectStore(name,{keyPath:'id'});
+          else if(name==='dictionary')db.createObjectStore(name,{keyPath:'word_id'});
+          else if(name==='stats')db.createObjectStore(name,{keyPath:'key'});
+          else if(name==='api_cache')db.createObjectStore(name,{keyPath:'url'});
+        }
+      });
     };
     req.onsuccess=function(){syncDB=req.result;resolve(syncDB)};
     req.onerror=function(){reject(req.error)};
   });
 }
 
+function idbStore(storeName,items,keyField){
+  return openSyncDB().then(function(db){
+    var tx=db.transaction(storeName,'readwrite');
+    var store=tx.objectStore(storeName);
+    items.forEach(function(item){store.put(item)});
+    return new Promise(function(resolve){tx.oncomplete=resolve});
+  });
+}
+
 function updateSyncStatus(){
   openSyncDB().then(function(db){
-    var tx=db.transaction(['drill_items','pending_reviews'],'readonly');
-    var drillReq=tx.objectStore('drill_items').count();
-    var pendReq=tx.objectStore('pending_reviews').count();
-    drillReq.onsuccess=function(){
-      var cnt=drillReq.result;
-      document.getElementById('sync-status').textContent=cnt>0?cnt+' chunks prontos':'Nao sincronizado';
-    };
-    pendReq.onsuccess=function(){
-      var cnt=pendReq.result;
-      var btn=document.getElementById('upload-btn');
-      var badge=document.getElementById('pending-count');
-      if(cnt>0){btn.style.display='block';badge.textContent=cnt}
-      else{btn.style.display='none'}
-    };
+    var stores=['drill_items','stories','dictionary','pending_reviews'];
+    var tx=db.transaction(stores,'readonly');
+    var counts={};
+    var done=0;
+    stores.forEach(function(s){
+      var req=tx.objectStore(s).count();
+      req.onsuccess=function(){
+        counts[s]=req.result;
+        done++;
+        if(done===stores.length){
+          var info=document.getElementById('sync-info');
+          var parts=[];
+          if(counts.drill_items)parts.push(counts.drill_items+' drills');
+          if(counts.stories)parts.push(counts.stories+' historias');
+          if(counts.dictionary)parts.push(counts.dictionary+' palavras');
+          info.textContent=parts.length?parts.join(' · '):'Nenhum conteudo baixado';
+          var st=document.getElementById('sync-status');
+          st.textContent=parts.length?'Pronto':'';
+          if(parts.length)st.style.color='#34d399';
+          // Upload badge
+          var btn=document.getElementById('upload-btn');
+          var badge=document.getElementById('pending-count');
+          if(counts.pending_reviews>0){btn.style.display='block';badge.textContent=counts.pending_reviews}
+          else{btn.style.display='none'}
+        }
+      };
+    });
   }).catch(function(){});
 }
 
-function syncForOffline(){
+function setProgress(pct,msg){
+  document.getElementById('sync-fill').style.width=pct+'%';
+  document.getElementById('sync-msg').textContent=msg;
+}
+
+function fullSync(){
   var btn=document.getElementById('sync-btn');
   var prog=document.getElementById('sync-progress');
-  var fill=document.getElementById('sync-fill');
-  var msg=document.getElementById('sync-msg');
   btn.disabled=true;btn.textContent='Baixando...';
-  prog.style.display='block';fill.style.width='10%';
-  msg.textContent='Gerando audio e imagens...';
+  prog.style.display='block';setProgress(0,'Verificando...');
 
-  fetch('/api/sync/download?count=50').then(function(r){return r.json()}).then(function(data){
-    fill.style.width='60%';msg.textContent='Salvando '+data.items.length+' chunks...';
-    return openSyncDB().then(function(db){
-      // Clear old items first
-      var clearTx=db.transaction('drill_items','readwrite');
-      clearTx.objectStore('drill_items').clear();
-      return new Promise(function(resolve){clearTx.oncomplete=resolve});
+  // Step 1: Get sync status
+  fetch('/api/sync/status').then(function(r){return r.json()}).then(function(status){
+    setProgress(5,'Baixando historias ('+status.stories+')...');
+
+    // Step 2: Download stories
+    return fetch('/api/sync/stories').then(function(r){return r.json()}).then(function(data){
+      setProgress(25,'Salvando '+data.count+' historias...');
+      return idbStore('stories',data.stories);
     }).then(function(){
-      return openSyncDB();
-    }).then(function(db){
-      var tx=db.transaction('drill_items','readwrite');
-      var store=tx.objectStore('drill_items');
-      data.items.forEach(function(item){store.put(item)});
-      return new Promise(function(resolve){tx.oncomplete=resolve});
+      setProgress(30,'Baixando dicionario ('+status.dictionary_words+' palavras)...');
+
+      // Step 3: Download dictionary
+      return fetch('/api/sync/dictionary').then(function(r){return r.json()}).then(function(data){
+        setProgress(55,'Salvando '+data.count+' palavras...');
+        return idbStore('dictionary',data.words);
+      });
     }).then(function(){
-      fill.style.width='100%';
-      msg.textContent=data.items.length+' chunks prontos! (de '+data.total_due+' pendentes)';
-      btn.textContent='Baixar Sessao Offline';btn.disabled=false;
+      setProgress(60,'Baixando drills ('+status.due_drills+' pendentes)...');
+
+      // Step 4: Download drill items
+      return fetch('/api/sync/download?count=100').then(function(r){return r.json()}).then(function(data){
+        setProgress(80,'Salvando '+data.items.length+' chunks...');
+        return openSyncDB().then(function(db){
+          var tx=db.transaction('drill_items','readwrite');
+          tx.objectStore('drill_items').clear();
+          return new Promise(function(resolve){tx.oncomplete=resolve});
+        }).then(function(){
+          return idbStore('drill_items',data.items);
+        });
+      });
+    }).then(function(){
+      setProgress(85,'Baixando dados do app...');
+
+      // Step 5: Download all stats/dashboard data
+      return fetch('/api/sync/stats').then(function(r){return r.json()}).then(function(stats){
+        var saves=[];
+        if(stats.home_stats)saves.push({key:'home_stats',data:stats.home_stats});
+        if(stats.dashboard)saves.push({key:'dashboard',data:stats.dashboard});
+        if(stats.levels)saves.push({key:'levels',data:stats.levels});
+        if(stats.speech_stage)saves.push({key:'speech_stage',data:stats.speech_stage});
+        if(stats.chunks_families)saves.push({key:'chunks_families',data:stats.chunks_families});
+        return idbStore('stats',saves);
+      });
+    }).then(function(){
+      setProgress(100,'Tudo baixado! Pode desligar o WiFi.');
+      btn.textContent='Baixar Tudo';btn.disabled=false;
       updateSyncStatus();
     });
   }).catch(function(e){
-    msg.textContent='Erro: '+e.message;btn.textContent='Tentar de novo';btn.disabled=false;
+    setProgress(0,'Erro: '+e.message);
+    btn.textContent='Tentar de novo';btn.disabled=false;
   });
 }
 
@@ -656,7 +719,7 @@ function uploadReviews(){
       fetch('/api/sync/upload',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({reviews:reviews})
-      }).then(function(r){return r.json()}).then(function(d){
+      }).then(function(r){return r.json()}).then(function(){
         return openSyncDB().then(function(db2){
           var clr=db2.transaction('pending_reviews','readwrite');
           clr.objectStore('pending_reviews').clear();
@@ -670,29 +733,25 @@ function uploadReviews(){
   }).catch(function(){btn.disabled=false;btn.textContent='Erro'});
 }
 
-// Listen for SW sync completion
 if(navigator.serviceWorker){
   navigator.serviceWorker.addEventListener('message',function(e){
     if(e.data&&e.data.type==='sync-complete')updateSyncStatus();
   });
 }
 
-// Check offline status on load
 updateSyncStatus();
 if(!navigator.onLine){
   document.getElementById('sync-status').textContent='OFFLINE';
   document.getElementById('sync-status').style.color='#f97316';
 }
 window.addEventListener('online',function(){
-  document.getElementById('sync-status').style.color='#525263';
   updateSyncStatus();
-  // Auto-upload pending reviews when back online
   if(navigator.serviceWorker&&navigator.serviceWorker.controller){
     navigator.serviceWorker.controller.postMessage('sync-reviews');
   }
 });
 window.addEventListener('offline',function(){
-  document.getElementById('sync-status').textContent='OFFLINE';
+  document.getElementById('sync-status').textContent='SEM REDE';
   document.getElementById('sync-status').style.color='#f97316';
 });
 </script>
@@ -5145,6 +5204,14 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/sync/download":
             count = int(query.get("count", ["50"])[0])
             self._sync_download(min(count, 100))
+        elif path == "/api/sync/stories":
+            self._sync_stories()
+        elif path == "/api/sync/dictionary":
+            self._sync_dictionary()
+        elif path == "/api/sync/stats":
+            self._sync_stats()
+        elif path == "/api/sync/status":
+            self._sync_status()
 
         # ── Shared ──
         elif path == "/api/daily-stats":
@@ -5417,6 +5484,160 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "sync_id": datetime.now(timezone.utc).isoformat(),
             "items": items,
             "total_due": len(get_due_chunks()),
+        })
+
+    def _sync_stories(self):
+        """Return all stories with audio for offline use."""
+        conn = get_conn()
+        stories = conn.execute(
+            "SELECT id, title, level, body, questions, audio_chunks FROM story_library ORDER BY level, id"
+        ).fetchall()
+        conn.close()
+        result = []
+        for s in stories:
+            result.append({
+                "id": s["id"],
+                "title": s["title"],
+                "level": s["level"],
+                "body": s["body"],
+                "questions": json.loads(s["questions"]) if s["questions"] else [],
+                "audio_chunks": json.loads(s["audio_chunks"]) if s["audio_chunks"] else None,
+            })
+        self._json({"stories": result, "count": len(result)})
+
+    def _sync_dictionary(self):
+        """Return all cached dictionary data for offline use."""
+        conn = get_conn()
+        rows = conn.execute(
+            """SELECT dc.word_id, wb.word, dc.tab_name, dc.data_json
+               FROM dictionary_cache dc
+               JOIN word_bank wb ON wb.id = dc.word_id
+               ORDER BY dc.word_id, dc.tab_name"""
+        ).fetchall()
+        conn.close()
+        # Group by word_id
+        words = {}
+        for r in rows:
+            wid = r["word_id"]
+            if wid not in words:
+                words[wid] = {"word_id": wid, "word": r["word"], "tabs": {}}
+            words[wid]["tabs"][r["tab_name"]] = json.loads(r["data_json"]) if r["data_json"] else None
+        self._json({"words": list(words.values()), "count": len(words)})
+
+    def _sync_stats(self):
+        """Return all dashboard/stats data for offline pages."""
+        import traceback
+        stats = {}
+        try:
+            stats["home_stats"] = self._build_home_stats()
+        except Exception:
+            stats["home_stats"] = {}
+        try:
+            stats["dashboard"] = self._build_dashboard()
+        except Exception:
+            stats["dashboard"] = {}
+        try:
+            conn = get_conn()
+            levels_raw = conn.execute(
+                "SELECT DISTINCT level FROM story_library ORDER BY level"
+            ).fetchall()
+            level_map = {'P1':'Primeiro Passo','P2':'Primeiras Palavras','P3':'Começando',
+                        'A1':'Tudo Tranquilo','A2':'Quase Lá','B1':'No Pique',
+                        'B2':'Desenrolado','C1':'Quase Nativo','C2':'Soteropolitano'}
+            levels = []
+            for r in levels_raw:
+                lv = r["level"]
+                cnt = conn.execute("SELECT COUNT(*) as c FROM story_library WHERE level=?", (lv,)).fetchone()["c"]
+                levels.append({"key": lv, "label": level_map.get(lv, lv), "count": cnt})
+            conn.close()
+            stats["levels"] = levels
+        except Exception:
+            stats["levels"] = []
+        try:
+            stats["speech_stage"] = self._build_speech_stage()
+        except Exception:
+            stats["speech_stage"] = {}
+        try:
+            stats["chunks_families"] = self._build_chunk_families_page()
+        except Exception:
+            stats["chunks_families"] = []
+        self._json(stats)
+
+    def _build_home_stats(self):
+        """Build home stats dict without sending response."""
+        conn = get_conn()
+        tier = get_unlocked_tier()
+        due = len(list(get_due_chunks()))
+        story_count = conn.execute("SELECT COUNT(*) as c FROM story_library").fetchone()["c"]
+        # Word of day
+        import random
+        today = datetime.now().strftime("%Y-%m-%d")
+        random.seed(today)
+        max_id = conn.execute("SELECT MAX(id) as m FROM word_bank WHERE difficulty_tier <= ?", (tier,)).fetchone()["m"] or 1
+        idx = random.randint(0, min(max_id, 500))
+        row = conn.execute("SELECT id, word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?", (tier, idx)).fetchone()
+        wod = {"text": row["word"], "word_id": row["id"], "sentence": ""} if row else {}
+        # Mastery
+        total = conn.execute("SELECT COUNT(*) as c FROM word_bank").fetchone()["c"]
+        mastered = conn.execute("SELECT COUNT(*) as c FROM word_bank WHERE mastery_level >= 3").fetchone()["c"]
+        mastery_pct = round(100 * mastered / total) if total else 0
+        conn.close()
+        return {"streak": 0, "tier": tier, "due": due, "story_count": story_count,
+                "word_of_day": wod, "mastery_pct": mastery_pct}
+
+    def _build_dashboard(self):
+        """Build dashboard dict without sending response."""
+        try:
+            dist = get_state_distribution()
+            tier = get_unlocked_tier()
+            conn = get_conn()
+            mastered = conn.execute("SELECT COUNT(*) as c FROM word_bank WHERE mastery_level >= 3").fetchone()["c"]
+            total = conn.execute("SELECT COUNT(*) as c FROM word_bank").fetchone()["c"]
+            conn.close()
+            return {
+                "tier": {"current": tier, "mastery_pct": round(100 * mastered / total) if total else 0},
+                "acquisition_state": {"distribution": dist, "automatic_count": dist.get("AUTOMATIC_CLEAN", 0) + dist.get("AUTOMATIC_NATIVE", 0), "acquired_count": sum(dist.values())},
+                "fatigue": {"recommendation": "start_session"},
+                "speech": {"stage": 1},
+            }
+        except Exception:
+            return {}
+
+    def _build_speech_stage(self):
+        try:
+            from speech_ladder import get_current_stage, evaluate_gates
+            stage = get_current_stage()
+            gates = evaluate_gates()
+            return {"stage": stage, "gates": gates}
+        except Exception:
+            return {"stage": 1, "gates": {}}
+
+    def _build_chunk_families_page(self):
+        try:
+            conn = get_conn()
+            rows = conn.execute(
+                "SELECT id, root_form, word_count, composite_rank FROM chunk_families ORDER BY composite_rank DESC LIMIT 100"
+            ).fetchall()
+            conn.close()
+            return [{"id": r["id"], "root_form": r["root_form"], "word_count": r["word_count"], "rank": r["composite_rank"]} for r in rows]
+        except Exception:
+            return []
+
+    def _sync_status(self):
+        """Return counts of what's available to sync."""
+        conn = get_conn()
+        story_count = conn.execute("SELECT COUNT(*) as c FROM story_library").fetchone()["c"]
+        stories_with_audio = conn.execute("SELECT COUNT(*) as c FROM story_library WHERE audio_chunks IS NOT NULL AND audio_chunks != 'null'").fetchone()["c"]
+        dict_words = conn.execute("SELECT COUNT(DISTINCT word_id) as c FROM dictionary_cache").fetchone()["c"]
+        dict_tabs = conn.execute("SELECT COUNT(*) as c FROM dictionary_cache").fetchone()["c"]
+        due = len(list(get_due_chunks()))
+        conn.close()
+        self._json({
+            "stories": story_count,
+            "stories_with_audio": stories_with_audio,
+            "dictionary_words": dict_words,
+            "dictionary_tabs": dict_tabs,
+            "due_drills": due,
         })
 
     def _sync_upload(self, body):
