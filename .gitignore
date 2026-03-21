@@ -12,6 +12,9 @@ voca_vault/logs/
 __pycache__/
 *.pyc
 
+# SSL certs (local only)
+certs/
+
 # macOS
 .DS_Store
 
