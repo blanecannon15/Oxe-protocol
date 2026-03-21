@@ -1,35 +1,31 @@
-const CACHE_NAME = 'oxe-v2';
+const CACHE_NAME = 'oxe-v3';
 const DB_NAME = 'oxe-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-// Shell pages to pre-cache on install
 const SHELL = [
-  '/',
-  '/search',
-  '/train',
-  '/drill',
-  '/library',
-  '/conversa',
-  '/plan',
-  '/chunks',
-  '/assembly',
-  '/shadowing',
-  '/speech',
+  '/', '/search', '/train', '/drill', '/library',
+  '/conversa', '/plan', '/chunks', '/assembly',
+  '/shadowing', '/speech', '/stories',
 ];
 
-// ── IndexedDB helpers ──────────────────────────────────
+// ── IndexedDB ──────────────────────────────────────────
 
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = e => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains('drill_items')) {
-        db.createObjectStore('drill_items', { keyPath: 'chunk_id' });
-      }
-      if (!db.objectStoreNames.contains('pending_reviews')) {
-        db.createObjectStore('pending_reviews', { autoIncrement: true });
-      }
+      const stores = ['drill_items', 'pending_reviews', 'stories', 'dictionary', 'stats', 'api_cache'];
+      stores.forEach(name => {
+        if (!db.objectStoreNames.contains(name)) {
+          if (name === 'drill_items') db.createObjectStore(name, { keyPath: 'chunk_id' });
+          else if (name === 'pending_reviews') db.createObjectStore(name, { autoIncrement: true });
+          else if (name === 'stories') db.createObjectStore(name, { keyPath: 'id' });
+          else if (name === 'dictionary') db.createObjectStore(name, { keyPath: 'word_id' });
+          else if (name === 'stats') db.createObjectStore(name, { keyPath: 'key' });
+          else if (name === 'api_cache') db.createObjectStore(name, { keyPath: 'url' });
+        }
+      });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -97,16 +93,19 @@ function b64toBlob(b64, mime) {
   return new Blob([arr], { type: mime });
 }
 
-// ── Install ────────────────────────────────────────────
+function jsonResponse(data, status) {
+  return new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+// ── Install & Activate ─────────────────────────────────
 
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL))
-  );
+  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(SHELL)));
   self.skipWaiting();
 });
-
-// ── Activate ───────────────────────────────────────────
 
 self.addEventListener('activate', e => {
   e.waitUntil(
@@ -117,104 +116,126 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// ── Offline drill: get next item from IndexedDB ────────
+// ── Offline API handlers ───────────────────────────────
 
 async function offlineDrillNext() {
   const items = await idbGetAll('drill_items');
-  if (!items.length) {
-    return new Response(JSON.stringify({ error: 'Nenhum chunk offline' }), {
-      status: 404, headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  // Pick first item (already sorted by due date from server)
+  if (!items.length) return jsonResponse({ error: 'Nenhum chunk offline' }, 404);
   const item = items[0];
-  const remaining = items.length;
-  return new Response(JSON.stringify({
-    chunk_id: item.chunk_id,
-    word: item.word,
-    word_id: item.word_id,
-    target_chunk: item.target_chunk,
-    carrier_sentence: item.carrier_sentence,
-    current_pass: item.current_pass,
+  return jsonResponse({
+    chunk_id: item.chunk_id, word: item.word, word_id: item.word_id,
+    target_chunk: item.target_chunk, carrier_sentence: item.carrier_sentence,
+    current_pass: item.current_pass, tier: item.tier,
     audio_file: '_offline_audio_' + item.chunk_id,
-    image_file: item.image_b64 ? ('_offline_image_' + item.chunk_id) : null,
-    tier: item.tier,
-    due_count: remaining,
-    offline: true,
-  }), { headers: { 'Content-Type': 'application/json' } });
+    image_file: item.image_b64 ? '_offline_image_' + item.chunk_id : null,
+    due_count: items.length, offline: true,
+  });
 }
-
-// ── Offline drill: complete review → queue for sync ────
 
 async function offlineDrillComplete(body) {
-  const chunkId = body.chunk_id;
-  // Queue the review for later sync
   await idbPut('pending_reviews', {
-    chunk_id: chunkId,
-    rating: body.rating || 3,
-    latency_ms: body.latency_ms,
-    biometric_score: body.biometric_score || null,
+    chunk_id: body.chunk_id, rating: body.rating || 3,
+    latency_ms: body.latency_ms, biometric_score: body.biometric_score || null,
     timestamp: new Date().toISOString(),
   });
-  // Remove from offline drill queue
-  await idbDelete('drill_items', chunkId);
+  await idbDelete('drill_items', body.chunk_id);
   const remaining = await idbCount('drill_items');
-  return new Response(JSON.stringify({
+  return jsonResponse({
     rating: body.rating || 3,
     rating_name: ['', 'De novo', 'Difícil', 'Bom', 'Fácil'][body.rating || 3],
-    new_mastery: 0,
-    latency_downgraded: false,
-    offline: true,
-    remaining: remaining,
-  }), { headers: { 'Content-Type': 'application/json' } });
+    new_mastery: 0, latency_downgraded: false, offline: true, remaining: remaining,
+  });
 }
-
-// ── Offline drill: explain from pre-cached data ────────
 
 async function offlineDrillExplain(url) {
   const word = new URL(url).searchParams.get('word') || '';
   const items = await idbGetAll('drill_items');
   const item = items.find(i => i.target_chunk === word || i.word === word);
   if (item && item.explain_text) {
-    return new Response(JSON.stringify({
+    return jsonResponse({
       explanation: item.explain_text,
-      audio_file: item.explain_audio_b64 ? ('_offline_explain_' + item.chunk_id) : null,
+      audio_file: item.explain_audio_b64 ? '_offline_explain_' + item.chunk_id : null,
       offline: true,
-    }), { headers: { 'Content-Type': 'application/json' } });
+    });
   }
-  return new Response(JSON.stringify({ explanation: '', audio_file: null }), {
-    headers: { 'Content-Type': 'application/json' }
-  });
+  return jsonResponse({ explanation: '', audio_file: null });
 }
 
-// ── Offline audio/image from IndexedDB blobs ───────────
+async function offlineStoryList(level) {
+  const stories = await idbGetAll('stories');
+  const filtered = level ? stories.filter(s => s.level === level) : stories;
+  return jsonResponse(filtered.map(s => ({
+    id: s.id, title: s.title, level: s.level,
+    has_audio: !!(s.audio_chunks && s.audio_chunks.story_chunks && s.audio_chunks.story_chunks.length),
+  })));
+}
+
+async function offlineStory(id) {
+  const story = await idbGet('stories', parseInt(id));
+  if (!story) return jsonResponse({ error: 'not found' }, 404);
+  return jsonResponse(story);
+}
+
+async function offlineLevels() {
+  const stats = await idbGet('stats', 'levels');
+  return stats ? jsonResponse(stats.data) : jsonResponse([]);
+}
+
+async function offlineHomeStats() {
+  const stats = await idbGet('stats', 'home_stats');
+  return stats ? jsonResponse(stats.data) : jsonResponse({});
+}
+
+async function offlineDashboard() {
+  const stats = await idbGet('stats', 'dashboard');
+  return stats ? jsonResponse(stats.data) : jsonResponse({});
+}
+
+async function offlineSpeechStage() {
+  const stats = await idbGet('stats', 'speech_stage');
+  return stats ? jsonResponse(stats.data) : jsonResponse({ stage: 1 });
+}
+
+async function offlineWordData(wordId) {
+  const word = await idbGet('dictionary', parseInt(wordId));
+  if (!word) return null;
+  return word;
+}
+
+async function offlineSearch(query) {
+  if (!query) return jsonResponse([]);
+  const all = await idbGetAll('dictionary');
+  const q = query.toLowerCase();
+  const matches = all.filter(w => w.word.toLowerCase().startsWith(q)).slice(0, 20);
+  return jsonResponse(matches.map(w => ({
+    id: w.word_id, word: w.word, frequency_rank: 0, difficulty_tier: 1,
+  })));
+}
+
+async function offlineWordTab(wordId, tab) {
+  const word = await idbGet('dictionary', parseInt(wordId));
+  if (!word || !word.tabs || !word.tabs[tab]) return jsonResponse({});
+  return jsonResponse(word.tabs[tab]);
+}
 
 async function offlineAsset(pathname) {
-  // Pattern: _offline_audio_<chunk_id>, _offline_image_<chunk_id>, _offline_explain_<chunk_id>
   const match = pathname.match(/\/_offline_(audio|image|explain)_(\d+)/);
   if (!match) return null;
   const [, type, id] = match;
   const item = await idbGet('drill_items', parseInt(id));
-  // Item might already be deleted after review — check pending too
-  if (!item) {
-    // Try to find in a temporary cache of served items
-    return null;
-  }
-  if (type === 'audio' && item.audio_b64) {
-    return new Response(b64toBlob(item.audio_b64, 'audio/mpeg'), {
-      headers: { 'Content-Type': 'audio/mpeg' }
-    });
-  }
-  if (type === 'image' && item.image_b64) {
-    return new Response(b64toBlob(item.image_b64, 'image/png'), {
-      headers: { 'Content-Type': 'image/png' }
-    });
-  }
-  if (type === 'explain' && item.explain_audio_b64) {
-    return new Response(b64toBlob(item.explain_audio_b64, 'audio/mpeg'), {
-      headers: { 'Content-Type': 'audio/mpeg' }
-    });
-  }
+  if (!item) return null;
+  if (type === 'audio' && item.audio_b64)
+    return new Response(b64toBlob(item.audio_b64, 'audio/mpeg'), { headers: { 'Content-Type': 'audio/mpeg' } });
+  if (type === 'image' && item.image_b64)
+    return new Response(b64toBlob(item.image_b64, 'image/png'), { headers: { 'Content-Type': 'image/png' } });
+  if (type === 'explain' && item.explain_audio_b64)
+    return new Response(b64toBlob(item.explain_audio_b64, 'audio/mpeg'), { headers: { 'Content-Type': 'audio/mpeg' } });
+  return null;
+}
+
+async function offlineApiCache(url) {
+  const cached = await idbGet('api_cache', url);
+  if (cached) return jsonResponse(cached.data);
   return null;
 }
 
@@ -224,9 +245,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   const path = url.pathname;
 
-  // Skip non-GET for caching (but intercept POST for offline drill)
+  // ── POST requests ──
   if (e.request.method === 'POST') {
-    // Offline drill complete
     if (path === '/api/drill/complete') {
       e.respondWith(
         fetch(e.request.clone()).catch(() =>
@@ -235,7 +255,6 @@ self.addEventListener('fetch', e => {
       );
       return;
     }
-    // Offline drill explain (POST version)
     if (path === '/api/drill/explain') {
       e.respondWith(
         fetch(e.request.clone()).catch(() =>
@@ -244,51 +263,75 @@ self.addEventListener('fetch', e => {
       );
       return;
     }
+    // Other POSTs: queue for later if offline
+    if (path.startsWith('/api/')) {
+      e.respondWith(
+        fetch(e.request.clone()).catch(() => jsonResponse({ offline: true, queued: true }))
+      );
+      return;
+    }
     return;
   }
 
-  // Offline audio/image assets (virtual URLs from IndexedDB)
+  // ── Offline virtual assets ──
   if (path.startsWith('/_offline_')) {
     e.respondWith(offlineAsset(path).then(r => r || new Response('', { status: 404 })));
     return;
   }
 
-  // Drill API: network-first, offline fallback to IndexedDB
-  if (path === '/api/drill/next') {
-    e.respondWith(
-      fetch(e.request).then(resp => {
-        const clone = resp.clone();
-        caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
-        return resp;
-      }).catch(() => offlineDrillNext())
-    );
-    return;
-  }
-
-  if (path.startsWith('/api/drill/explain')) {
-    e.respondWith(
-      fetch(e.request).then(resp => {
-        const clone = resp.clone();
-        caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
-        return resp;
-      }).catch(() => offlineDrillExplain(e.request.url))
-    );
-    return;
-  }
-
-  // Other API: network-first with cache fallback
+  // ── GET API routing: network-first, offline fallback ──
   if (path.startsWith('/api/')) {
-    e.respondWith(
-      fetch(e.request).then(resp => {
+    e.respondWith((async () => {
+      // Try network first
+      try {
+        const resp = await fetch(e.request);
+        // Cache successful GET responses
         const clone = resp.clone();
-        caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+        const data = await clone.json().catch(() => null);
+        if (data) {
+          idbPut('api_cache', { url: e.request.url, data: data, ts: Date.now() }).catch(() => {});
+        }
         return resp;
-      }).catch(() => caches.match(e.request))
-    );
+      } catch (err) {
+        // Offline — route to specific handlers
+        if (path === '/api/drill/next') return offlineDrillNext();
+        if (path.startsWith('/api/drill/explain')) return offlineDrillExplain(e.request.url);
+        if (path === '/api/home-stats') return offlineHomeStats();
+        if (path === '/api/dashboard') return offlineDashboard();
+        if (path === '/api/speech/stage') return offlineSpeechStage();
+        if (path === '/api/levels') return offlineLevels();
+        if (path.match(/^\/api\/stories/)) {
+          const level = url.searchParams.get('level');
+          return offlineStoryList(level);
+        }
+        if (path.match(/^\/api\/story\/\d+$/)) {
+          const id = path.split('/')[3];
+          return offlineStory(id);
+        }
+        if (path === '/api/search') {
+          const q = url.searchParams.get('q');
+          return offlineSearch(q);
+        }
+        if (path.match(/^\/api\/word\/\d+\/(definition|examples|pronunciation|expressions|conjugation|synonyms|chunks)$/)) {
+          const parts = path.split('/');
+          return offlineWordTab(parts[3], parts[4]);
+        }
+        if (path.match(/^\/api\/search\/word\/\d+$/)) {
+          const wid = parseInt(path.split('/')[4]);
+          const word = await offlineWordData(wid);
+          if (word) return jsonResponse({ word: word.word, word_id: word.word_id, difficulty_tier: 1 });
+          return jsonResponse({}, 404);
+        }
+        // Generic: try api_cache
+        const cached = await offlineApiCache(e.request.url);
+        if (cached) return cached;
+        return jsonResponse({ offline: true, error: 'no cached data' }, 503);
+      }
+    })());
     return;
   }
 
-  // Audio & images: cache-first, then network
+  // ── Audio & images: cache-first ──
   if (path.startsWith('/audio/') || path.startsWith('/image/')) {
     e.respondWith(
       caches.match(e.request).then(cached => {
@@ -303,7 +346,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // HTML pages: network-first, cache fallback
+  // ── HTML pages: network-first, cache fallback ──
   e.respondWith(
     fetch(e.request).then(resp => {
       const clone = resp.clone();
@@ -313,12 +356,10 @@ self.addEventListener('fetch', e => {
   );
 });
 
-// ── Background Sync: upload pending reviews when online ─
+// ── Background Sync ────────────────────────────────────
 
 self.addEventListener('sync', e => {
-  if (e.tag === 'sync-reviews') {
-    e.waitUntil(uploadPendingReviews());
-  }
+  if (e.tag === 'sync-reviews') e.waitUntil(uploadPendingReviews());
 });
 
 async function uploadPendingReviews() {
@@ -332,19 +373,12 @@ async function uploadPendingReviews() {
     });
     if (resp.ok) {
       await idbClear('pending_reviews');
-      // Notify all clients
       const clients = await self.clients.matchAll();
       clients.forEach(c => c.postMessage({ type: 'sync-complete', count: reviews.length }));
     }
-  } catch (e) {
-    // Will retry on next sync event
-  }
+  } catch (e) { /* retry on next sync */ }
 }
 
-// ── Message handler for manual sync trigger ────────────
-
 self.addEventListener('message', e => {
-  if (e.data === 'sync-reviews') {
-    uploadPendingReviews();
-  }
+  if (e.data === 'sync-reviews') uploadPendingReviews();
 });
