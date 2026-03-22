@@ -1797,6 +1797,15 @@ async function startSession() {
     var stageRes = await fetch('/api/speech/stage');
     var stageData = await stageRes.json();
     updateStageBanner(stageData.stage || 1);
+    // Show gate progress in hint
+    var gates = stageData.gates;
+    if (gates && gates.criteria) {
+      var met = 0; var total = 0;
+      for (var k in gates.criteria) { total++; if (gates.criteria[k].met) met++; }
+      if (total > 0 && met < total) {
+        stageHint.textContent = STAGE_HINTS[stageData.stage||1] + ' (' + met + '/' + total + ' criterios)';
+      }
+    }
   } catch (e) {
     updateStageBanner(1);
   }
@@ -1999,6 +2008,40 @@ function showSummary(data, durationSec) {
     }
 
     ac.innerHTML = html;
+  }
+
+  // ── Speech ladder result ──
+  var ladder = data.speech_ladder;
+  if (ladder) {
+    var lhtml = '<div class="analysis-section">';
+    if (ladder.advanced) {
+      lhtml += '<div style="text-align:center;padding:16px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.15);border-radius:14px;margin-bottom:12px">' +
+        '<div style="font-size:28px;margin-bottom:6px">&#x1f389;</div>' +
+        '<div style="font-size:16px;font-weight:700;color:#34d399">Estagio ' + ladder.new_stage + ' desbloqueado!</div>' +
+        '<div style="font-size:13px;color:#888;margin-top:4px">' + escH(STAGE_NAMES[ladder.new_stage] || '') + '</div></div>';
+    } else if (ladder.regressed) {
+      lhtml += '<div style="text-align:center;padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:14px;margin-bottom:12px">' +
+        '<div style="font-size:16px;font-weight:700;color:#ef4444">Regressao: Estagio ' + ladder.from_stage + ' &rarr; ' + ladder.to_stage + '</div>' +
+        '<div style="font-size:13px;color:#888;margin-top:4px">Precisa reforcar antes de avancar</div></div>';
+    }
+    // Gate progress
+    var gates = ladder.gates;
+    if (gates && gates.criteria) {
+      lhtml += '<h3>Progresso do Estagio ' + (gates.current_stage||1) + '</h3>';
+      for (var crit in gates.criteria) {
+        var c = gates.criteria[crit];
+        var pct = c.required > 0 ? Math.min(Math.round(c.actual / c.required * 100), 100) : 0;
+        var barColor = c.met ? '#34d399' : '#3B82F6';
+        lhtml += '<div style="margin-bottom:8px">' +
+          '<div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:3px">' +
+          '<span>' + crit.replace(/_/g,' ') + '</span>' +
+          '<span style="color:' + (c.met?'#34d399':'#888') + '">' + Math.round(c.actual) + '/' + c.required + (c.met?' &#x2713;':'') + '</span></div>' +
+          '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden">' +
+          '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:2px;transition:width 0.3s"></div></div></div>';
+      }
+    }
+    lhtml += '</div>';
+    ac.innerHTML += lhtml;
   }
 
   summaryOverlay.classList.add('visible');
@@ -7575,6 +7618,46 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 except Exception as e:
                     print(f"[Conversa End] Analysis error: {e}")
 
+            # ── 7. Speech ladder: check advancement and regression ──
+            ladder_result = {}
+            try:
+                # Feed fluency score as a biometric-like signal for gate evaluation
+                fluency = (analysis or {}).get("fluencia_score")
+                if fluency is not None and vocab_chunks_used:
+                    # Update output_success for chunks that were used in conversation
+                    for chunk_text in vocab_chunks_used:
+                        conn = get_conn()
+                        row = conn.execute(
+                            "SELECT id FROM srs_chunks WHERE target_chunk = ? LIMIT 1",
+                            (chunk_text,)
+                        ).fetchone()
+                        conn.close()
+                        if row:
+                            # Record as output attempt with fluency-based biometric
+                            update_state_after_review(
+                                'chunk', row['id'], Rating.Good,
+                                0, 'output', fluency,
+                            )
+
+                # Check advancement
+                adv = advance_stage()
+                if adv.get("advanced"):
+                    ladder_result["advanced"] = True
+                    ladder_result["new_stage"] = adv["new_stage"]
+                    ladder_result["new_name"] = adv["new_name"]
+                else:
+                    # Check regression
+                    reg = check_regression()
+                    if reg.get("regressed"):
+                        ladder_result["regressed"] = True
+                        ladder_result["from_stage"] = reg["from_stage"]
+                        ladder_result["to_stage"] = reg["to_stage"]
+
+                # Always include current gates for UI
+                ladder_result["gates"] = evaluate_gates()
+            except Exception as e:
+                print(f"[Conversa End] Speech ladder error: {e}")
+
             # ── Clean up session globals ──
             history_copy = list(_conversa_history)
             _conversa_history = []
@@ -7592,6 +7675,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             }
             if analysis:
                 response["analysis"] = analysis
+            if ladder_result:
+                response["speech_ladder"] = ladder_result
             self._json(response)
         except Exception as e:
             print(f"[Conversa End] Error: {e}")
