@@ -4652,6 +4652,23 @@ body{
 }
 @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
 @keyframes micPulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)}50%{box-shadow:0 0 0 10px rgba(248,113,113,0)}}
+.mode-banner{
+  display:flex;align-items:center;gap:8px;padding:8px 16px;margin:0 20px 4px;
+  border-radius:10px;background:rgba(79,123,239,0.08);border:1px solid rgba(79,123,239,0.15);
+  font-size:12px;color:#60a5fa;font-weight:600;
+}
+.mode-banner .mode-dot{width:8px;height:8px;border-radius:50%;background:#60a5fa;flex-shrink:0}
+.mode-banner.fragile{background:rgba(249,115,22,0.08);border-color:rgba(249,115,22,0.15);color:#f97316}
+.mode-banner.fragile .mode-dot{background:#f97316}
+.mode-banner.native{background:rgba(167,139,250,0.08);border-color:rgba(167,139,250,0.15);color:#a78bfa}
+.mode-banner.native .mode-dot{background:#a78bfa}
+.mode-banner.output{background:rgba(52,211,153,0.08);border-color:rgba(52,211,153,0.15);color:#34d399}
+.mode-banner.output .mode-dot{background:#34d399}
+.state-badge{
+  font-size:10px;padding:2px 8px;border-radius:6px;font-weight:600;
+  background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);
+  text-transform:uppercase;letter-spacing:0.5px;
+}
 .safe-top{height:env(safe-area-inset-top,20px)}
 .header{
   display:flex;align-items:center;justify-content:space-between;
@@ -4796,6 +4813,8 @@ body{
 <script>
 (function(){
   let currentChunk = null;
+  let currentMode = null;
+  let currentModeConfig = {};
   let audio = null;
   let explainAudio = null;
   let timerStart = 0;
@@ -4809,6 +4828,12 @@ body{
   let latencyExplainFired = false;
   const LATENCY_THRESHOLD = 1000;
   const BIO_THRESHOLD = 85;
+  const MODE_CLASSES = {
+    fragile_rescue_drill:'fragile', known_but_slow_drill:'fragile',
+    clean_vs_native_comparison:'native', native_speed_parsing:'native',
+    shadow_linked_vocab:'native',
+    output_production_drill:'output',
+  };
 
   function updateStats() {
     document.getElementById('sessionCount').textContent = session.reviewed;
@@ -4964,21 +4989,40 @@ body{
 
   function renderDrill(data) {
     currentChunk = data;
+    currentMode = data.mode || 'audio_meaning_recognition';
+    currentModeConfig = data.mode_config || {};
     lastBioScore = null;
     forceRedrill = false;
     const area = document.getElementById('drillArea');
     const cid = data.chunk_id;
-    // Gap 1 fix: Zero-Reading Mode — text ONLY after 3 consecutive Again
-    const showText = (againStreak[cid] || 0) >= 3;
+    const mc = currentModeConfig;
+    const modeShowImage = mc.show_image !== false;
+    const modeShowText = mc.show_text === true;
+    const modeBiometric = mc.measures_biometric === true;
+    const modeLabel = mc.label || '';
+
+    // Gap 1 fix: Zero-Reading Mode — text ONLY after 3 consecutive Again OR mode says show_text
+    const showText = modeShowText || (againStreak[cid] || 0) >= 3;
     const imgSrc = data.image_file ? '/images/' + data.image_file.split('/').pop() : null;
 
-    // Spec: only DALL-E image + audio. No text unless 3x Again.
-    let html = '<div class="image-card">' +
-      (imgSrc ? '<img src="' + imgSrc + '" alt="">'
-        : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>')
-      + '</div>';
+    // Mode banner
+    let html = '';
+    if (modeLabel) {
+      const cls = MODE_CLASSES[currentMode] || '';
+      html += '<div class="mode-banner ' + cls + '"><span class="mode-dot"></span>' + modeLabel;
+      if (data.current_state) html += ' <span class="state-badge">' + data.current_state.replace(/_/g,' ') + '</span>';
+      html += '</div>';
+    }
 
-    // 3-failure text reveal: only show after 3 consecutive Again ratings
+    // Image card — respect mode config
+    if (modeShowImage) {
+      html += '<div class="image-card">' +
+        (imgSrc ? '<img src="' + imgSrc + '" alt="">'
+          : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>')
+        + '</div>';
+    }
+
+    // Text: show if mode says so OR 3x Again
     if (showText) {
       html += '<div class="text-reveal">' + (data.target_chunk || data.word || '') + '</div>';
     }
@@ -4988,9 +5032,12 @@ body{
     html += '<div class="replay-btn" onclick="window._srsReplay()">' +
       '<svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>' +
       'Ouvir</div>';
-    html += '<div class="record-btn" id="recBtn" onclick="window._srsToggleRec()">' +
-      '<svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' +
-      'Gravar</div>';
+    // Show record button only when mode measures biometric
+    if (modeBiometric) {
+      html += '<div class="record-btn" id="recBtn" onclick="window._srsToggleRec()">' +
+        '<svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' +
+        'Gravar</div>';
+    }
     html += '</div>';
 
     // Biometric score display (hidden until scored)
@@ -5059,13 +5106,14 @@ body{
 
     let finalRating = ratingVal;
     let latencyOverride = false;
-    if (latency > LATENCY_THRESHOLD && ratingVal > 2) {
+    const maxLatency = (currentModeConfig.max_response_time_ms || LATENCY_THRESHOLD);
+    if (latency > maxLatency && ratingVal > 2) {
       finalRating = 2;
       latencyOverride = true;
     }
 
-    // Spec: biometric < 85 → auto-mark Hard
-    if (lastBioScore !== null && lastBioScore < BIO_THRESHOLD && finalRating > 2) {
+    // Spec: biometric < 85 → auto-mark Hard (only when mode measures biometric)
+    if (currentModeConfig.measures_biometric && lastBioScore !== null && lastBioScore < BIO_THRESHOLD && finalRating > 2) {
       finalRating = 2;
     }
 
@@ -5088,7 +5136,9 @@ body{
         latency_ms: Math.round(latency),
         retries: 0,
         rating: finalRating,
-        biometric_score: lastBioScore
+        biometric_score: lastBioScore,
+        mode: currentMode,
+        audio_type: currentModeConfig.audio_type || 'clean'
       })
     })
     .then(r => r.json())
@@ -6412,6 +6462,15 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             pass
 
+        # Select training mode based on item state + fragility
+        mode = "audio_meaning_recognition"
+        mode_config = {}
+        try:
+            mode = select_mode_for_item('chunk', chunk["id"])
+            mode_config = get_drill_config(mode)
+        except Exception:
+            mode_config = get_drill_config(mode)
+
         self._json({
             "chunk_id": chunk["id"],
             "word": chunk["word"],
@@ -6425,6 +6484,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "due_count": due_count,
             "fragility_types": fragility_types,
             "current_state": chunk_state,
+            "mode": mode,
+            "mode_config": mode_config,
         })
 
     def _drill_advance_pass(self, body):
@@ -6443,6 +6504,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         retries = body.get("retries", 0)
         biometric = body.get("biometric_score")
         explicit_rating = body.get("rating")
+        audio_type = body.get("audio_type", "clean")
+        drill_mode = body.get("mode", "audio_meaning_recognition")
 
         if not chunk_id:
             self._json({"error": "chunk_id obrigatorio"}, status=400)
@@ -6467,18 +6530,18 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             chunk_id, rating, latency_ms, biometric
         )
 
-        # Update automaticity state
+        # Update automaticity state with mode-aware audio_type
         try:
             chunk_row = get_chunk_by_id(chunk_id)
             if chunk_row:
                 update_state_after_review(
                     'chunk', chunk_id, rating, latency_ms or 0,
-                    'clean', biometric,
+                    audio_type, biometric,
                 )
                 if chunk_row['word_id']:
                     update_state_after_review(
                         'word', chunk_row['word_id'], rating, latency_ms or 0,
-                        'clean', biometric,
+                        audio_type, biometric,
                     )
         except Exception:
             pass  # never crash drill for state tracking
