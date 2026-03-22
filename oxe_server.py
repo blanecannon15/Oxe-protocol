@@ -453,7 +453,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   </div>
 
   <!-- Fragile items alert -->
-  <div class="fragile-alert" id="fragile-alert"></div>
+  <div class="fragile-alert" id="fragile-alert" style="cursor:pointer" onclick="location.href='/reforco'"></div>
 
   <!-- Recommended session -->
   <div class="rec-banner" id="rec-banner"></div>
@@ -4608,6 +4608,16 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
     <div class="card-arrow">&#x203a;</div>
   </a>
 
+  <a href="/reforco" class="card fragile" id="fragile-card" style="display:none">
+    <div class="card-icon" style="background:rgba(249,115,22,0.12);color:#f97316">&#x26a0;&#xfe0f;</div>
+    <div class="card-text">
+      <div class="card-title">Reforço</div>
+      <div class="card-sub">Itens frágeis que precisam atenção</div>
+      <div class="card-count" id="fragile-count" style="color:#f97316"></div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
+
   <a href="/assembly" class="card assembly">
     <div class="card-icon">&#x1f9e9;</div>
     <div class="card-text">
@@ -4626,6 +4636,161 @@ fetch('/api/home').then(r=>r.json()).then(d=>{
   document.getElementById('s-streak').textContent = d.streak || 0;
   document.getElementById('srs-count').textContent = (d.due_count||0) + ' chunks pendentes';
 }).catch(()=>{});
+fetch('/api/fragile/summary').then(r=>r.json()).then(d=>{
+  var total=0;for(var k in d)total+=d[k]||0;
+  if(total>0){
+    document.getElementById('fragile-card').style.display='flex';
+    document.getElementById('fragile-count').textContent=total+' itens frageis';
+  }
+}).catch(()=>{});
+</script>
+</body></html>
+"""
+
+REFORCO_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Reforço — Oxe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0b;color:#f5f5f5;
+  min-height:100vh;padding-bottom:90px}
+.safe-top{height:env(safe-area-inset-top,20px)}
+.header{display:flex;align-items:center;gap:14px;padding:16px 20px}
+.back{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;text-decoration:none;color:#fff}
+.back svg{width:18px;height:18px;fill:#fff}
+.header h1{font-size:20px;font-weight:700;color:#f97316}
+.header .count{font-size:13px;color:#888;margin-left:auto}
+.tabs{display:flex;gap:6px;padding:0 20px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;
+  cursor:pointer;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:#888;
+  -webkit-tap-highlight-color:transparent;transition:all 0.2s}
+.tab.active{background:rgba(249,115,22,0.12);border-color:rgba(249,115,22,0.2);color:#f97316}
+.tab .badge{display:inline-block;min-width:18px;text-align:center;padding:1px 6px;border-radius:10px;
+  font-size:11px;font-weight:700;margin-left:4px;background:rgba(255,255,255,0.08)}
+.tab.active .badge{background:rgba(249,115,22,0.2)}
+.items{padding:0 20px}
+.item{display:flex;align-items:center;gap:14px;padding:14px 16px;margin-bottom:8px;
+  border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);
+  cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform 0.15s}
+.item:active{transform:scale(0.98)}
+.item-main{flex:1;min-width:0}
+.item-chunk{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-meta{font-size:12px;color:#888;margin-top:2px}
+.item-score{font-size:13px;font-weight:700;color:#f97316;min-width:36px;text-align:right}
+.item-state{font-size:10px;padding:2px 8px;border-radius:6px;font-weight:600;
+  background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);text-transform:uppercase}
+.empty{text-align:center;padding:60px 20px;color:#555}
+.empty h2{font-size:18px;margin-bottom:8px;color:#888}
+.drill-btn{display:block;margin:20px;padding:16px;text-align:center;
+  background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:16px;font-weight:700;
+  border:none;border-radius:14px;cursor:pointer;text-decoration:none;
+  -webkit-tap-highlight-color:transparent;transition:transform 0.15s}
+.drill-btn:active{transform:scale(0.97)}
+.scan-btn{display:block;margin:0 20px 16px;padding:12px;text-align:center;
+  background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.15);color:#f97316;
+  font-size:14px;font-weight:600;border-radius:12px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent}
+</style></head><body>
+<div class="safe-top"></div>
+<div class="header">
+  <a href="/train" class="back"><svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></a>
+  <h1>Reforço</h1>
+  <span class="count" id="total-count">0 itens</span>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<button class="scan-btn" id="scan-btn" onclick="runScan()">Escanear itens frágeis</button>
+<div class="items" id="items"></div>
+<a href="/drill" class="drill-btn" id="drill-btn" style="display:none">Treinar itens frágeis</a>
+
+{tab_bar}
+<script>
+var FRAG_LABELS = {
+  familiar_but_fragile:'Frágeis',known_but_slow:'Lentos',text_only:'Só Texto',
+  clean_audio_only:'Só Áudio Limpo',blocked_by_prosody:'Prosódia'
+};
+var FRAG_DESCS = {
+  familiar_but_fragile:'Muita exposição, pouca retenção',
+  known_but_slow:'Reconhece mas demora demais',
+  text_only:'Só entende lendo, não ouvindo',
+  clean_audio_only:'Entende limpo mas não nativo',
+  blocked_by_prosody:'Pronúncia trava o avanço'
+};
+var summary = {};
+var activeTab = null;
+
+function renderTabs(){
+  var html='';var total=0;
+  var order=['familiar_but_fragile','known_but_slow','text_only','clean_audio_only','blocked_by_prosody'];
+  order.forEach(function(k){
+    var c = summary[k]||0;total+=c;
+    if(c>0) html+='<div class="tab'+(activeTab===k?' active':'')+'" onclick="selectTab(\''+k+'\')">'+
+      FRAG_LABELS[k]+'<span class="badge">'+c+'</span></div>';
+  });
+  document.getElementById('tabs').innerHTML=html;
+  document.getElementById('total-count').textContent=total+' itens';
+  if(total>0) document.getElementById('drill-btn').style.display='block';
+  else document.getElementById('drill-btn').style.display='none';
+}
+
+function selectTab(type){
+  activeTab=type;renderTabs();loadItems(type);
+}
+
+function loadItems(type){
+  fetch('/api/fragile?type='+type+'&limit=50').then(r=>r.json()).then(function(items){
+    var html='';
+    if(!items.length){
+      html='<div class="empty"><h2>Nenhum item</h2></div>';
+    } else {
+      items.forEach(function(it){
+        var chunk = it.target_chunk||it.word||('item #'+it.item_id);
+        var state = it.state||'';
+        var score = Math.round(it.fragility_score||0);
+        html+='<div class="item" onclick="drillItem('+it.item_id+')">'+
+          '<div class="item-main"><div class="item-chunk">'+chunk+'</div>'+
+          '<div class="item-meta">'+FRAG_DESCS[type]+'</div></div>'+
+          (state?'<span class="item-state">'+state.replace(/_/g,' ')+'</span>':'')+
+          '<div class="item-score">'+score+'</div></div>';
+      });
+    }
+    document.getElementById('items').innerHTML=html;
+  }).catch(function(){
+    document.getElementById('items').innerHTML='<div class="empty"><h2>Erro ao carregar</h2></div>';
+  });
+}
+
+function drillItem(itemId){
+  location.href='/drill?fragile='+itemId;
+}
+
+function runScan(){
+  var btn=document.getElementById('scan-btn');
+  btn.textContent='Escaneando...';btn.style.pointerEvents='none';
+  fetch('/api/fragile/scan',{method:'POST'}).then(r=>r.json()).then(function(d){
+    btn.textContent='Encontrou '+d.detected+' de '+d.scanned+' itens';
+    setTimeout(function(){btn.textContent='Escanear itens frágeis';btn.style.pointerEvents='auto';},2000);
+    loadSummary();
+  }).catch(function(){btn.textContent='Erro';btn.style.pointerEvents='auto';});
+}
+
+function loadSummary(){
+  fetch('/api/fragile/summary').then(r=>r.json()).then(function(d){
+    summary=d;
+    if(!activeTab){
+      var order=['familiar_but_fragile','known_but_slow','text_only','clean_audio_only','blocked_by_prosody'];
+      for(var i=0;i<order.length;i++){if(d[order[i]]>0){activeTab=order[i];break;}}
+    }
+    renderTabs();
+    if(activeTab) loadItems(activeTab);
+    else document.getElementById('items').innerHTML='<div class="empty"><h2>Nenhum item frágil</h2><p>Todos os itens estão saudáveis</p></div>';
+  });
+}
+loadSummary();
 </script>
 </body></html>
 """
@@ -5250,6 +5415,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Training Hub ──
         elif path == "/train":
             self._html(TRAIN_HUB_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
+        elif path == "/reforco":
+            self._html(REFORCO_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
 
         # ── Drill ──
         elif path == "/drill":
@@ -5343,7 +5510,35 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/fragile":
             ft = query.get("type", ["known_but_slow"])[0]
             limit = int(query.get("limit", ["20"])[0])
-            self._json(get_fragile_queue(ft, limit))
+            raw = get_fragile_queue(ft, limit)
+            # Enrich with chunk/word text and acquisition state
+            enriched = []
+            for item in raw:
+                entry = dict(item)
+                try:
+                    conn = get_conn()
+                    if item["item_type"] == "chunk":
+                        row = conn.execute(
+                            "SELECT target_chunk, carrier_sentence, word FROM srs_chunks WHERE id=?",
+                            (item["item_id"],)
+                        ).fetchone()
+                        if row:
+                            entry["target_chunk"] = row["target_chunk"]
+                            entry["carrier_sentence"] = row["carrier_sentence"]
+                            entry["word"] = row["word"]
+                    else:
+                        row = conn.execute(
+                            "SELECT word FROM word_bank WHERE id=?", (item["item_id"],)
+                        ).fetchone()
+                        if row:
+                            entry["word"] = row["word"]
+                    conn.close()
+                    st = get_or_create_state(item["item_type"], item["item_id"])
+                    entry["state"] = st.get("state", "UNKNOWN")
+                except Exception:
+                    pass
+                enriched.append(entry)
+            self._json(enriched)
         elif path == "/api/fragile/summary":
             self._json(get_fragile_summary())
 
@@ -5533,6 +5728,15 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/fragile/scan":
             result = run_fragility_scan()
             self._json(result)
+        elif path == "/api/fragile/resolve":
+            item_type = body.get("item_type", "chunk")
+            item_id = body.get("item_id")
+            ftype = body.get("fragility_type")
+            if item_id and ftype:
+                resolve_fragility(item_type, item_id, ftype)
+                self._json({"resolved": True})
+            else:
+                self._json({"error": "item_id and fragility_type required"}, status=400)
         elif path == "/api/plan/block/complete":
             block_id = body.get("block_id", 0)
             actual = body.get("actual_data", {})
@@ -6551,6 +6755,20 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             record_review_event(latency_ms or 0, rating.value, retries)
         except Exception:
             pass
+
+        # Auto-resolve fragility on Good/Easy rating
+        if rating in (Rating.Good, Rating.Easy):
+            try:
+                conn = get_conn()
+                frag_rows = conn.execute(
+                    "SELECT fragility_type FROM fragile_items WHERE item_type='chunk' AND item_id=? AND resolved_at IS NULL",
+                    (chunk_id,)
+                ).fetchall()
+                conn.close()
+                for fr in frag_rows:
+                    resolve_fragility('chunk', chunk_id, fr['fragility_type'])
+            except Exception:
+                pass
 
         # Read updated state for transition feedback
         state_info = None

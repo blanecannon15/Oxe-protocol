@@ -217,7 +217,9 @@ def generate_daily_plan(total_minutes=600, db_path=DB_PATH):
         pass
 
     try:
-        fragile_queue = get_fragile_queue(db_path)
+        fragile_queue = []
+        for ft in ("familiar_but_fragile", "known_but_slow", "text_only", "clean_audio_only", "blocked_by_prosody"):
+            fragile_queue.extend(get_fragile_queue(ft, limit=10, db_path=db_path))
     except Exception:
         fragile_queue = []
 
