@@ -328,6 +328,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   .insight-val.green { color: #34d399; }
   .insight-val.purple { color: #a78bfa; }
   .insight-val.yellow { color: #facc15; }
+  .insight-val.orange { color: #f97316; }
   .rec-banner {
     padding: 12px 16px; border-radius: 12px; margin-bottom: 16px;
     background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.1);
@@ -340,6 +341,54 @@ HOME_HTML = r"""<!DOCTYPE html>
     font-size: 0.6em; font-weight: 700; text-transform: uppercase;
     background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.15);
   }
+
+  /* ── Mission Control: State Ring ── */
+  .state-ring {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px;
+    animation: fadeIn 0.3s ease-out 0.08s both;
+  }
+  .state-chip {
+    flex: 1 1 calc(50% - 3px); min-width: 0; padding: 12px 14px; border-radius: 12px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+  }
+  .state-chip-label { font-size: 0.58em; color: #525263; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+  .state-chip-val { font-size: 1.15em; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .state-chip-sub { font-size: 0.62em; color: #3a3a4a; margin-top: 1px; }
+
+  /* ── Mission Control: Next Block CTA ── */
+  .next-block-cta {
+    display: flex; align-items: center; gap: 14px; padding: 16px 18px;
+    margin-bottom: 16px; border-radius: 14px;
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.15);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: transform 0.15s, background 0.2s;
+    animation: fadeIn 0.3s ease-out 0.1s both;
+  }
+  .next-block-cta:active { transform: scale(0.97); background: rgba(59,130,246,0.14); }
+  .next-block-ico { font-size: 1.6em; }
+  .next-block-info { flex: 1; }
+  .next-block-title { font-size: 0.9em; font-weight: 700; color: #60a5fa; }
+  .next-block-desc { font-size: 0.72em; color: #7a7a8e; margin-top: 2px; }
+  .next-block-arrow { color: #3B82F6; font-size: 1.2em; font-weight: 700; }
+
+  /* ── Mission Control: Fragile Alert ── */
+  .fragile-alert {
+    display: none; padding: 12px 16px; border-radius: 12px; margin-bottom: 16px;
+    background: rgba(249,115,22,0.06); border: 1px solid rgba(249,115,22,0.12);
+    font-size: 0.78em; color: #f97316;
+    animation: fadeIn 0.3s ease-out 0.14s both;
+  }
+  .fragile-alert b { font-weight: 700; }
+
+  /* ── Plan Timeline ── */
+  .plan-timeline { margin-bottom: 16px; animation: fadeIn 0.3s ease-out 0.16s both; display: none; }
+  .plan-timeline-title { font-size: 0.65em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 8px; }
+  .plan-blocks { display: flex; gap: 3px; height: 20px; border-radius: 6px; overflow: hidden; }
+  .plan-block { flex: 1; border-radius: 3px; position: relative; }
+  .plan-block.done { opacity: 0.3; }
+  .plan-legend { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+  .plan-legend-item { font-size: 0.58em; color: #525263; display: flex; align-items: center; gap: 4px; }
+  .plan-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
 </style>
 </head><body>
 
@@ -369,17 +418,58 @@ HOME_HTML = r"""<!DOCTYPE html>
     <div class="wod-sentence" id="wod-sentence"></div>
   </div>
 
-  <!-- Train button -->
-  <a href="/train" class="train-btn">
-    <span>Treinar</span>
-    <span class="due-count" id="due-count">0 pendentes</span>
-  </a>
+  <!-- Mission Control: State Ring -->
+  <div class="state-ring" id="state-ring">
+    <div class="state-chip">
+      <div class="state-chip-label">Escuta</div>
+      <div class="state-chip-val blue" id="mc-listen">--</div>
+      <div class="state-chip-sub" id="mc-listen-sub">nivel</div>
+    </div>
+    <div class="state-chip">
+      <div class="state-chip-label">Automaticidade</div>
+      <div class="state-chip-val green" id="mc-auto">0</div>
+      <div class="state-chip-sub" id="mc-auto-sub">de 0 itens</div>
+    </div>
+    <div class="state-chip">
+      <div class="state-chip-label">Estabilidade Nativa</div>
+      <div class="state-chip-val purple" id="mc-native">0</div>
+      <div class="state-chip-sub" id="mc-native-sub">fala estagio 1</div>
+    </div>
+    <div class="state-chip">
+      <div class="state-chip-label">Fadiga</div>
+      <div class="state-chip-val" id="mc-fatigue" style="color:#34d399">0</div>
+      <div class="state-chip-sub" id="mc-fatigue-sub">pronto</div>
+    </div>
+  </div>
 
-  <!-- Insight row -->
+  <!-- Mission Control: Next Block CTA -->
+  <div class="next-block-cta" id="next-block" onclick="startNextBlock()">
+    <div class="next-block-ico" id="nb-ico">&#x25b6;&#xfe0f;</div>
+    <div class="next-block-info">
+      <div class="next-block-title" id="nb-title">Proximo Bloco</div>
+      <div class="next-block-desc" id="nb-desc">Carregando plano...</div>
+    </div>
+    <div class="next-block-arrow">&#x203a;</div>
+  </div>
+
+  <!-- Fragile items alert -->
+  <div class="fragile-alert" id="fragile-alert"></div>
+
+  <!-- Recommended session -->
+  <div class="rec-banner" id="rec-banner"></div>
+
+  <!-- Plan timeline -->
+  <div class="plan-timeline" id="plan-timeline">
+    <div class="plan-timeline-title">Plano de Hoje</div>
+    <div class="plan-blocks" id="plan-blocks"></div>
+    <div class="plan-legend" id="plan-legend"></div>
+  </div>
+
+  <!-- Insight row (preserved) -->
   <div class="insight-row">
     <div class="insight-pill">
       <div class="insight-val blue" id="i-hours">0h</div>
-      <div class="insight-lbl">Horas Efetivas</div>
+      <div class="insight-lbl">Horas Hoje</div>
     </div>
     <div class="insight-pill">
       <div class="insight-val green" id="i-auto">0</div>
@@ -391,8 +481,11 @@ HOME_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Recommended session -->
-  <div class="rec-banner" id="rec-banner"></div>
+  <!-- Train button (preserved) -->
+  <a href="/train" class="train-btn">
+    <span>Treinar</span>
+    <span class="due-count" id="due-count">0 pendentes</span>
+  </a>
 
   <!-- Navigation -->
   <div class="nav-list">
@@ -518,7 +611,21 @@ fetch('/api/daily-stats').then(function(r){return r.json()}).then(function(d){
   document.getElementById('i-hours').textContent = hrs + 'h';
 }).catch(function(){});
 
+// ── Mission Control: populate from dashboard ──
+var LEVEL_LABELS = {P1:'P1',P2:'P2',P3:'P3',A1:'A1',A2:'A2',A3:'A3',A4:'A4',NATIVE_CLEAR:'Nativo',NATIVE_CASUAL:'Casual',NATIVE_CHAOTIC:'Caotico'};
+var BLOCK_COLORS = {srs_drill:'#3B82F6',listening:'#8B5CF6',shadowing:'#F97316',conversa:'#34d399',break:'#525263'};
+var BLOCK_ICONS = {srs_drill:'&#x1f9e0;',listening:'&#x1f3a7;',shadowing:'&#x1f5e3;&#xfe0f;',conversa:'&#x1f4ac;',break:'&#x2615;'};
+var MODE_ROUTES = {srs_drill:'/drill',listening:'/library',shadowing:'/shadowing',conversa:'/conversa',break:null};
+var _nextBlockData = null;
+
+function startNextBlock(){
+  if(!_nextBlockData) return;
+  var route = MODE_ROUTES[_nextBlockData.type]||'/train';
+  if(route) location.href = route;
+}
+
 requestAnimationFrame(function(){
+  // Fetch dashboard (existing + mission control)
   fetch('/api/dashboard').then(function(r){return r.ok?r.json():null}).then(function(d){
     if(!d) return;
     var tier = d.tier||{};
@@ -532,21 +639,31 @@ requestAnimationFrame(function(){
     var plan = d.today||{};
     if(plan.completed_pct) document.getElementById('nav-plan').textContent = Math.round(plan.completed_pct) + '% completo';
 
-    // Automatic count
+    // ── State Ring: Automaticity ──
     var acq = d.acquisition_state||{};
-    var auto = (acq.automatic_count||0);
-    document.getElementById('i-auto').textContent = auto;
+    var dist = acq.distribution||{};
+    var autoClean = dist.AUTOMATIC_CLEAN||0;
+    var autoNative = dist.AUTOMATIC_NATIVE||0;
+    var output = dist.AVAILABLE_OUTPUT||0;
+    var totalAuto = autoClean + autoNative + output;
+    var totalItems = acq.acquired_count||0;
+    document.getElementById('mc-auto').textContent = totalAuto;
+    document.getElementById('mc-auto-sub').textContent = 'de ' + totalItems + ' itens';
+    document.getElementById('i-auto').textContent = totalAuto;
 
-    // Next milestone
-    var total = acq.acquired_count||0;
+    // ── State Ring: Native Stability ──
+    document.getElementById('mc-native').textContent = autoNative + output;
+    document.getElementById('mc-native-sub').textContent = 'fala estagio ' + stg;
+
+    // ── Milestone ──
     var milestones = [10,25,50,100,250,500,1000,2500,5000];
     var next = '--';
     for(var i=0;i<milestones.length;i++){
-      if(total < milestones[i]){ next = milestones[i]; break; }
+      if(totalItems < milestones[i]){ next = milestones[i]; break; }
     }
     document.getElementById('i-milestone').textContent = next === '--' ? next : next + ' acq';
 
-    // Recommended session
+    // ── Recommended session ──
     var fat = d.fatigue||{};
     var rec = fat.recommendation||'';
     var banner = document.getElementById('rec-banner');
@@ -562,16 +679,93 @@ requestAnimationFrame(function(){
       banner.style.display = 'block';
     }
 
-    // Spanish lock — unlocks at AUTOMATIC_NATIVE >= 500 AND speech stage >= 5
-    var nativeCount = (acq.distribution||{}).AUTOMATIC_NATIVE||0;
-    var outputCount = (acq.distribution||{}).AVAILABLE_OUTPUT||0;
-    var esReady = (nativeCount + outputCount) >= 500 && stg >= 5;
+    // ── Spanish lock ──
+    var esReady = (autoNative + output) >= 500 && stg >= 5;
     var lockEl = document.getElementById('es-lock');
     if(esReady){
       lockEl.textContent = 'ES liberado';
       lockEl.style.background = 'rgba(52,211,153,0.1)';
       lockEl.style.color = '#34d399';
       lockEl.style.borderColor = 'rgba(52,211,153,0.15)';
+    }
+  }).catch(function(){});
+
+  // ── State Ring: Listening Level ──
+  fetch('/api/content/level').then(function(r){return r.json()}).then(function(d){
+    var lv = d.level||'P1';
+    document.getElementById('mc-listen').textContent = LEVEL_LABELS[lv]||lv;
+    document.getElementById('mc-listen-sub').textContent = d.label||'nivel';
+  }).catch(function(){
+    document.getElementById('mc-listen').textContent = 'P1';
+  });
+
+  // ── State Ring: Fatigue ──
+  fetch('/api/fatigue/status').then(function(r){return r.json()}).then(function(d){
+    var score = Math.round(d.fatigue_score||0);
+    var el = document.getElementById('mc-fatigue');
+    el.textContent = score;
+    if(score < 30){ el.style.color='#34d399'; document.getElementById('mc-fatigue-sub').textContent='pronto'; }
+    else if(score < 50){ el.style.color='#facc15'; document.getElementById('mc-fatigue-sub').textContent='muda modo'; }
+    else if(score < 70){ el.style.color='#f97316'; document.getElementById('mc-fatigue-sub').textContent='pausa'; }
+    else{ el.style.color='#ef4444'; document.getElementById('mc-fatigue-sub').textContent='pare por hoje'; }
+  }).catch(function(){});
+
+  // ── Next Block CTA ──
+  fetch('/api/plan/next-block').then(function(r){return r.json()}).then(function(d){
+    if(d.error||!d.type){
+      document.getElementById('nb-title').textContent = 'Plano Completo';
+      document.getElementById('nb-desc').textContent = 'Todos os blocos feitos hoje';
+      document.getElementById('nb-ico').innerHTML = '&#x2705;';
+      return;
+    }
+    _nextBlockData = d;
+    var labels = {srs_drill:'Drill SRS',listening:'Escuta',shadowing:'Sombreamento',conversa:'Conversa',break:'Pausa'};
+    document.getElementById('nb-title').textContent = (labels[d.type]||d.type) + ' \u2014 ' + (d.duration_minutes||25) + 'min';
+    var desc = d.mode ? d.mode.replace(/_/g,' ') : '';
+    if(d.fragile_pct) desc += ' (' + Math.round(d.fragile_pct*100) + '% frageis)';
+    document.getElementById('nb-desc').textContent = desc || 'Bloco ' + (d.block_id||1);
+    document.getElementById('nb-ico').innerHTML = BLOCK_ICONS[d.type]||'&#x25b6;&#xfe0f;';
+  }).catch(function(){
+    document.getElementById('nb-desc').textContent = 'Toque pra treinar';
+  });
+
+  // ── Plan Timeline ──
+  fetch('/api/plan/today').then(function(r){return r.json()}).then(function(d){
+    var blocks = d.blocks||[];
+    if(!blocks.length) return;
+    var container = document.getElementById('plan-blocks');
+    var html = '';
+    var types = {};
+    blocks.forEach(function(b){
+      var color = BLOCK_COLORS[b.type]||'#525263';
+      var cls = b.completed ? 'plan-block done' : 'plan-block';
+      html += '<div class="' + cls + '" style="background:' + color + '" title="' + b.type + ' ' + (b.duration_minutes||25) + 'min"></div>';
+      types[b.type] = color;
+    });
+    container.innerHTML = html;
+    // Legend
+    var legend = document.getElementById('plan-legend');
+    var lhtml = '';
+    var labels = {srs_drill:'Drill',listening:'Escuta',shadowing:'Sombra',conversa:'Conversa',break:'Pausa'};
+    for(var t in types){
+      lhtml += '<span class="plan-legend-item"><span class="plan-legend-dot" style="background:'+types[t]+'"></span>'+labels[t]+'</span>';
+    }
+    legend.innerHTML = lhtml;
+    document.getElementById('plan-timeline').style.display = 'block';
+  }).catch(function(){});
+
+  // ── Fragile Items Alert ──
+  fetch('/api/fragile/summary').then(function(r){return r.json()}).then(function(d){
+    var total = 0;
+    var types = [];
+    var FRAG_LABELS = {familiar_but_fragile:'frageis',known_but_slow:'lentos',text_only:'so texto',clean_audio_only:'so audio limpo',blocked_by_prosody:'prosodia'};
+    for(var k in d){
+      if(d[k] > 0){ total += d[k]; types.push(d[k] + ' ' + (FRAG_LABELS[k]||k)); }
+    }
+    if(total > 0){
+      var el = document.getElementById('fragile-alert');
+      el.innerHTML = '<b>' + total + ' itens precisam reforco:</b> ' + types.join(', ');
+      el.style.display = 'block';
     }
   }).catch(function(){});
 });
