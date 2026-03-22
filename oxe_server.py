@@ -2113,8 +2113,44 @@ async function toggleConvMic() {
     convRecorder.ondataavailable = function(e) { if (e.data.size > 0) convMicChunks.push(e.data); };
     convRecorder.onstop = async function() {
       stream.getTracks().forEach(function(t) { t.stop(); });
-      var blob = new Blob(convMicChunks, { type: convRecorder.mimeType || 'audio/mp4' });
-      addMsg('[Gravacao de voz — use texto por enquanto]', 'user');
+      var blob = new Blob(convMicChunks, { type: convRecorder.mimeType || 'audio/webm' });
+      if (blob.size < 100) return;
+
+      // Transcribe via Whisper then send as conversa turn
+      var typing = addMsg('...', 'user');
+      typing.innerHTML = '<span class="typing">Transcrevendo...</span>';
+
+      try {
+        var fd = new FormData();
+        fd.append('audio', blob, 'voice.webm');
+        if (sessionId) fd.append('session_id', sessionId);
+
+        var res = await fetch('/api/conversa/voice', { method: 'POST', body: fd });
+        var data = await res.json();
+
+        if (data.error) {
+          typing.textContent = 'Erro: ' + data.error;
+          return;
+        }
+
+        // Show transcription as user message
+        typing.textContent = data.transcription || '(sem texto)';
+
+        // Show AI reply
+        if (data.reply) {
+          var aiMsg = addMsg(data.reply, 'ai');
+          if (data.audio_file) {
+            convPlayer.src = '/audio/' + data.audio_file;
+            convPlayer.play().catch(function() {});
+          }
+          if (data.chunks_hit && data.chunks_hit.length > 0) {
+            markChipsUsed(data.chunks_hit);
+            showChunkBadge(data.chunks_hit);
+          }
+        }
+      } catch (e) {
+        typing.textContent = 'Erro de conexao.';
+      }
     };
     convRecorder.start();
     convRecording = true;
@@ -5725,6 +5761,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 self._shadow_score()
             return
 
+        if path == "/api/conversa/voice":
+            self._conversa_voice()
+            return
+
         body = self._read_body()
 
         # ── Dictionary ──
@@ -6178,8 +6218,18 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             return
         podcast_id = save_podcast(podcast_data)
         podcast_data["id"] = podcast_id
+        # Post-generation hooks: classify + extract chunks + rank + seed
         try:
             classify_content("podcast", podcast_id)
+        except Exception:
+            pass
+        try:
+            count = extract_chunks_from_podcast(podcast_id)
+            if count > 0:
+                rank_chunk_families()
+                top = get_next_chunks_for_srs(limit=10)
+                if top:
+                    add_chunks_to_queue(top)
         except Exception:
             pass
         self._json(podcast_data)
@@ -7262,6 +7312,79 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return []
 
+    # ── Conversa Voice (Whisper transcription) ──────────────
+
+    def _conversa_voice(self):
+        """Accept voice audio, transcribe via Whisper, then process as a conversa turn."""
+        import tempfile
+        fields = self._parse_multipart()
+        audio_field = fields.get("audio")
+
+        if not audio_field or not isinstance(audio_field, dict):
+            self._json({"error": "Sem audio recebido"})
+            return
+
+        audio_data = audio_field["data"]
+        ext = ".webm"
+        fname = audio_field.get("filename", "voice.webm")
+        if fname.endswith(".mp4") or fname.endswith(".m4a"):
+            ext = ".mp4"
+
+        # Write to temp file for Whisper
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(audio_data)
+            tmp_path = tmp.name
+
+        try:
+            import openai as _oai
+            client = _oai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            with open(tmp_path, "rb") as af:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=af,
+                    language="pt",
+                )
+            text = transcript.text.strip()
+        except Exception as e:
+            os.unlink(tmp_path)
+            self._json({"error": f"Transcricao falhou: {e}"})
+            return
+
+        os.unlink(tmp_path)
+
+        if not text:
+            self._json({"error": "Nenhum texto transcrito"})
+            return
+
+        # Process as conversa turn inline (include transcription in response)
+        global _conversa_history
+        _conversa_history.append({"role": "user", "content": text})
+        if len(_conversa_history) > 20:
+            _conversa_history = _conversa_history[-20:]
+
+        try:
+            import openai as _oai2
+            client2 = _oai2.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+            resp = client2.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=200,
+                temperature=0.8,
+                messages=_conversa_history,
+            )
+            reply = resp.choices[0].message.content.strip()
+            _conversa_history.append({"role": "assistant", "content": reply})
+            audio_fname = generate_tts(reply)
+        except Exception as e:
+            self._json({"transcription": text, "error": f"Resposta falhou: {e}"})
+            return
+
+        self._json({
+            "transcription": text,
+            "reply": reply,
+            "audio_file": audio_fname,
+            "chunks_hit": [],
+        })
+
     # ── Conversa (Stage-Scaffolded) ─────────────────────────
 
     def _conversa_start(self, body):
@@ -7301,6 +7424,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             global _conversa_chunks_vocab
             _conversa_chunks_vocab = []
             chunks_used_list = []
+            i_plus_one = []
 
             if stage >= 3:
                 try:

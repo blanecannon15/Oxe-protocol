@@ -440,16 +440,33 @@ def generate_story(level_key, theme=None, setting=None):
 
 
 def _run_post_generation_hooks(story_id):
-    """Extract chunks and classify difficulty after story generation.
+    """Extract chunks, rank, seed into SRS, and classify after story generation.
 
-    Both operations are wrapped in try/except so they never block
+    All operations are wrapped in try/except so they never block
     the story generation pipeline.
     """
     # Chunk extraction
     try:
-        from chunk_engine import extract_chunks_from_story
+        from chunk_engine import extract_chunks_from_story, rank_chunk_families, get_next_chunks_for_srs, add_chunks_to_queue
         added = extract_chunks_from_story(story_id, DB_PATH)
         print(f"    -> Extracted {added} chunks from story {story_id}")
+
+        # Rank all families after new extraction
+        if added > 0:
+            try:
+                rank_chunk_families(DB_PATH)
+                print(f"    -> Ranked chunk families")
+            except Exception as e:
+                print(f"    -> Chunk ranking skipped: {e}")
+
+            # Seed top unqueued chunks into SRS
+            try:
+                top_chunks = get_next_chunks_for_srs(limit=10, db_path=DB_PATH)
+                if top_chunks:
+                    seeded = add_chunks_to_queue(top_chunks, DB_PATH)
+                    print(f"    -> Seeded {seeded} chunks into SRS queue")
+            except Exception as e:
+                print(f"    -> Chunk seeding skipped: {e}")
     except Exception as e:
         print(f"    -> Chunk extraction skipped: {e}")
 
