@@ -344,12 +344,68 @@ STORY_HTML = r"""<!DOCTYPE html>
   .source-badge.story { background: rgba(52,211,153,0.1); color: #34d399; }
   .source-badge.podcast { background: rgba(248,113,113,0.1); color: #f87171; }
   .empty-msg { color: #525263; text-align: center; padding: 40px 20px; font-size: 0.95em; }
+
+  /* ── Learner level banner ── */
+  .learner-level-banner {
+    margin: 16px 20px 0; padding: 14px 18px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(124,92,252,0.08));
+    border: 1px solid rgba(59,130,246,0.15); border-radius: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .learner-level-banner .ll-label { font-size: 0.75em; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .learner-level-banner .ll-value { font-size: 1.15em; font-weight: 800; background: linear-gradient(135deg, #3B82F6, #7C5CFC); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .learner-level-banner .ll-compression { font-size: 0.8em; color: #525263; }
+
+  /* ── Recommended content ── */
+  .reco-section { margin: 16px 20px 0; }
+  .reco-section h3 { font-size: 0.85em; color: #6b7280; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .reco-cards { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+  .reco-card {
+    min-width: 200px; flex-shrink: 0; padding: 14px 16px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px; cursor: pointer; transition: all 0.2s;
+    backdrop-filter: blur(20px);
+  }
+  .reco-card:active { border-color: rgba(59,130,246,0.3); transform: scale(0.98); }
+  .reco-card .reco-type { font-size: 0.65em; color: #60a5fa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .reco-card .reco-title { font-size: 0.9em; font-weight: 600; color: #fafafa; margin-top: 4px; }
+  .reco-card .reco-meta { font-size: 0.7em; color: #525263; margin-top: 4px; }
+  .reco-card.reencounter { border-left: 3px solid #f59e0b; }
+  .reco-card.compression { border-left: 3px solid #34d399; }
+  .reco-card.stretch { border-left: 3px solid #60a5fa; }
+
+  /* ── Re-encounter queue (Revisao tab) ── */
+  .reencounter-section { margin-bottom: 24px; }
+  .reencounter-section h3 { font-size: 0.85em; color: #f59e0b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .reencounter-item {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(245,158,11,0.15);
+    border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s;
+  }
+  .reencounter-item:active { border-color: rgba(245,158,11,0.4); }
+  .reencounter-item .re-title { font-size: 0.95em; font-weight: 600; color: #fafafa; }
+  .reencounter-item .re-meta { font-size: 0.75em; color: #525263; margin-top: 4px; }
+  .reencounter-item .re-chunks { font-size: 0.7em; color: #f59e0b; margin-top: 6px; }
 </style>
 </head><body>
 
 <div class="header">
   <h1>BIBLIOTECA</h1>
   <button class="back-btn" id="back-btn" onclick="goBack()">Voltar</button>
+</div>
+
+<!-- Learner Level Banner -->
+<div class="learner-level-banner" id="learner-level-banner" style="display:none">
+  <div>
+    <div class="ll-label">Seu nivel</div>
+    <div class="ll-value" id="ll-level">—</div>
+  </div>
+  <div class="ll-compression" id="ll-compression"></div>
+</div>
+
+<!-- Recommended Content -->
+<div class="reco-section" id="reco-section" style="display:none">
+  <h3>Para voce</h3>
+  <div class="reco-cards" id="reco-cards"></div>
 </div>
 
 <!-- Sub-tabs: Historias | Podcasts | Revisao -->
@@ -425,6 +481,10 @@ STORY_HTML = r"""<!DOCTYPE html>
 
 <!-- ═══ TAB PANEL: Revisao ═══ -->
 <div class="tab-panel" id="panel-revisao">
+  <div class="reencounter-section" id="reencounter-section" style="display:none">
+    <h3>Reencontrar — conteudo com seus chunks recentes</h3>
+    <div id="reencounter-list"></div>
+  </div>
   <div class="review-list" id="review-list"></div>
 </div>
 
@@ -450,7 +510,7 @@ function switchTab(tab) {
 
   if (tab === 'historias') { loadLevels(); resetStoryScreens(); }
   if (tab === 'podcasts') { loadPodcasts(); }
-  if (tab === 'revisao') { loadReviewFeed(); }
+  if (tab === 'revisao') { loadReencounterQueue(); loadReviewFeed(); }
 }
 
 function resetStoryScreens() {
@@ -1006,8 +1066,114 @@ async function loadReviewFeed() {
   }
 }
 
+// ── Learner Level Banner ─────────────────────────────────
+async function loadLearnerLevel() {
+  try {
+    const res = await fetch('/api/content/level');
+    const data = await res.json();
+    const lv = data.level || 'P1';
+    const banner = $('learner-level-banner');
+    $('ll-level').textContent = lv;
+    banner.style.display = 'flex';
+  } catch(e) {}
+}
+
+// ── Recommended Content ──────────────────────────────────
+async function loadRecommendations() {
+  try {
+    const [compRes, reencRes] = await Promise.all([
+      fetch('/api/content/recommend?mode=compression&limit=3'),
+      fetch('/api/content/reencounter?limit=3'),
+    ]);
+    const compData = await compRes.json();
+    const reencData = await reencRes.json();
+
+    const cards = $('reco-cards');
+    cards.innerHTML = '';
+    let hasCards = false;
+
+    // Re-encounter cards first (highest priority)
+    for (const r of (reencData || [])) {
+      hasCards = true;
+      const card = document.createElement('div');
+      card.className = 'reco-card reencounter';
+      card.innerHTML = `
+        <div class="reco-type">Reencontrar</div>
+        <div class="reco-title">${r.title || 'Conteudo #' + r.content_id}</div>
+        <div class="reco-meta">${r.content_type === 'story' ? 'Historia' : 'Podcast'} · ${r.match_count || 0} chunks seus</div>
+      `;
+      card.onclick = () => navigateToContent(r.content_type, r.content_id);
+      cards.appendChild(card);
+    }
+
+    // Compression recs
+    for (const r of (compData || [])) {
+      hasCards = true;
+      const card = document.createElement('div');
+      card.className = 'reco-card compression';
+      const pct = r.compression_pct ? Math.round(r.compression_pct * 100) : '?';
+      card.innerHTML = `
+        <div class="reco-type">Compreensao ${pct}%</div>
+        <div class="reco-title">${r.title || 'Conteudo #' + r.content_id}</div>
+        <div class="reco-meta">${r.content_type === 'story' ? 'Historia' : 'Podcast'} · ${r.difficulty_level || ''}</div>
+      `;
+      card.onclick = () => navigateToContent(r.content_type, r.content_id);
+      cards.appendChild(card);
+    }
+
+    $('reco-section').style.display = hasCards ? 'block' : 'none';
+  } catch(e) {
+    $('reco-section').style.display = 'none';
+  }
+}
+
+function navigateToContent(contentType, contentId) {
+  if (contentType === 'story') {
+    switchTab('historias');
+    loadStory(contentId);
+  } else if (contentType === 'podcast') {
+    switchTab('podcasts');
+    openPodcast(contentId);
+  }
+}
+
+// ── Re-encounter Queue (Revisao tab) ─────────────────────
+async function loadReencounterQueue() {
+  try {
+    const res = await fetch('/api/content/reencounter?limit=5');
+    const data = await res.json();
+
+    const section = $('reencounter-section');
+    const list = $('reencounter-list');
+    list.innerHTML = '';
+
+    if (!data || !data.length) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    for (const r of data) {
+      const item = document.createElement('div');
+      item.className = 'reencounter-item';
+      const chunks = (r.matching_chunks || []).slice(0, 5).join(', ');
+      item.innerHTML = `
+        <div class="re-title">${r.title || 'Conteudo #' + r.content_id}</div>
+        <div class="re-meta">${r.content_type === 'story' ? 'Historia' : 'Podcast'} · ${r.difficulty_level || ''} · ${r.match_count || 0} chunks</div>
+        ${chunks ? '<div class="re-chunks">' + chunks + '</div>' : ''}
+      `;
+      item.onclick = () => navigateToContent(r.content_type, r.content_id);
+      list.appendChild(item);
+    }
+  } catch(e) {
+    $('reencounter-section').style.display = 'none';
+  }
+}
+
 // ── Init ────────────────────────────────────────────────
 loadLevels();
+loadLearnerLevel();
+loadRecommendations();
 </script>
 
 {tab_bar}

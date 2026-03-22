@@ -6178,6 +6178,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             return
         podcast_id = save_podcast(podcast_data)
         podcast_data["id"] = podcast_id
+        try:
+            classify_content("podcast", podcast_id)
+        except Exception:
+            pass
         self._json(podcast_data)
 
     # ── Home Stats ─────────────────────────────────────────
@@ -7763,6 +7767,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         story_id = generate_story(level)
         if story_id:
             generate_story_audio(story_id)
+            try:
+                classify_content("story", story_id)
+            except Exception:
+                pass
             self._json({"id": story_id})
         else:
             self._json({"error": "Generation failed"})
