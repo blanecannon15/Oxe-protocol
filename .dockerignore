@@ -1,0 +1,12 @@
+*.log
+.git
+__pycache__
+*.pyc
+voca_vault/audios/*
+voca_vault/images/*
+audio_gen*.log
+cache*.log
+chunk_*.log
+expand*.log
+precache*.log
+regen_chunks.log
