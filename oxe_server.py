@@ -2986,25 +2986,30 @@ function renderSynonyms(d) {
 function renderChunks(d) {
   const c = document.getElementById('chunks-container');
   if (!d) { c.innerHTML = '<div style="text-align:center;color:#525263;padding:20px">Sem dados</div>'; return; }
-  let html = '';
-  // DB chunks (PT primary, EN fallback)
-  var dbChunks = d.chunks_from_db || d.db_chunks || [];
-  if (dbChunks.length > 0) {
-    html += '<div class="chunk-section-label">No banco de dados</div>';
-    dbChunks.forEach(ch => { html += buildChunkCard(ch, true); });
+  try {
+    let html = '';
+    var dbChunks = d.chunks_from_db || d.db_chunks || [];
+    if (dbChunks.length > 0) {
+      html += '<div class="chunk-section-label">No banco de dados</div>';
+      dbChunks.forEach(ch => { html += buildChunkCard(ch, true); });
+    }
+    var genChunks = d.chunks_generated || d.common_chunks || [];
+    if (genChunks.length > 0) {
+      html += '<div class="chunk-section-label">Chunks comuns</div>';
+      genChunks.forEach(ch => { html += buildChunkCard(ch, false); });
+    }
+    if (!html) html = '<div style="text-align:center;color:#525263;padding:20px">Sem chunks disponíveis</div>';
+    c.innerHTML = html;
+  } catch(e) {
+    console.error('renderChunks error:', e, 'data:', d);
+    c.innerHTML = '<div style="text-align:center;color:#ff6b6b;padding:20px">Erro ao carregar chunks</div>';
   }
-  // Generated chunks (PT primary, EN fallback)
-  var genChunks = d.chunks_generated || d.common_chunks || [];
-  if (genChunks.length > 0) {
-    html += '<div class="chunk-section-label">Chunks comuns</div>';
-    genChunks.forEach(ch => { html += buildChunkCard(ch, false); });
-  }
-  if (!html) html = '<div style="text-align:center;color:#525263;padding:20px">Sem chunks disponíveis</div>';
-  c.innerHTML = html;
 }
 
 function buildChunkCard(ch, fromDb) {
-  const freq = (ch.frequencia || ch.frequency || 'media').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  var rawFreq = ch.frequencia || ch.frequency || 'media';
+  if (typeof rawFreq === 'number') rawFreq = rawFreq >= 0.7 ? 'alta' : (rawFreq >= 0.3 ? 'media' : 'baixa');
+  const freq = String(rawFreq).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const freqLabel = { alta:'Alta', media:'Média', baixa:'Baixa' }[freq] || 'Média';
   const freqClass = { alta:'alta', media:'media', baixa:'baixa' }[freq] || 'media';
   let html = '<div class="chunk-card freq-' + freqClass + '">';

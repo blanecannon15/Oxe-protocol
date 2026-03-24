@@ -567,9 +567,12 @@ def get_word_chunks(word, db_path=DB_PATH):
         conn.close()
 
         for r in rows:
+            rank = r["composite_rank"] or 0
+            freq_label = "alta" if rank >= 0.7 else ("media" if rank >= 0.3 else "baixa")
             chunks_from_db.append({
-                "chunk": r["root_form"],
-                "frequency": round(r["composite_rank"], 2),
+                "text": r["root_form"],
+                "frequencia": freq_label,
+                "frequency": round(rank, 2),
                 "source": r["source"],
             })
     except Exception:
@@ -599,7 +602,7 @@ def get_word_chunks(word, db_path=DB_PATH):
             for ch in result["chunks"]:
                 if isinstance(ch, dict):
                     chunks_generated.append({
-                        "chunk": ch.get("chunk", ""),
+                        "text": ch.get("chunk", ""),
                         "tipo": ch.get("tipo", ""),
                         "frequencia": ch.get("frequencia", ""),
                     })
