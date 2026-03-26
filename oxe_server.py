@@ -7059,8 +7059,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "Nenhum chunk disponivel"}, status=404)
             return
 
-        # Generate audio + image
-        audio_file = generate_tts(chunk["carrier_sentence"])
+        # Generate audio + image (graceful fallback if APIs are down/quota exceeded)
+        audio_file = None
+        try:
+            audio_file = generate_tts(chunk["carrier_sentence"])
+        except Exception:
+            pass
         image_file = None
         try:
             image_file = generate_image(chunk["word"])

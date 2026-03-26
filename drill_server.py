@@ -126,33 +126,36 @@ def _baiano_tts_text(text):
 
 
 def generate_tts(text):
-    """Generate TTS, return filename."""
+    """Generate TTS, return filename. Returns None on any failure (quota, network, etc)."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
         return None
 
-    from elevenlabs import ElevenLabs
-    client = ElevenLabs(api_key=api_key)
+    try:
+        from elevenlabs import ElevenLabs
+        client = ElevenLabs(api_key=api_key)
 
-    audio_iter = client.text_to_speech.convert(
-        text=_baiano_tts_text(text),
-        voice_id="ELBrtmIkk40wCZ5YnlwM",  # Thiago — native Brazilian male, warm and inviting
-        model_id="eleven_multilingual_v2",
-        output_format="mp3_44100_128",
-        voice_settings={
-            "stability": 0.45,
-            "similarity_boost": 0.85,
-            "style": 0.55,
-            "use_speaker_boost": True,
-        },
-    )
+        audio_iter = client.text_to_speech.convert(
+            text=_baiano_tts_text(text),
+            voice_id="ELBrtmIkk40wCZ5YnlwM",  # Thiago — native Brazilian male, warm and inviting
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
+            voice_settings={
+                "stability": 0.45,
+                "similarity_boost": 0.85,
+                "style": 0.55,
+                "use_speaker_boost": True,
+            },
+        )
 
-    fname = f"tts_{int(time.time() * 1000)}.mp3"
-    outpath = AUDIO_DIR / fname
-    with open(outpath, "wb") as f:
-        for chunk in audio_iter:
-            f.write(chunk)
-    return fname
+        fname = f"tts_{int(time.time() * 1000)}.mp3"
+        outpath = AUDIO_DIR / fname
+        with open(outpath, "wb") as f:
+            for chunk in audio_iter:
+                f.write(chunk)
+        return fname
+    except Exception:
+        return None
 
 
 import threading
