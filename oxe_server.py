@@ -8831,9 +8831,19 @@ def main():
     # Verify DB is real (not an LFS pointer)
     db_size = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
     if db_size < 1000:
-        print(f"  ERROR: voca_20k.db is {db_size} bytes — likely an LFS pointer, not the real DB!")
-        print(f"  Run: git lfs pull")
-        sys.exit(1)
+        print(f"  WARNING: voca_20k.db is {db_size} bytes — likely an LFS pointer!")
+        print(f"  Attempting git lfs pull...")
+        import subprocess
+        try:
+            subprocess.run(["git", "lfs", "pull"], cwd=os.path.dirname(DB_PATH), timeout=300)
+            db_size = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+            if db_size < 1000:
+                print(f"  ERROR: DB still {db_size} bytes after lfs pull. Cannot start.")
+                sys.exit(1)
+            print(f"  LFS pull succeeded: {db_size / 1024 / 1024:.0f} MB")
+        except Exception as e:
+            print(f"  LFS pull failed: {e}")
+            sys.exit(1)
 
     init_story_db()
     migrate_db()
