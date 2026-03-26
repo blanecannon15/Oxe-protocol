@@ -6420,6 +6420,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/sync/status":
             self._sync_status()
 
+        # ── Health (simple, can never fail) ──
+        elif path == "/api/health":
+            self._json({"status": "ok", "db_size": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0})
+
         # ── Shared ──
         elif path == "/api/daily-stats":
             self._daily_stats()
@@ -7090,36 +7094,55 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 self._json(_home_stats_cache["data"])
                 return
 
-        tier = get_unlocked_tier()
+        try:
+            tier = get_unlocked_tier()
+        except Exception:
+            tier = 1
         try:
             due = len(list(get_due_words()))
         except Exception:
             due = 0
-        progress = tier_progress()
         current_pct = 0
-        for t, label, mastered, total, pct in progress:
-            if t == tier:
-                current_pct = round(pct)
-                break
-        conn = get_conn()
-        story_count = conn.execute("SELECT COUNT(*) FROM story_library").fetchone()[0]
-        conn.close()
-        streak = get_streak()
-        weak_count = len(get_weak_words())
+        try:
+            progress = tier_progress()
+            for t, label, mastered, total, pct in progress:
+                if t == tier:
+                    current_pct = round(pct)
+                    break
+        except Exception:
+            pass
+        story_count = 0
+        try:
+            conn = get_conn()
+            story_count = conn.execute("SELECT COUNT(*) FROM story_library").fetchone()[0]
+            conn.close()
+        except Exception:
+            pass
+        try:
+            streak = get_streak()
+        except Exception:
+            streak = 0
+        try:
+            weak_count = len(get_weak_words())
+        except Exception:
+            weak_count = 0
         # Word of the day — deterministic per date
-        conn2 = get_conn()
-        day_seed = int(datetime.now().strftime("%Y%m%d"))
-        total_words = conn2.execute("SELECT COUNT(*) FROM word_bank WHERE difficulty_tier <= ?", (tier,)).fetchone()[0]
         wod = None
-        if total_words > 0:
-            idx = day_seed % total_words
-            row = conn2.execute(
-                "SELECT id, word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?",
-                (tier, idx)
-            ).fetchone()
-            if row:
-                wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
-        conn2.close()
+        try:
+            conn2 = get_conn()
+            day_seed = int(datetime.now().strftime("%Y%m%d"))
+            total_words = conn2.execute("SELECT COUNT(*) FROM word_bank WHERE difficulty_tier <= ?", (tier,)).fetchone()[0]
+            if total_words > 0:
+                idx = day_seed % total_words
+                row = conn2.execute(
+                    "SELECT id, word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?",
+                    (tier, idx)
+                ).fetchone()
+                if row:
+                    wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
+            conn2.close()
+        except Exception:
+            pass
         resp = {
             "tier": tier,
             "due": due,
@@ -8848,9 +8871,18 @@ def main():
             print(f"  LFS pull failed: {e}")
             sys.exit(1)
 
-    init_story_db()
-    migrate_db()
-    migrate_v2()
+    try:
+        init_story_db()
+    except Exception as e:
+        print(f"  WARNING: init_story_db() failed: {e}")
+    try:
+        migrate_db()
+    except Exception as e:
+        print(f"  WARNING: migrate_db() failed: {e}")
+    try:
+        migrate_v2()
+    except Exception as e:
+        print(f"  WARNING: migrate_v2() failed: {e}")
     ip = get_local_ip()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", port), OxeHandler)
 
@@ -8869,11 +8901,14 @@ def main():
     else:
         proto = "http"
 
-    tier = get_unlocked_tier()
+    try:
+        tier = get_unlocked_tier()
+    except Exception:
+        tier = 1
     try:
         due = len(list(get_due_words()))
     except Exception:
-        due = 0  # graceful fallback if JSON in srs_state is malformed
+        due = 0
 
     print(f"\n  Oxe Protocol — Unified Server")
     print(f"  {'='*44}")
@@ -8881,7 +8916,7 @@ def main():
     print(f"  Mac:     {proto}://localhost:{port}")
     if use_https:
         print(f"  HTTPS:   ON (self-signed cert)")
-    print(f"  Tier:    {tier} ({TIER_LABELS[tier]})")
+    print(f"  Tier:    {tier} ({TIER_LABELS.get(tier, '?')})")
     print(f"  Due:     {due} words")
     print(f"  {'='*44}")
     print(f"  /          Home")
