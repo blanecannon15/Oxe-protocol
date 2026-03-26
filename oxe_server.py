@@ -4999,6 +4999,15 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
     </div>
     <div class="card-arrow">&#x203a;</div>
   </a>
+
+  <a href="/driving" class="card driving" style="border-color:rgba(94,106,210,0.3)">
+    <div class="card-icon" style="background:rgba(94,106,210,0.15);color:#818cf8;font-size:32px">&#x1f697;</div>
+    <div class="card-text">
+      <div class="card-title">Modo Dirigir</div>
+      <div class="card-sub">SRS + sombreamento sem olhar na tela — botões gigantes</div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
 </div>
 
 {tab_bar}
@@ -5728,6 +5737,384 @@ body{
 </body></html>"""
 
 
+# ── Driving Mode (Eyes-Off SRS + Shadowing) ───────────────────
+DRIVING_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Modo Dirigir — Oxe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none;
+  overflow:hidden;
+}
+.safe-top{height:env(safe-area-inset-top,20px)}
+
+/* Header */
+.drv-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 16px;flex-shrink:0;
+}
+.drv-counter{font-size:20px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.drv-counter span{color:rgba(255,255,255,0.4);font-weight:400}
+.mode-toggle{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);
+  border-radius:14px;padding:6px 14px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.mode-toggle .dot{width:10px;height:10px;border-radius:50%;background:#5E6AD2;transition:background 0.2s}
+.mode-toggle .lbl{font-size:14px;font-weight:600;color:#fff}
+.mode-toggle.shadow .dot{background:#f87171}
+
+/* Main tap area */
+.drv-main{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:20px;gap:20px;cursor:pointer;-webkit-tap-highlight-color:transparent;
+}
+.drv-status{
+  font-size:18px;font-weight:600;color:rgba(255,255,255,0.5);
+  text-align:center;min-height:28px;
+}
+.drv-status.playing{color:#5E6AD2}
+.drv-status.waiting{color:#f97316}
+.drv-status.shadowing{color:#f87171}
+
+/* Hidden text reveal */
+.drv-reveal{
+  font-size:28px;font-weight:700;text-align:center;padding:16px 24px;
+  background:rgba(94,106,210,0.1);border:1px solid rgba(94,106,210,0.2);
+  border-radius:20px;color:#818cf8;max-width:90%;display:none;
+  animation:fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+
+/* Mostrar button */
+.mostrar-btn{
+  padding:14px 32px;border-radius:16px;border:2px solid rgba(255,255,255,0.15);
+  background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.5);
+  font-size:16px;font-weight:600;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:all 0.2s;
+}
+.mostrar-btn:active{background:rgba(255,255,255,0.12)}
+
+/* Rating buttons */
+.drv-ratings{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  width:100%;max-width:480px;padding:0 16px 12px;flex-shrink:0;
+}
+.drv-rate{
+  height:88px;border-radius:20px;border:none;
+  font-size:20px;font-weight:700;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:all 0.15s;
+  display:flex;align-items:center;justify-content:center;
+}
+.drv-rate:active{transform:scale(0.95)}
+.drv-rate.again{background:rgba(239,68,68,0.15);color:#ef4444;border:2px solid rgba(239,68,68,0.3)}
+.drv-rate.hard{background:rgba(249,115,22,0.15);color:#f97316;border:2px solid rgba(249,115,22,0.3)}
+.drv-rate.good{background:rgba(34,197,94,0.15);color:#22c55e;border:2px solid rgba(34,197,94,0.3)}
+.drv-rate.easy{background:rgba(59,130,246,0.15);color:#3b82f6;border:2px solid rgba(59,130,246,0.3)}
+.drv-rate[disabled]{opacity:0.3;pointer-events:none}
+
+/* Stop button */
+.drv-stop{
+  height:80px;border-radius:20px;border:2px solid rgba(239,68,68,0.4);
+  background:rgba(239,68,68,0.12);color:#ef4444;
+  font-size:22px;font-weight:700;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:all 0.15s;
+  width:100%;max-width:480px;margin:0 auto 8px;
+  display:none;
+}
+.drv-stop:active{transform:scale(0.95);background:rgba(239,68,68,0.25)}
+
+/* Bottom area */
+.drv-bottom{padding:0 16px 16px;padding-bottom:max(16px, env(safe-area-inset-bottom));flex-shrink:0}
+
+/* End screen */
+.drv-end{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:20px;padding:40px;text-align:center;display:none;
+}
+.drv-end .big{font-size:64px;margin-bottom:8px}
+.drv-end .title{font-size:28px;font-weight:700}
+.drv-end .sub{font-size:18px;color:rgba(255,255,255,0.5)}
+.drv-end .home-btn{
+  margin-top:20px;padding:18px 40px;border-radius:18px;
+  background:#5E6AD2;color:#fff;font-size:20px;font-weight:700;
+  border:none;cursor:pointer;
+}
+
+/* Loading */
+.drv-loading{font-size:18px;color:rgba(255,255,255,0.4);text-align:center}
+.spinner{width:40px;height:40px;border:3px solid rgba(255,255,255,0.1);
+  border-top-color:#5E6AD2;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body>
+<div class="safe-top"></div>
+
+<!-- Active session UI -->
+<div id="sessionUI">
+  <div class="drv-header">
+    <div class="drv-counter"><span id="doneCount">0</span><span> revisados</span></div>
+    <div class="mode-toggle" id="modeToggle" onclick="toggleMode()">
+      <div class="dot"></div>
+      <div class="lbl" id="modeLbl">SRS</div>
+    </div>
+  </div>
+
+  <div class="drv-main" id="mainTap" onclick="replayAudio()">
+    <div class="drv-status" id="statusEl">Carregando...</div>
+    <div class="drv-reveal" id="revealEl"></div>
+    <button class="mostrar-btn" id="mostrarBtn" onclick="event.stopPropagation();toggleReveal()">Mostrar</button>
+  </div>
+
+  <div class="drv-bottom">
+    <div class="drv-ratings" id="ratingsEl">
+      <button class="drv-rate again" onclick="rate(1)">De Novo</button>
+      <button class="drv-rate hard" onclick="rate(2)">Difícil</button>
+      <button class="drv-rate good" onclick="rate(3)">Bom</button>
+      <button class="drv-rate easy" onclick="rate(4)">Fácil</button>
+    </div>
+    <button class="drv-stop" id="stopBtn" onclick="endSession()">Parar</button>
+  </div>
+</div>
+
+<!-- End screen -->
+<div class="drv-end" id="endScreen">
+  <div class="big">&#10003;</div>
+  <div class="title" id="endTitle">Sessão completa</div>
+  <div class="sub" id="endSub"></div>
+  <button class="home-btn" onclick="location.href='/train'">Voltar</button>
+</div>
+
+{tab_bar}
+
+<script>
+(function(){
+  var mode = 'srs'; // 'srs' or 'shadow'
+  var chunk = null;
+  var audio = null;
+  var done = 0;
+  var timerStart = 0;
+  var revealed = false;
+  var shadowCount = 0;
+  var wakeLock = null;
+  var stopped = false;
+
+  // Wake Lock
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', function() { wakeLock = null; });
+      }
+    } catch(e) {}
+  }
+  requestWakeLock();
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && !wakeLock) requestWakeLock();
+  });
+
+  function setStatus(text, cls) {
+    var el = document.getElementById('statusEl');
+    el.textContent = text;
+    el.className = 'drv-status' + (cls ? ' ' + cls : '');
+  }
+
+  function setRatingsEnabled(on) {
+    var btns = document.querySelectorAll('.drv-rate');
+    for (var i = 0; i < btns.length; i++) btns[i].disabled = !on;
+  }
+
+  function updateCount() {
+    document.getElementById('doneCount').textContent = done;
+  }
+
+  function showStopBtn() {
+    document.getElementById('stopBtn').style.display = done > 0 ? 'block' : 'none';
+  }
+
+  function toggleMode() {
+    mode = mode === 'srs' ? 'shadow' : 'srs';
+    var tog = document.getElementById('modeToggle');
+    var lbl = document.getElementById('modeLbl');
+    if (mode === 'shadow') {
+      tog.classList.add('shadow');
+      lbl.textContent = 'Sombra';
+      document.getElementById('ratingsEl').style.display = 'none';
+    } else {
+      tog.classList.remove('shadow');
+      lbl.textContent = 'SRS';
+      document.getElementById('ratingsEl').style.display = 'grid';
+    }
+  }
+  window.toggleMode = toggleMode;
+
+  function toggleReveal() {
+    var el = document.getElementById('revealEl');
+    if (!chunk) return;
+    if (revealed) {
+      el.style.display = 'none';
+      revealed = false;
+      document.getElementById('mostrarBtn').textContent = 'Mostrar';
+    } else {
+      el.textContent = chunk.target_chunk || chunk.word || '';
+      el.style.display = 'block';
+      revealed = true;
+      document.getElementById('mostrarBtn').textContent = 'Esconder';
+    }
+  }
+  window.toggleReveal = toggleReveal;
+
+  function playAudio(onEnd) {
+    if (!chunk || !chunk.audio_file) { if (onEnd) onEnd(); return; }
+    if (audio) { audio.pause(); audio = null; }
+    audio = new Audio('/audio/' + chunk.audio_file);
+    setStatus('Ouvindo...', 'playing');
+    audio.onended = function() {
+      if (onEnd) onEnd();
+      else afterPlayback();
+    };
+    audio.onerror = function() {
+      if (onEnd) onEnd();
+      else afterPlayback();
+    };
+    audio.play().catch(function() { if (onEnd) onEnd(); else afterPlayback(); });
+  }
+
+  function afterPlayback() {
+    if (mode === 'srs') {
+      setStatus('Avalie ↓', 'waiting');
+      timerStart = Date.now();
+      setRatingsEnabled(true);
+    } else {
+      // Shadowing: replay 3 times then auto-advance
+      shadowCount++;
+      if (shadowCount < 3) {
+        setStatus('Sombra ' + (shadowCount + 1) + '/3', 'shadowing');
+        setTimeout(function() { playAudio(); }, 1000);
+      } else {
+        autoAdvanceShadow();
+      }
+    }
+  }
+
+  function autoAdvanceShadow() {
+    // Record as rating 3 (Good) automatically
+    if (!chunk) return;
+    setStatus('Próximo...', '');
+    fetch('/api/drill/complete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chunk_id: chunk.chunk_id,
+        latency_ms: 0,
+        retries: 0,
+        rating: 3
+      })
+    }).catch(function(){});
+    done++;
+    updateCount();
+    showStopBtn();
+    setTimeout(fetchNext, 800);
+  }
+
+  function replayAudio() {
+    if (!chunk) return;
+    if (audio) { audio.pause(); audio = null; }
+    playAudio();
+  }
+  window.replayAudio = replayAudio;
+
+  function rate(val) {
+    if (!chunk) return;
+    setRatingsEnabled(false);
+    var latency = timerStart ? Date.now() - timerStart : 0;
+    fetch('/api/drill/complete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chunk_id: chunk.chunk_id,
+        latency_ms: Math.round(latency),
+        retries: 0,
+        rating: val
+      })
+    }).catch(function(){});
+    done++;
+    updateCount();
+    showStopBtn();
+    // Hide reveal
+    document.getElementById('revealEl').style.display = 'none';
+    revealed = false;
+    document.getElementById('mostrarBtn').textContent = 'Mostrar';
+    setStatus('Próximo...', '');
+    setTimeout(fetchNext, 600);
+  }
+  window.rate = rate;
+
+  function fetchNext() {
+    if (stopped) return;
+    chunk = null;
+    setRatingsEnabled(false);
+    setStatus('Carregando...', '');
+    fetch('/api/drill/next')
+      .then(function(r) {
+        if (r.status === 404) { endSession('empty'); return null; }
+        return r.json();
+      })
+      .then(function(data) {
+        if (!data || data.error) { endSession('empty'); return; }
+        chunk = data;
+        shadowCount = 0;
+        revealed = false;
+        document.getElementById('revealEl').style.display = 'none';
+        document.getElementById('mostrarBtn').textContent = 'Mostrar';
+        if (mode === 'srs') {
+          setStatus('Ouvindo...', 'playing');
+          setRatingsEnabled(false);
+        } else {
+          setStatus('Sombra 1/3', 'shadowing');
+        }
+        // Auto-play after 0.5s
+        setTimeout(function() { playAudio(); }, 500);
+      })
+      .catch(function() { endSession('error'); });
+  }
+
+  function endSession(reason) {
+    stopped = true;
+    if (audio) { audio.pause(); audio = null; }
+    document.getElementById('sessionUI').style.display = 'none';
+    var endEl = document.getElementById('endScreen');
+    endEl.style.display = 'flex';
+    if (reason === 'empty') {
+      document.getElementById('endTitle').textContent = 'Tudo revisado!';
+      document.getElementById('endSub').textContent = done + ' chunks revisados. Volte mais tarde.';
+    } else if (reason === 'error') {
+      document.getElementById('endTitle').textContent = 'Erro';
+      document.getElementById('endSub').textContent = 'Não foi possível carregar chunks.';
+    } else {
+      document.getElementById('endTitle').textContent = 'Sessão encerrada';
+      document.getElementById('endSub').textContent = done + ' chunks revisados. Bom trabalho!';
+    }
+    // Release wake lock
+    if (wakeLock) { wakeLock.release().catch(function(){}); wakeLock = null; }
+  }
+  window.endSession = endSession;
+
+  // Init
+  updateCount();
+  showStopBtn();
+  setRatingsEnabled(false);
+  fetchNext();
+})();
+</script>
+</body></html>"""
+
+
 # ── Unified Handler ────────────────────────────────────────────
 
 class OxeHandler(http.server.BaseHTTPRequestHandler):
@@ -5800,6 +6187,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Drill ──
         elif path == "/drill":
             self._html(SRS_DRILL_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
+        elif path == "/driving":
+            self._html(DRIVING_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
         elif path == "/api/drill/next":
             self._drill_next_chunk()
         elif path.startswith("/api/drill/explain"):
