@@ -8855,7 +8855,9 @@ def main():
     cert_dir = Path(__file__).parent / "certs"
     cert_file = cert_dir / "cert.pem"
     key_file = cert_dir / "key.pem"
-    use_https = cert_file.exists() and key_file.exists()
+    # Skip HTTPS on Railway (it handles TLS termination)
+    on_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT"))
+    use_https = cert_file.exists() and key_file.exists() and not on_railway
     if use_https:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(str(cert_file), str(key_file))
