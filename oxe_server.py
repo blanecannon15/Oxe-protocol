@@ -8439,6 +8439,13 @@ def main():
         if idx + 1 < len(sys.argv):
             port = int(sys.argv[idx + 1])
 
+    # Verify DB is real (not an LFS pointer)
+    db_size = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    if db_size < 1000:
+        print(f"  ERROR: voca_20k.db is {db_size} bytes — likely an LFS pointer, not the real DB!")
+        print(f"  Run: git lfs pull")
+        sys.exit(1)
+
     init_story_db()
     migrate_db()
     migrate_v2()

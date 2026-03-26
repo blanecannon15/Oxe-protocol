@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["git-lfs"]
+nixPkgs = ["git-lfs", "ffmpeg"]
 
 [phases.install]
-cmds = ["git lfs install --skip-smudge", "git lfs pull", "pip install -r requirements.txt"]
+cmds = ["pip install -r requirements.txt"]
