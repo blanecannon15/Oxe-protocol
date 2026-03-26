@@ -115,6 +115,16 @@ def build_carrier(word):
     )
 
 
+def _baiano_tts_text(text):
+    """Wrap short text with a Baiano carrier to nudge pronunciation toward
+    Soteropolitano.  Carrier sentences (4+ words) already have enough
+    regional context, so they pass through unchanged."""
+    words = text.strip().split()
+    if len(words) <= 3:
+        return f"Oxe, {text}"
+    return text
+
+
 def generate_tts(text):
     """Generate TTS, return filename."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
@@ -125,7 +135,7 @@ def generate_tts(text):
     client = ElevenLabs(api_key=api_key)
 
     audio_iter = client.text_to_speech.convert(
-        text=text,
+        text=_baiano_tts_text(text),
         voice_id="ELBrtmIkk40wCZ5YnlwM",  # Thiago — native Brazilian male, warm and inviting
         model_id="eleven_multilingual_v2",
         output_format="mp3_44100_128",

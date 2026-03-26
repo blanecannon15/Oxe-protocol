@@ -121,6 +121,7 @@ from dictionary_engine import (
     get_definition_cached, get_examples_cached, get_pronunciation_cached,
     get_expressions_cached, get_conjugation_cached, get_synonyms_cached,
     get_word_chunks_cached,
+    search_chunks, get_chunk_detail_cached,
 )
 
 # ── Imports from story_server ──────────────────────────────────
@@ -2482,6 +2483,89 @@ SEARCH_HTML = r"""<!DOCTYPE html>
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
 
+  /* ── Mode Toggle ── */
+  .mode-toggle {
+    display: flex; gap: 0; margin: 10px 0 0 0;
+    background: rgba(255,255,255,0.04); border-radius: 12px; padding: 3px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .mode-btn {
+    flex: 1; padding: 8px 0; text-align: center; font-size: 0.78em; font-weight: 600;
+    border: none; background: none; color: #525263; cursor: pointer;
+    border-radius: 10px; transition: all 0.2s;
+  }
+  .mode-btn.active { background: rgba(59,130,246,0.15); color: #60a5fa; }
+
+  /* ── Chunk Search Results ── */
+  .chunk-result-card {
+    display: none; animation: fadeUp 0.4s ease-out;
+  }
+  .chunk-result-card.visible { display: block; }
+  .chunk-search-item {
+    background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px;
+    margin-bottom: 10px; cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .chunk-search-item:active { background: rgba(59,130,246,0.08); }
+  .chunk-search-root {
+    font-size: 1.1em; font-weight: 700; color: #e0e0e5; margin-bottom: 6px;
+  }
+  .chunk-search-meta {
+    display: flex; gap: 8px; flex-wrap: wrap; font-size: 0.72em;
+  }
+  .chunk-search-meta span {
+    padding: 2px 8px; border-radius: 8px; font-weight: 600;
+  }
+  .chunk-rank { background: rgba(59,130,246,0.12); color: #60a5fa; }
+  .chunk-wc { background: rgba(124,92,252,0.12); color: #7C5CFC; }
+  .chunk-vc { background: rgba(52,211,153,0.12); color: #34d399; }
+
+  /* ── Chunk Detail Panel ── */
+  .chunk-detail-panel { animation: fadeUp 0.3s ease-out; }
+  .chunk-detail-back {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; color: #9ca3af; font-size: 0.8em; font-weight: 600;
+    cursor: pointer; margin-bottom: 16px; border: none;
+  }
+  .chunk-detail-back:active { background: rgba(255,255,255,0.1); }
+  .chunk-detail-title {
+    font-size: 1.6em; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #7C5CFC, #3B82F6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 16px;
+  }
+  .chunk-detail-section {
+    background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .chunk-detail-label {
+    font-size: 0.7em; color: #525263; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 8px; font-weight: 700;
+  }
+  .chunk-detail-text { font-size: 0.95em; color: #e0e0e5; line-height: 1.7; }
+  .chunk-example-item {
+    padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .chunk-example-item:last-child { border-bottom: none; }
+  .chunk-example-texto { font-size: 0.93em; color: #e0e0e5; line-height: 1.5; }
+  .chunk-example-contexto { font-size: 0.78em; color: #7a7a8e; margin-top: 4px; font-style: italic; }
+  .chunk-related-pill {
+    display: inline-block; padding: 5px 12px; margin: 4px 4px 4px 0;
+    background: rgba(124,92,252,0.1); border: 1px solid rgba(124,92,252,0.2);
+    border-radius: 10px; font-size: 0.8em; color: #a78bfa; cursor: pointer;
+  }
+  .chunk-related-pill:active { background: rgba(124,92,252,0.2); }
+  .chunk-variant-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.88em;
+  }
+  .chunk-variant-item:last-child { border-bottom: none; }
+  .chunk-variant-form { color: #e0e0e5; font-weight: 600; }
+  .chunk-variant-meta { font-size: 0.75em; color: #525263; }
+
   /* ── Tab Bar — injected by TAB_BAR_HTML ── */
 </style>
 </head><body>
@@ -2491,6 +2575,10 @@ SEARCH_HTML = r"""<!DOCTYPE html>
     <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
     <input type="text" id="search-input" placeholder="Buscar palavra..." autocomplete="off" autocorrect="off" spellcheck="false">
     <button class="search-clear" id="search-clear" onclick="clearSearch()">&times;</button>
+  </div>
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="mode-palavras" onclick="setSearchMode('palavras')">Palavras</button>
+    <button class="mode-btn" id="mode-chunks" onclick="setSearchMode('chunks')">Chunks</button>
   </div>
   <div class="autocomplete" id="autocomplete"></div>
 </div>
@@ -2580,6 +2668,18 @@ SEARCH_HTML = r"""<!DOCTYPE html>
 
     <button class="add-srs-btn" id="add-srs-btn" onclick="addToSRS()">Adicionar ao treino</button>
   </div>
+
+  <!-- Chunk search results (shown in chunk mode) -->
+  <div class="chunk-result-card" id="chunk-result-card">
+    <div id="chunk-results-list"></div>
+  </div>
+
+  <!-- Chunk detail panel (shown when a chunk result is clicked) -->
+  <div class="chunk-result-card" id="chunk-detail-card">
+    <div id="chunk-detail-container">
+      <div class="skeleton"><div class="skel-block"></div><div class="skel-line w80"></div><div class="skel-block"></div></div>
+    </div>
+  </div>
 </div>
 
 <audio id="player" preload="auto"></audio>
@@ -2595,13 +2695,37 @@ let debounceTimer = null;
 let currentData = null;
 let currentWordId = null;
 let tabCache = {};  // {tabIdx: data} — cache per word selection
+let searchMode = 'palavras';  // 'palavras' or 'chunks'
+
+function setSearchMode(mode) {
+  searchMode = mode;
+  document.getElementById('mode-palavras').classList.toggle('active', mode === 'palavras');
+  document.getElementById('mode-chunks').classList.toggle('active', mode === 'chunks');
+  searchInput.placeholder = mode === 'chunks' ? 'Buscar chunk...' : 'Buscar palavra...';
+  // Hide all result panels
+  document.getElementById('result-card').classList.remove('visible');
+  document.getElementById('chunk-result-card').classList.remove('visible');
+  document.getElementById('chunk-detail-card').classList.remove('visible');
+  document.getElementById('empty-state').style.display = '';
+  acBox.classList.remove('visible');
+  // Re-search if there's text
+  var q = searchInput.value.trim();
+  if (q.length >= 2) {
+    if (mode === 'chunks') fetchChunkSearch(q);
+    else fetchSearch(q);
+  }
+}
 
 searchInput.addEventListener('input', function() {
   clearTimeout(debounceTimer);
   const q = this.value.trim();
   clearBtn.style.display = q ? 'flex' : 'none';
   if (q.length < 2) { acBox.classList.remove('visible'); return; }
-  debounceTimer = setTimeout(() => fetchSearch(q), 300);
+  if (searchMode === 'chunks') {
+    debounceTimer = setTimeout(() => fetchChunkSearch(q), 300);
+  } else {
+    debounceTimer = setTimeout(() => fetchSearch(q), 300);
+  }
 });
 
 searchInput.addEventListener('focus', function() {
@@ -2613,6 +2737,8 @@ function clearSearch() {
   clearBtn.style.display = 'none';
   acBox.classList.remove('visible');
   document.getElementById('result-card').classList.remove('visible');
+  document.getElementById('chunk-result-card').classList.remove('visible');
+  document.getElementById('chunk-detail-card').classList.remove('visible');
   document.getElementById('empty-state').style.display = '';
 }
 
@@ -3110,6 +3236,169 @@ async function addToSRS() {
       body: JSON.stringify({ word_id: currentWordId, chunk: chunk, carrier: carrier }),
     });
     btn.textContent = 'Adicionado ✓';
+  } catch(e) {
+    btn.textContent = 'Erro';
+    btn.disabled = false;
+  }
+}
+
+// ── Chunk Search Mode ────────────────────────────────────────
+
+async function fetchChunkSearch(q) {
+  try {
+    const res = await fetch('/api/search/chunks?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) {
+      // Show "no results" inline — hide autocomplete, show chunk-result-card with empty message
+      acBox.classList.remove('visible');
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('result-card').classList.remove('visible');
+      document.getElementById('chunk-detail-card').classList.remove('visible');
+      var list = document.getElementById('chunk-results-list');
+      list.innerHTML = '<div style="text-align:center;color:#525263;padding:40px 20px">Nenhum chunk encontrado</div>';
+      document.getElementById('chunk-result-card').classList.add('visible');
+    } else {
+      // Hide autocomplete dropdown, show chunk results directly in page
+      acBox.classList.remove('visible');
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('result-card').classList.remove('visible');
+      document.getElementById('chunk-detail-card').classList.remove('visible');
+      var list = document.getElementById('chunk-results-list');
+      list.innerHTML = data.results.map(function(r) {
+        var rankPct = Math.round((r.composite_rank || 0) * 100);
+        return '<div class="chunk-search-item" onclick="openChunkDetail(' + r.family_id + ',\'' + (r.root_form||'').replace(/'/g, "\\'") + '\')">' +
+          '<div class="chunk-search-root">' + (r.root_form || '') + '</div>' +
+          '<div class="chunk-search-meta">' +
+            '<span class="chunk-rank">Rank ' + rankPct + '%</span>' +
+            '<span class="chunk-wc">' + (r.word_count || 0) + ' palavras</span>' +
+            '<span class="chunk-vc">' + (r.variant_count || 0) + ' variantes</span>' +
+          '</div></div>';
+      }).join('');
+      document.getElementById('chunk-result-card').classList.add('visible');
+    }
+  } catch(e) {
+    console.error('Chunk search error:', e);
+  }
+}
+
+async function openChunkDetail(familyId, rootForm) {
+  document.getElementById('chunk-result-card').classList.remove('visible');
+  document.getElementById('chunk-detail-card').classList.add('visible');
+  var container = document.getElementById('chunk-detail-container');
+  container.innerHTML = '<div class="skeleton"><div class="skel-block"></div><div class="skel-line w80"></div><div class="skel-block"></div></div>';
+  try {
+    var res = await fetch('/api/chunk/' + familyId + '/detail');
+    var d = await res.json();
+    if (d.error) {
+      container.innerHTML = '<div style="color:#f87171;text-align:center;padding:20px">' + d.error + '</div>';
+      return;
+    }
+    renderChunkDetail(d, container);
+  } catch(e) {
+    container.innerHTML = '<div style="color:#f87171;text-align:center;padding:20px">Erro ao carregar detalhes</div>';
+    console.error('Chunk detail error:', e);
+  }
+}
+
+function renderChunkDetail(d, container) {
+  var html = '<button class="chunk-detail-back" onclick="backToChunkResults()">&#8592; Voltar</button>';
+  html += '<div class="chunk-detail-title">' + (d.root_form || '') + '</div>';
+
+  // Definition
+  if (d.definicao) {
+    html += '<div class="chunk-detail-section">';
+    html += '<div class="chunk-detail-label">Significado</div>';
+    html += '<div class="chunk-detail-text">' + d.definicao + '</div>';
+    html += '</div>';
+  }
+
+  // Pronunciation
+  if (d.pronuncia) {
+    html += '<div class="chunk-detail-section">';
+    html += '<div class="chunk-detail-label">Pronúncia</div>';
+    html += '<div class="chunk-detail-text">' + d.pronuncia + '</div>';
+    html += '</div>';
+  }
+
+  // Examples
+  if (d.exemplos && d.exemplos.length > 0) {
+    html += '<div class="chunk-detail-section">';
+    html += '<div class="chunk-detail-label">Exemplos</div>';
+    d.exemplos.forEach(function(ex) {
+      if (!ex.texto) return;
+      html += '<div class="chunk-example-item">';
+      html += '<div class="chunk-example-texto">' + ex.texto + '</div>';
+      if (ex.contexto) html += '<div class="chunk-example-contexto">' + ex.contexto + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Related chunks
+  if (d.chunks_relacionados && d.chunks_relacionados.length > 0) {
+    html += '<div class="chunk-detail-section">';
+    html += '<div class="chunk-detail-label">Chunks Relacionados</div>';
+    d.chunks_relacionados.forEach(function(ch) {
+      if (!ch.chunk) return;
+      html += '<span class="chunk-related-pill" onclick="searchRelatedChunk(\'' + ch.chunk.replace(/'/g, "\\'") + '\')">' +
+        ch.chunk + (ch.relacao ? ' <span style="font-size:0.85em;opacity:0.6">(' + ch.relacao + ')</span>' : '') + '</span>';
+    });
+    html += '</div>';
+  }
+
+  // Variants from DB
+  if (d.variants && d.variants.length > 0) {
+    html += '<div class="chunk-detail-section">';
+    html += '<div class="chunk-detail-label">Variantes (' + d.variants.length + ')</div>';
+    d.variants.forEach(function(v) {
+      html += '<div class="chunk-variant-item">';
+      html += '<span class="chunk-variant-form">' + (v.variant_form || '') + '</span>';
+      html += '<span class="chunk-variant-meta">' + (v.source || '') + ' &middot; ' + (v.occurrence_count || 0) + 'x</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Component words
+  if (d.component_words && d.component_words.length > 0) {
+    html += '<div class="chunk-detail-section">';
+    html += '<div class="chunk-detail-label">Palavras do Chunk</div>';
+    d.component_words.forEach(function(w) {
+      html += '<span class="chunk-related-pill" style="background:rgba(59,130,246,0.1);color:#60a5fa;border-color:rgba(59,130,246,0.2)" ' +
+        'onclick="setSearchMode(\'palavras\');searchInput.value=\'' + (w.word||'').replace(/'/g, "\\'") + '\';fetchSearch(\'' + (w.word||'').replace(/'/g, "\\'") + '\')">' +
+        (w.word || '') + '</span>';
+    });
+    html += '</div>';
+  }
+
+  // Add to SRS button
+  var chunkText = (d.root_form || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  html += '<button class="add-srs-btn" onclick="addChunkDetailToSRS(this,' + (d.family_id||0) + ',\'' + chunkText + '\')">Adicionar ao treino</button>';
+
+  container.innerHTML = html;
+}
+
+function backToChunkResults() {
+  document.getElementById('chunk-detail-card').classList.remove('visible');
+  document.getElementById('chunk-result-card').classList.add('visible');
+}
+
+function searchRelatedChunk(chunkText) {
+  searchInput.value = chunkText;
+  clearBtn.style.display = 'flex';
+  fetchChunkSearch(chunkText);
+}
+
+async function addChunkDetailToSRS(btn, familyId, chunkText) {
+  btn.disabled = true;
+  btn.textContent = 'Adicionando...';
+  try {
+    await fetch('/api/search/add-to-srs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ word_id: familyId, chunk: chunkText, carrier: chunkText }),
+    });
+    btn.textContent = 'Adicionado';
   } catch(e) {
     btn.textContent = 'Erro';
     btn.disabled = false;
@@ -5466,6 +5755,12 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._dict_live_lookup(q)
         elif path == "/api/search/history":
             self._dict_history()
+        elif path == "/api/search/chunks":
+            q = query.get("q", [""])[0]
+            self._dict_search_chunks(q)
+        elif path.startswith("/api/chunk/") and path.endswith("/detail"):
+            family_id = int(path.split("/")[3])
+            self._dict_chunk_detail(family_id)
 
         # ── Word detail endpoints ──
         elif path.startswith("/api/word/") and path.endswith("/definition"):
@@ -6462,6 +6757,34 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             return
         results = search_word(q)
         self._json({"results": results, "query": q})
+
+    def _dict_search_chunks(self, q):
+        """Search chunk_families for matching chunks."""
+        if not q:
+            self._json({"results": [], "query": ""})
+            return
+        try:
+            results = search_chunks(q)
+            self._json({"results": results, "query": q})
+        except Exception as e:
+            self._json({"results": [], "query": q, "error": str(e)})
+
+    def _dict_chunk_detail(self, family_id):
+        """Return full chunk detail with GPT-generated content, cached."""
+        try:
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT root_form FROM chunk_families WHERE id = ?", (family_id,)
+            ).fetchone()
+            conn.close()
+            if not row:
+                self._json({"error": "Chunk não encontrado"}, status=404)
+                return
+            root_form = row["root_form"]
+            data = get_chunk_detail_cached(family_id, root_form)
+            self._json(data)
+        except Exception as e:
+            self._json({"error": str(e)}, status=500)
 
     def _dict_live_lookup(self, word):
         """Live GPT lookup for words not in word_bank. Auto-saves to library."""

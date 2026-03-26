@@ -78,6 +78,18 @@ def _chat(system, user, json_mode=True):
 
 BAIANO_VOICE_ID = "ELBrtmIkk40wCZ5YnlwM"  # Thiago — native Brazilian male, warm and inviting
 
+def _baiano_tts_text(text):
+    """Wrap short text with a Baiano carrier to nudge pronunciation toward
+    Soteropolitano.  Carrier sentences (4+ words) already carry enough
+    regional context, so they pass through unchanged."""
+    words = text.strip().split()
+    if len(words) <= 3:
+        # Short text (single word / small chunk) — prepend "Oxe, " so the
+        # model picks up Baiano cadence and open vowels.
+        return f"Oxe, {text}"
+    return text
+
+
 def generate_tts(text):
     """Generate ElevenLabs TTS audio with Bahian voice. Returns the filename or None."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
@@ -87,7 +99,7 @@ def generate_tts(text):
         from elevenlabs import ElevenLabs
         client = ElevenLabs(api_key=api_key)
         audio_iter = client.text_to_speech.convert(
-            text=text,
+            text=_baiano_tts_text(text),
             voice_id=BAIANO_VOICE_ID,
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
@@ -261,6 +273,204 @@ def search_word(query, db_path=DB_PATH):
     return results[:10]
 
 
+# ── 1b. search_chunks ─────────────────────────────────────────────
+
+def search_chunks(query, db_path=DB_PATH):
+    """Search chunk_families and chunk_variants for chunks matching query.
+
+    Tries exact -> prefix -> contains (like search_word).
+    Returns top 15 results sorted by composite_rank DESC.
+    """
+    if not query or not query.strip():
+        return []
+
+    query = query.strip().lower()
+    conn = get_connection(db_path)
+    results = []
+    seen_ids = set()
+
+    def _fetch_chunks(where_clause, params, limit):
+        """Helper to fetch chunk families matching a WHERE clause."""
+        rows = conn.execute(
+            "SELECT cf.id AS family_id, cf.root_form, cf.word_count, cf.composite_rank, "
+            "(SELECT COUNT(*) FROM chunk_variants cv WHERE cv.family_id = cf.id) AS variant_count "
+            "FROM chunk_families cf "
+            "LEFT JOIN chunk_variants cv ON cv.family_id = cf.id "
+            f"WHERE {where_clause} "
+            "GROUP BY cf.id "
+            "ORDER BY cf.composite_rank DESC "
+            f"LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return rows
+
+    # Exact match on root_form or variant_form
+    rows = _fetch_chunks(
+        "LOWER(cf.root_form) = ? OR LOWER(cv.variant_form) = ?",
+        (query, query), 15,
+    )
+    for r in rows:
+        if r["family_id"] not in seen_ids:
+            seen_ids.add(r["family_id"])
+            results.append(dict(r))
+
+    # Prefix match
+    if len(results) < 15:
+        exclude = ",".join(str(i) for i in seen_ids) if seen_ids else "0"
+        rows = _fetch_chunks(
+            "(LOWER(cf.root_form) LIKE ? OR LOWER(cv.variant_form) LIKE ?) "
+            f"AND cf.id NOT IN ({exclude})",
+            (query + "%", query + "%"), 15 - len(results),
+        )
+        for r in rows:
+            if r["family_id"] not in seen_ids:
+                seen_ids.add(r["family_id"])
+                results.append(dict(r))
+
+    # Contains match
+    if len(results) < 15:
+        exclude = ",".join(str(i) for i in seen_ids) if seen_ids else "0"
+        rows = _fetch_chunks(
+            "(LOWER(cf.root_form) LIKE ? OR LOWER(cv.variant_form) LIKE ?) "
+            f"AND cf.id NOT IN ({exclude})",
+            ("%" + query + "%", "%" + query + "%"), 15 - len(results),
+        )
+        for r in rows:
+            if r["family_id"] not in seen_ids:
+                seen_ids.add(r["family_id"])
+                results.append(dict(r))
+
+    conn.close()
+
+    return [
+        {
+            "family_id": r["family_id"],
+            "root_form": r["root_form"],
+            "word_count": r["word_count"],
+            "composite_rank": round(r["composite_rank"], 4) if r["composite_rank"] else 0,
+            "variant_count": r["variant_count"] or 0,
+        }
+        for r in results
+    ][:15]
+
+
+# ── 1c. get_chunk_detail_cached ──────────────────────────────────
+
+CHUNK_SYSTEM_PROMPT = (
+    "Tu é um dicionário baiano de chunks e colocações. "
+    "Tua função é explicar chunks (frases curtas / colocações) "
+    "usando português simples — só as 1000 palavras mais comuns.\n\n"
+    "REGRAS:\n"
+    "- NUNCA usa inglês. Nem uma palavra.\n"
+    "- Explica como um colega de Salvador explicaria.\n"
+    "- Se o chunk tem uso especial na Bahia, menciona isso."
+)
+
+
+def _generate_chunk_detail(family_id, root_form, db_path=DB_PATH):
+    """Generate full chunk detail: variants from DB + GPT-generated content."""
+    detail = {
+        "family_id": family_id,
+        "root_form": root_form,
+        "variants": [],
+        "definicao": "",
+        "exemplos": [],
+        "chunks_relacionados": [],
+        "pronuncia": "",
+    }
+
+    # Fetch variants from DB
+    try:
+        conn = get_connection(db_path)
+        rows = conn.execute(
+            "SELECT variant_form, source, occurrence_count "
+            "FROM chunk_variants WHERE family_id = ? ORDER BY occurrence_count DESC",
+            (family_id,),
+        ).fetchall()
+        conn.close()
+        detail["variants"] = [
+            {
+                "variant_form": r["variant_form"],
+                "source": r["source"],
+                "occurrence_count": r["occurrence_count"],
+            }
+            for r in rows
+        ]
+    except Exception:
+        pass
+
+    # Fetch related words from DB
+    try:
+        conn = get_connection(db_path)
+        rows = conn.execute(
+            "SELECT wb.id, wb.word FROM chunk_family_words cfw "
+            "JOIN word_bank wb ON wb.id = cfw.word_id "
+            "WHERE cfw.family_id = ?",
+            (family_id,),
+        ).fetchall()
+        conn.close()
+        detail["component_words"] = [
+            {"word_id": r["id"], "word": r["word"]} for r in rows
+        ]
+    except Exception:
+        detail["component_words"] = []
+
+    # Call GPT for definition, examples, related chunks, pronunciation
+    user_prompt = (
+        f'Explica o chunk/colocação "{root_form}".\n\n'
+        "NUNCA usa inglês. Responde em JSON com:\n"
+        '- "definicao": explicação do significado do chunk inteiro (não palavra por palavra)\n'
+        '- "exemplos": lista de 5 frases de exemplo usando o chunk naturalmente. '
+        'Cada item: {{"texto": "frase", "contexto": "situação onde se usa"}}\n'
+        '- "chunks_relacionados": lista de 3-5 chunks parecidos ou que se usam junto. '
+        'Cada item: {{"chunk": "...", "relacao": "sinônimo/variação/complemento"}}\n'
+        '- "pronuncia": guia de pronúncia do chunk usando palavras conhecidas\n\n'
+        "Responde SOMENTE em JSON."
+    )
+
+    result = _chat(CHUNK_SYSTEM_PROMPT, user_prompt, json_mode=True)
+    if result:
+        detail["definicao"] = result.get("definicao", "")
+        detail["pronuncia"] = result.get("pronuncia", "")
+
+        exemplos = result.get("exemplos", [])
+        detail["exemplos"] = [
+            {
+                "texto": ex.get("texto", ""),
+                "contexto": ex.get("contexto", ""),
+            }
+            for ex in exemplos
+            if isinstance(ex, dict)
+        ][:5]
+
+        relacionados = result.get("chunks_relacionados", [])
+        detail["chunks_relacionados"] = [
+            {
+                "chunk": ch.get("chunk", ""),
+                "relacao": ch.get("relacao", ""),
+            }
+            for ch in relacionados
+            if isinstance(ch, dict)
+        ][:5]
+
+    return detail
+
+
+def get_chunk_detail_cached(family_id, root_form, db_path=DB_PATH):
+    """Cache-through wrapper for chunk detail.
+
+    Uses dictionary_cache with a 'chunk_detail' tab_name.
+    Uses negative family_id to avoid collisions with word_bank IDs.
+    """
+    cache_id = -family_id  # negative to avoid collision with word_bank ids
+    return _cached_call(
+        cache_id,
+        "chunks",  # reuse existing allowed tab_name
+        lambda: _generate_chunk_detail(family_id, root_form, db_path),
+        db_path,
+    )
+
+
 # ── 2. get_definition ───────────────────────────────────────────────
 
 def get_definition(word, db_path=DB_PATH):
@@ -392,11 +602,18 @@ def get_pronunciation_data(word):
     fallback = {"silabas": "", "guia_fonetico": "", "audio_path": None}
 
     user_prompt = (
-        f'Dá a pronúncia da palavra "{word}".\n\n'
+        f'Dá a pronúncia SOTEROPOLITANA (baiana, de Salvador) da palavra "{word}".\n\n'
         "NUNCA usa inglês. Responde em JSON com:\n"
-        '- "silabas": separação silábica (ex: "ba-ru-lho")\n'
-        '- "guia_fonetico": guia usando palavras conhecidas '
-        '(ex: "ba como \'bala\', ru como \'rua\', lho como \'olho\'")\n\n'
+        '- "silabas": separação silábica (ex: "ba-ru-io")\n'
+        '- "guia_fonetico": guia fonético usando a pronúncia REAL de Salvador, '
+        "não o português padrão. Regras importantes:\n"
+        '  • "lh" em Salvador soa como [j] (semivogal "i"): '
+        '"ilha" → "ía", "barulho" → "baruio", "olho" → "oio", "trabalho" → "trabaio"\n'
+        '  • Vogais abertas características do baiano: '
+        '"e" e "o" pré-tônicos são abertos (ex: "pegar" → "pégar", "correr" → "córrer")\n'
+        '  • Ritmo silábico (cada sílaba tem duração parecida), não acentual\n'
+        '  • "r" final é aspirado [h]: "falar" → "falah"\n'
+        '  • "s" final é [s] (não chiado como no Rio): "mas" → "mas", não "mash"\n\n'
         "Responde SOMENTE em JSON."
     )
 
@@ -634,8 +851,12 @@ def get_all_tabs(word, db_path=DB_PATH):
         '2. "examples": lista de 5 objetos, cada um com:\n'
         '   "texto": frase completa, "chunk_destaque": chunk que contém a palavra\n\n'
         '3. "pronunciation": {{\n'
-        '   "silabas": separação silábica (ex: "ba-ru-lho"),\n'
-        '   "guia_fonetico": guia usando palavras conhecidas\n'
+        '   "silabas": separação silábica com pronúncia SOTEROPOLITANA '
+        '(ex: "ba-ru-io", não "ba-ru-lho"),\n'
+        '   "guia_fonetico": guia usando a pronúncia REAL de Salvador — '
+        '"lh" soa [j] ("ilha"→"ía", "barulho"→"baruio", "olho"→"oio"), '
+        'vogais pré-tônicas abertas, "r" final aspirado [h], '
+        '"s" final é [s] (não chiado)\n'
         '}}\n\n'
         '4. "expressions": lista de expressões/gírias baianas. Cada:\n'
         '   "expressao", "significado", "exemplo"\n\n'
