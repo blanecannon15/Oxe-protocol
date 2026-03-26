@@ -314,10 +314,13 @@ def migrate_db(db_path=DB_PATH):
             UNIQUE(word_id, target_chunk)
         )
     """)
-    conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_chunk_queue_due
-            ON chunk_queue(json_extract(srs_state, '$.due'))
-    """)
+    try:
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_chunk_queue_due
+                ON chunk_queue(json_extract(srs_state, '$.due'))
+        """)
+    except sqlite3.OperationalError:
+        pass  # skip if JSON is malformed in existing rows
     # Voice clone registry for Neural Mapping (ElevenLabs STS)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS voice_clone (

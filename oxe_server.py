@@ -7091,7 +7091,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 return
 
         tier = get_unlocked_tier()
-        due = len(list(get_due_words()))
+        try:
+            due = len(list(get_due_words()))
+        except Exception:
+            due = 0
         progress = tier_progress()
         current_pct = 0
         for t, label, mastered, total, pct in progress:
@@ -8867,7 +8870,10 @@ def main():
         proto = "http"
 
     tier = get_unlocked_tier()
-    due = len(list(get_due_words()))
+    try:
+        due = len(list(get_due_words()))
+    except Exception:
+        due = 0  # graceful fallback if JSON in srs_state is malformed
 
     print(f"\n  Oxe Protocol — Unified Server")
     print(f"  {'='*44}")
