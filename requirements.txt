@@ -1,6 +1,4 @@
 fsrs>=3.0,<4.0
-praat-parselmouth
 elevenlabs
 openai
 numpy
-tslearn

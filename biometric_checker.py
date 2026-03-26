@@ -26,9 +26,18 @@ import sys
 import numpy as np
 from pathlib import Path
 
-import parselmouth
-from parselmouth.praat import call
-from tslearn.metrics import dtw as tslearn_dtw
+try:
+    import parselmouth
+    from parselmouth.praat import call
+    HAS_PARSELMOUTH = True
+except ImportError:
+    HAS_PARSELMOUTH = False
+
+try:
+    from tslearn.metrics import dtw as tslearn_dtw
+    HAS_TSLEARN = True
+except ImportError:
+    HAS_TSLEARN = False
 
 VAULT_AUDIOS = Path(__file__).parent / "voca_vault" / "audios"
 
