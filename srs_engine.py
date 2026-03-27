@@ -610,6 +610,244 @@ def migrate_v2(db_path=DB_PATH):
     conn.close()
 
 
+def migrate_v3(db_path=DB_PATH):
+    """V3 schema: voice profiles, audio coverage, word-chunk links, search index, accent columns."""
+    conn = get_connection(db_path)
+    conn.executescript("""
+        -- Voice profiles for multi-accent TTS (Paulista default, Carioca, Baiano)
+        CREATE TABLE IF NOT EXISTS voice_profiles (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            accent      TEXT NOT NULL UNIQUE,
+            label       TEXT NOT NULL,
+            voice_id    TEXT NOT NULL,
+            model_id    TEXT NOT NULL DEFAULT 'eleven_multilingual_v2',
+            stability   REAL NOT NULL DEFAULT 0.45,
+            similarity  REAL NOT NULL DEFAULT 0.85,
+            style       REAL NOT NULL DEFAULT 0.55,
+            speaker_boost INTEGER NOT NULL DEFAULT 1,
+            weight      REAL NOT NULL DEFAULT 0.0,
+            tts_prefix  TEXT NOT NULL DEFAULT '',
+            is_default  INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+
+        -- Seed voice profiles: Paulista (default), Carioca, Baiano
+        INSERT OR IGNORE INTO voice_profiles (accent, label, voice_id, stability, similarity, style, weight, tts_prefix, is_default)
+        VALUES ('paulista', 'Paulista Profissional', 'ELBrtmIkk40wCZ5YnlwM', 0.50, 0.85, 0.45, 0.60, '', 1);
+        INSERT OR IGNORE INTO voice_profiles (accent, label, voice_id, stability, similarity, style, weight, tts_prefix, is_default)
+        VALUES ('carioca', 'Carioca Social', 'ELBrtmIkk40wCZ5YnlwM', 0.40, 0.85, 0.60, 0.25, '', 0);
+        INSERT OR IGNORE INTO voice_profiles (accent, label, voice_id, stability, similarity, style, weight, tts_prefix, is_default)
+        VALUES ('baiano', 'Baiano Cultural', 'ELBrtmIkk40wCZ5YnlwM', 0.45, 0.85, 0.55, 0.15, 'Oxe, ', 0);
+
+        -- Audio coverage tracking (per word/chunk × accent)
+        CREATE TABLE IF NOT EXISTS audio_coverage (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_type   TEXT NOT NULL CHECK(item_type IN ('word','chunk')),
+            item_id     INTEGER NOT NULL,
+            accent      TEXT NOT NULL DEFAULT 'paulista',
+            status      TEXT NOT NULL DEFAULT 'missing'
+                CHECK(status IN ('missing','queued','generating','cached','failed','native')),
+            audio_path  TEXT,
+            source      TEXT DEFAULT 'tts'
+                CHECK(source IN ('tts','native','clone','manual')),
+            duration_ms INTEGER,
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            updated_at  TEXT,
+            UNIQUE(item_type, item_id, accent)
+        );
+        CREATE INDEX IF NOT EXISTS idx_audio_cov_status ON audio_coverage(status);
+        CREATE INDEX IF NOT EXISTS idx_audio_cov_item ON audio_coverage(item_type, item_id);
+
+        -- Word-to-chunk auto-linkage tracking
+        CREATE TABLE IF NOT EXISTS word_chunk_links (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_id     INTEGER NOT NULL REFERENCES word_bank(id),
+            chunk_id    INTEGER REFERENCES chunk_queue(id),
+            family_id   INTEGER REFERENCES chunk_families(id),
+            link_type   TEXT NOT NULL DEFAULT 'auto'
+                CHECK(link_type IN ('auto','manual','extracted')),
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(word_id, chunk_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_wcl_word ON word_chunk_links(word_id);
+
+        -- Fast search index (normalized terms for instant prefix match)
+        CREATE TABLE IF NOT EXISTS search_index (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            term        TEXT NOT NULL,
+            normalized  TEXT NOT NULL,
+            item_type   TEXT NOT NULL CHECK(item_type IN ('word','chunk','variant')),
+            item_id     INTEGER NOT NULL,
+            source      TEXT NOT NULL DEFAULT 'lemma',
+            priority    INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(term, item_type, item_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_search_norm ON search_index(normalized);
+        CREATE INDEX IF NOT EXISTS idx_search_type ON search_index(item_type, normalized);
+
+        -- SRS internal clock: tracks review sessions, daily windows, session quality
+        CREATE TABLE IF NOT EXISTS srs_clock (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            date              TEXT NOT NULL,
+            session_start     TEXT NOT NULL,
+            session_end       TEXT,
+            reviews_completed INTEGER NOT NULL DEFAULT 0,
+            chunks_reviewed   INTEGER NOT NULL DEFAULT 0,
+            words_reviewed    INTEGER NOT NULL DEFAULT 0,
+            avg_latency_ms    REAL,
+            accuracy_pct      REAL,
+            fatigue_at_end    REAL,
+            session_type      TEXT NOT NULL DEFAULT 'drill'
+                CHECK(session_type IN ('drill','shadowing','listening','conversa','mixed')),
+            notes             TEXT,
+            created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_srs_clock_date ON srs_clock(date);
+
+        -- Daily review window summary (one row per day)
+        CREATE TABLE IF NOT EXISTS srs_daily_window (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            date              TEXT NOT NULL UNIQUE,
+            first_review      TEXT,
+            last_review       TEXT,
+            total_sessions    INTEGER NOT NULL DEFAULT 0,
+            total_reviews     INTEGER NOT NULL DEFAULT 0,
+            total_minutes     REAL NOT NULL DEFAULT 0.0,
+            avg_accuracy      REAL,
+            avg_latency_ms    REAL,
+            peak_fatigue      REAL,
+            items_due_start   INTEGER NOT NULL DEFAULT 0,
+            items_due_end     INTEGER NOT NULL DEFAULT 0,
+            created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_srs_daily_date ON srs_daily_window(date);
+    """)
+
+    # Additive columns on chunk_families for multi-accent relevance
+    for col_sql in [
+        "ALTER TABLE chunk_families ADD COLUMN paulista_relevance REAL DEFAULT 0.0",
+        "ALTER TABLE chunk_families ADD COLUMN carioca_relevance REAL DEFAULT 0.0",
+    ]:
+        try:
+            conn.execute(col_sql)
+        except Exception:
+            pass
+
+    conn.commit()
+    conn.close()
+
+
+# ── SRS Clock Service ────────────────────────────────────────────────
+
+def clock_start_session(session_type="drill", db_path=DB_PATH):
+    """Start a new SRS clock session. Returns session id."""
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    conn = get_connection(db_path)
+    cur = conn.execute(
+        """INSERT INTO srs_clock (date, session_start, session_type)
+           VALUES (?, ?, ?)""",
+        (today, now.isoformat(), session_type),
+    )
+    session_id = cur.lastrowid
+
+    # Upsert daily window
+    conn.execute(
+        """INSERT INTO srs_daily_window (date, first_review, total_sessions)
+           VALUES (?, ?, 1)
+           ON CONFLICT(date) DO UPDATE SET
+               total_sessions = total_sessions + 1,
+               first_review = COALESCE(first_review, excluded.first_review)""",
+        (today, now.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return session_id
+
+
+def clock_end_session(session_id, reviews=0, chunks=0, words=0,
+                      avg_latency=None, accuracy=None, fatigue=None,
+                      db_path=DB_PATH):
+    """End an SRS clock session with stats."""
+    now = datetime.now(timezone.utc)
+    conn = get_connection(db_path)
+    conn.execute(
+        """UPDATE srs_clock SET
+               session_end = ?,
+               reviews_completed = ?,
+               chunks_reviewed = ?,
+               words_reviewed = ?,
+               avg_latency_ms = ?,
+               accuracy_pct = ?,
+               fatigue_at_end = ?
+           WHERE id = ?""",
+        (now.isoformat(), reviews, chunks, words, avg_latency, accuracy, fatigue,
+         session_id),
+    )
+
+    # Update daily window
+    row = conn.execute("SELECT date, session_start FROM srs_clock WHERE id=?",
+                       (session_id,)).fetchone()
+    if row:
+        today = row["date"]
+        start = row["session_start"]
+        try:
+            start_dt = datetime.fromisoformat(start)
+            minutes = (now - start_dt).total_seconds() / 60.0
+        except Exception:
+            minutes = 0
+        conn.execute(
+            """UPDATE srs_daily_window SET
+                   last_review = ?,
+                   total_reviews = total_reviews + ?,
+                   total_minutes = total_minutes + ?,
+                   avg_accuracy = ?,
+                   avg_latency_ms = COALESCE(?, avg_latency_ms),
+                   peak_fatigue = MAX(COALESCE(peak_fatigue, 0), COALESCE(?, 0))
+               WHERE date = ?""",
+            (now.isoformat(), reviews, round(minutes, 1), accuracy,
+             avg_latency, fatigue, today),
+        )
+    conn.commit()
+    conn.close()
+
+
+def clock_get_today(db_path=DB_PATH):
+    """Return today's SRS daily window summary."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT * FROM srs_daily_window WHERE date=?", (today,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def clock_get_sessions(date=None, limit=10, db_path=DB_PATH):
+    """Return recent SRS clock sessions."""
+    conn = get_connection(db_path)
+    if date:
+        rows = conn.execute(
+            "SELECT * FROM srs_clock WHERE date=? ORDER BY session_start DESC",
+            (date,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM srs_clock ORDER BY session_start DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def clock_get_weekly_summary(db_path=DB_PATH):
+    """Return last 7 days of daily window data."""
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        "SELECT * FROM srs_daily_window ORDER BY date DESC LIMIT 7"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def record_daily_activity(was_mastered=False, db_path=DB_PATH):
     """Upsert today's row in daily_stats."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")

@@ -46,7 +46,11 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
-from srs_engine import migrate_v2
+from srs_engine import migrate_v2, migrate_v3
+from srs_engine import (
+    clock_start_session, clock_end_session, clock_get_today,
+    clock_get_sessions, clock_get_weekly_summary,
+)
 from acquisition_engine import (
     get_or_create_state, update_state_after_review,
     get_state_distribution, run_fragility_scan, get_fragile_queue,
@@ -94,6 +98,21 @@ from listening_layers import (
 )
 from sentence_assembly import (
     get_assembly_challenge, check_assembly, get_assembly_stats,
+)
+from voice_profiles import (
+    get_profiles as get_voice_profiles, get_default_profile,
+    get_profile as get_voice_profile, update_profile as update_voice_profile,
+    get_accent_weights,
+)
+from audio_audit import (
+    full_scan as audio_full_scan, get_coverage_summary,
+    get_missing_queue, queue_generation, generate_next_batch,
+)
+from word_chunk_linker import (
+    link_word, get_word_chunks, bulk_link_unlinked,
+)
+from search_index_builder import (
+    build_full_index, unified_search, search as search_index,
 )
 
 AUDIO_DIR = Path(__file__).parent / "voca_vault" / "audios"
@@ -6184,6 +6203,43 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             word_id = int(path.split("/")[3])
             self._dict_state(word_id)
 
+        # ── Voice Profiles ──
+        elif path == "/api/voice/profiles":
+            self._json(get_voice_profiles())
+        elif path == "/api/voice/weights":
+            self._json(get_accent_weights())
+
+        # ── Audio Coverage ──
+        elif path == "/api/audio/coverage":
+            self._json(get_coverage_summary())
+        elif path == "/api/audio/missing":
+            accent = query.get("accent", [None])[0]
+            item_type = query.get("type", ["word"])[0]
+            limit = int(query.get("limit", ["50"])[0])
+            self._json(get_missing_queue(accent, item_type, limit))
+
+        # ── Word-Chunk Links ──
+        elif path.startswith("/api/word/") and path.endswith("/linked-chunks"):
+            word_id = int(path.split("/")[3])
+            self._json(get_word_chunks(word_id))
+
+        # ── Unified Search ──
+        elif path == "/api/search/unified":
+            q = query.get("q", [""])[0]
+            limit = int(query.get("limit", ["20"])[0])
+            self._json(unified_search(q, limit))
+
+        # ── SRS Clock ──
+        elif path == "/api/clock/today":
+            result = clock_get_today()
+            self._json(result or {"date": None, "total_sessions": 0, "total_reviews": 0, "total_minutes": 0})
+        elif path == "/api/clock/sessions":
+            date = query.get("date", [None])[0]
+            limit = int(query.get("limit", ["10"])[0])
+            self._json(clock_get_sessions(date, limit))
+        elif path == "/api/clock/weekly":
+            self._json(clock_get_weekly_summary())
+
         # ── Training Hub ──
         elif path == "/train":
             self._html(TRAIN_HUB_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
@@ -6581,6 +6637,68 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/fatigue/reset":
             reset_fatigue_session()
             self._json({"ok": True})
+
+        # ── Voice Profiles POST ──
+        elif path == "/api/voice/update":
+            accent = body.get("accent")
+            if accent:
+                fields = {k: v for k, v in body.items() if k != "accent"}
+                update_voice_profile(accent, **fields)
+                self._json({"ok": True})
+            else:
+                self._json({"error": "accent required"}, status=400)
+
+        # ── Audio Audit POST ──
+        elif path == "/api/audio/scan":
+            result = audio_full_scan()
+            self._json(result)
+        elif path == "/api/audio/queue":
+            cids = body.get("coverage_ids", [])
+            n = queue_generation(cids)
+            self._json({"queued": n})
+        elif path == "/api/audio/generate-batch":
+            batch = body.get("batch_size", 5)
+            n = generate_next_batch(batch)
+            self._json({"generated": n})
+
+        # ── Word-Chunk Linker POST ──
+        elif path == "/api/word-chunk/link":
+            word_id = body.get("word_id")
+            if word_id:
+                n = link_word(word_id)
+                self._json({"linked": n})
+            else:
+                self._json({"error": "word_id required"}, status=400)
+        elif path == "/api/word-chunk/bulk-link":
+            limit = body.get("limit", 100)
+            n = bulk_link_unlinked(limit)
+            self._json({"linked": n})
+
+        # ── Search Index POST ──
+        elif path == "/api/search/build-index":
+            result = build_full_index()
+            self._json(result)
+
+        # ── SRS Clock POST ──
+        elif path == "/api/clock/start":
+            stype = body.get("session_type", "drill")
+            sid = clock_start_session(stype)
+            self._json({"session_id": sid})
+        elif path == "/api/clock/end":
+            sid = body.get("session_id")
+            if not sid:
+                self._json({"error": "session_id required"}, status=400)
+            else:
+                clock_end_session(
+                    sid,
+                    reviews=body.get("reviews", 0),
+                    chunks=body.get("chunks", 0),
+                    words=body.get("words", 0),
+                    avg_latency=body.get("avg_latency_ms"),
+                    accuracy=body.get("accuracy_pct"),
+                    fatigue=body.get("fatigue"),
+                )
+                self._json({"ok": True})
 
         # ── Milestones POST ──
         elif path == "/api/milestones/notify":
@@ -7314,6 +7432,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "word_id e chunk obrigatorios"}, status=400)
             return
         chunk_id = add_chunk(word_id, chunk, carrier, "dictionary")
+        # Auto-link word to all matching chunks
+        try:
+            link_word(word_id)
+        except Exception:
+            pass
         self._json({"chunk_id": chunk_id, "status": "adicionado" if chunk_id else "ja existe"})
 
     def _dict_history(self):
@@ -8891,6 +9014,15 @@ def main():
         migrate_v2()
     except Exception as e:
         print(f"  WARNING: migrate_v2() failed: {e}")
+    try:
+        migrate_v3()
+    except Exception as e:
+        print(f"  WARNING: migrate_v3() failed: {e}")
+    try:
+        build_full_index()
+        print("  Search index built.")
+    except Exception as e:
+        print(f"  WARNING: build_full_index() failed: {e}")
     ip = get_local_ip()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", port), OxeHandler)
 
