@@ -11,15 +11,15 @@ COPY . .
 
 # Resolve LFS pointer for the database (Railway build context doesn't resolve LFS)
 RUN if [ "$(wc -c < voca_20k.db)" -lt 1000 ]; then \
-      echo "DB is LFS pointer, downloading from GitHub LFS..." && \
-      git lfs pull 2>/dev/null || \
-      curl -L -o voca_20k.db \
-        "https://github.com/blanecannon15/Oxe-protocol/raw/main/voca_20k.db" && \
-      echo "Downloaded: $(wc -c < voca_20k.db) bytes"; \
-    fi
-
-# Verify the DB is real
-RUN python3 -c "import os; s=os.path.getsize('voca_20k.db'); print(f'DB size: {s/1024/1024:.0f} MB'); assert s > 1000, f'DB is only {s} bytes — LFS not resolved'"
+      echo "DB is LFS pointer ($(wc -c < voca_20k.db) bytes), downloading..." && \
+      for i in 1 2 3; do \
+        curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 600 \
+          -o voca_20k.db \
+          "https://github.com/blanecannon15/Oxe-protocol/raw/main/voca_20k.db" && break; \
+        echo "Attempt $i failed, retrying..." && sleep 10; \
+      done; \
+    fi && \
+    python3 -c "import os; s=os.path.getsize('voca_20k.db'); print(f'DB size: {s/1024/1024:.0f} MB'); assert s > 1000, f'DB is only {s} bytes — LFS not resolved'"
 
 EXPOSE 7777
 
