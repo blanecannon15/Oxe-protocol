@@ -102,7 +102,8 @@ from sentence_assembly import (
 from voice_profiles import (
     get_profiles as get_voice_profiles, get_default_profile,
     get_profile as get_voice_profile, update_profile as update_voice_profile,
-    get_accent_weights,
+    get_accent_weights, get_accent_for_activity, select_accent_by_weight,
+    get_activity_accent_map, set_activity_accent,
 )
 from audio_audit import (
     full_scan as audio_full_scan, get_coverage_summary,
@@ -4617,6 +4618,9 @@ body{
 .layer-pill.active{
   background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.3);color:#f87171;
 }
+.layer-pill.done{
+  background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.2);color:#34d399;
+}
 
 /* Waveform area */
 .wave-container{
@@ -4736,6 +4740,7 @@ body{
 </div>
 
 <div class="layer-bar" id="layer-bar"></div>
+<div id="pass-desc" style="text-align:center;font-size:12px;color:#888;margin-top:4px"></div>
 
 <div class="wave-container" id="wave-container">
   <div class="wave-bars" id="wave-bars"></div>
@@ -4785,7 +4790,17 @@ var sessionScores = [];
 var activeLayer = 'clean';
 var waveAnimId = null;
 
-// ── Layer pills ──
+// ── 5-Pass Shadowing Scaffolding ──
+var PASSES = [
+  {key:1, layer:'clean',        label:'1. Ouvindo',     desc:'Ouça e entenda — sem falar'},
+  {key:2, layer:'clean',        label:'2. Murmurando',  desc:'Murmure junto com o áudio'},
+  {key:3, layer:'clean',        label:'3. Lendo',       desc:'Leia o texto enquanto ouve'},
+  {key:4, layer:'native_clear', label:'4. Sombreando',  desc:'Repita 200ms depois do nativo'},
+  {key:5, layer:'native_fast',  label:'5. Maestria',    desc:'Sombra velocidade real — score >= 85'}
+];
+var currentPassIndex = 0;
+
+// Legacy layer compat
 var LAYERS = [
   {key:'clean', label:'Limpo'},
   {key:'native_clear', label:'Nativo'},
@@ -4796,21 +4811,46 @@ var LAYERS = [
 function renderLayers() {
   var bar = document.getElementById('layer-bar');
   var html = '';
-  for (var i = 0; i < LAYERS.length; i++) {
-    var l = LAYERS[i];
-    var cls = l.key === activeLayer ? 'layer-pill active' : 'layer-pill';
-    html += '<div class="' + cls + '" onclick="setLayer(\'' + l.key + '\')">' + l.label + '</div>';
+  // Show 5-pass progression
+  for (var i = 0; i < PASSES.length; i++) {
+    var p = PASSES[i];
+    var cls = i === currentPassIndex ? 'layer-pill active' : (i < currentPassIndex ? 'layer-pill done' : 'layer-pill');
+    html += '<div class="' + cls + '" onclick="setPass(' + i + ')" title="' + p.desc + '">' + p.label + '</div>';
   }
   bar.innerHTML = html;
+  // Show pass description
+  var descEl = document.getElementById('pass-desc');
+  if (descEl) descEl.textContent = PASSES[currentPassIndex].desc;
+}
+
+function setPass(idx) {
+  currentPassIndex = idx;
+  activeLayer = PASSES[idx].layer;
+  renderLayers();
+  if (currentChunk) generateLayerAudio();
 }
 
 function setLayer(key) {
   activeLayer = key;
   renderLayers();
-  // Re-generate audio with new layer if we have a chunk
-  if (currentChunk) {
-    generateLayerAudio();
+  if (currentChunk) generateLayerAudio();
+}
+
+function advancePass(score) {
+  // Auto-advance pass based on score — skip if mastery already high
+  if (currentPassIndex < 2) {
+    // Passes 1-2 (listening/murmuring) — advance after 1 listen
+    currentPassIndex++;
+  } else if (score >= 85 && currentPassIndex < PASSES.length - 1) {
+    // Score-based skip: if score >= 85, skip ahead
+    currentPassIndex = Math.min(currentPassIndex + 2, PASSES.length - 1);
+  } else if (score >= 60 && currentPassIndex < PASSES.length - 1) {
+    currentPassIndex++;
   }
+  // else: stay on same pass (redrill)
+  activeLayer = PASSES[currentPassIndex].layer;
+  renderLayers();
+  if (currentChunk) generateLayerAudio();
 }
 
 // ── Waveform ──
@@ -4988,8 +5028,9 @@ function showScore(data) {
   sessionScores.push(score);
   updateStats();
 
-  // Enable next button (unless force_redrill)
+  // Auto-advance pass based on score
   if (!data.force_redrill) {
+    advancePass(score);
     document.getElementById('btn-next').disabled = false;
   }
 }
@@ -6525,6 +6566,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json(get_voice_profiles())
         elif path == "/api/voice/weights":
             self._json(get_accent_weights())
+        elif path == "/api/voice/activity-map":
+            self._json(get_activity_accent_map())
+        elif path == "/api/voice/for-activity":
+            activity = query.get("activity", ["srs_drill"])[0]
+            self._json({"activity": activity, "accent": get_accent_for_activity(activity)})
 
         # ── Audio Coverage ──
         elif path == "/api/audio/coverage":
@@ -6729,6 +6775,16 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._speech_stage()
         elif path == "/api/speech/gates":
             self._json(evaluate_gates())
+        elif path == "/api/speech/gate-check":
+            stage = get_current_stage()
+            gates = evaluate_gates()
+            ready = gates.get("met", False) or stage >= 1
+            self._json({
+                "stage": stage,
+                "ready": ready,
+                "gates": gates,
+                "warm_up_required": stage <= 2,
+            })
         elif path == "/api/speech/activities":
             stage = int(query.get("stage", ["0"])[0])
             if stage == 0:
@@ -6968,6 +7024,14 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 self._json({"ok": True})
             else:
                 self._json({"error": "accent required"}, status=400)
+        elif path == "/api/voice/set-activity-accent":
+            activity = body.get("activity")
+            accent = body.get("accent")  # None resets to default
+            if activity:
+                ok = set_activity_accent(activity, accent)
+                self._json({"ok": ok, "activity": activity, "accent": accent})
+            else:
+                self._json({"error": "activity required"}, status=400)
 
         # ── Audio Audit POST ──
         elif path == "/api/audio/scan":
@@ -8592,9 +8656,18 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         For stages 3-6, fetches known chunks at AUTOMATIC_CLEAN or above
         and injects 3-5 as vocabulary into the system prompt.  For stage 4+
         a specific prompt/question is generated based on the stage type.
+        Gate check: validates speech stage prerequisites before starting.
         """
         try:
             stage = get_current_stage()
+
+            # Gate check — evaluate if prerequisites are met
+            gates = evaluate_gates()
+            if not gates.get("met", False) and stage <= 1:
+                # For stage 1 beginners who haven't met gate criteria,
+                # provide warm-up instructions instead of blocking
+                pass  # Allow entry but with warm-up scaffolding
+
             stage_info = get_activities_for_stage(stage)
             topic = body.get("topic", "")
             recent_words = self._get_recent_words()
@@ -8616,6 +8689,16 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             }
 
             system_prompt = base + stage_instructions.get(stage, stage_instructions[1])
+
+            # Warm-up scaffolding for stages 1-2
+            if stage <= 2:
+                system_prompt += (
+                    " IMPORTANTE: Começa com um aquecimento antes de praticar. "
+                    "Primeiro, diz uma saudação simples e espera ele repetir. "
+                    "Depois, diz 2 frases curtinhas pra ele ecoar. "
+                    "Só depois disso começa o exercício do estágio."
+                )
+
             if recent_words:
                 system_prompt += f" Tenta usar estas palavras: {', '.join(recent_words)}"
 

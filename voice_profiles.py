@@ -112,3 +112,69 @@ def get_accent_weights(db_path=DB_PATH):
     """Return accent weights as dict: {accent: weight}."""
     profiles = get_profiles(db_path)
     return {p["accent"]: p["weight"] for p in profiles}
+
+
+# ── Per-Activity Accent Routing ──────────────────────────────────────
+
+# Map activities to preferred accents (overridable via API)
+ACTIVITY_ACCENT_MAP = {
+    "srs_drill": None,         # uses default (paulista)
+    "shadowing": None,         # uses default (paulista)
+    "conversa": "carioca",     # social context → carioca
+    "listening": None,         # mixed by weight
+    "story": None,             # mixed by weight
+    "podcast": "baiano",       # cultural content → baiano
+}
+
+
+def get_accent_for_activity(activity, db_path=DB_PATH):
+    """Return the accent to use for a given activity.
+
+    Priority: activity-specific override > default profile > paulista.
+    """
+    mapped = ACTIVITY_ACCENT_MAP.get(activity)
+    if mapped:
+        profile = get_profile(mapped, db_path)
+        if profile:
+            return mapped
+
+    # Fall back to default
+    default = get_default_profile(db_path)
+    return default["accent"] if default else "paulista"
+
+
+def select_accent_by_weight(db_path=DB_PATH):
+    """Select an accent randomly weighted by profile weights.
+
+    Used for mixed-accent content (stories, listening exercises).
+    """
+    import random
+    profiles = get_profiles(db_path)
+    if not profiles:
+        return "paulista"
+
+    weights = [p["weight"] for p in profiles]
+    total = sum(weights)
+    if total <= 0:
+        return profiles[0]["accent"]
+
+    r = random.random() * total
+    cumulative = 0
+    for p in profiles:
+        cumulative += p["weight"]
+        if r <= cumulative:
+            return p["accent"]
+    return profiles[0]["accent"]
+
+
+def get_activity_accent_map():
+    """Return the current activity-accent mapping."""
+    return dict(ACTIVITY_ACCENT_MAP)
+
+
+def set_activity_accent(activity, accent):
+    """Override the accent for a specific activity. Pass None to reset to default."""
+    if activity in ACTIVITY_ACCENT_MAP:
+        ACTIVITY_ACCENT_MAP[activity] = accent
+        return True
+    return False
