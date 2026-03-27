@@ -6662,9 +6662,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             audio_file = generate_tts(chunk["carrier_sentence"])
             image_file = None
             try:
-                image_file = generate_image(chunk["word"], chunk.get("carrier_sentence"))
-            except Exception:
-                pass
+                carrier = chunk["carrier_sentence"] if "carrier_sentence" in chunk.keys() else None
+                image_file = generate_image(chunk["word"], carrier)
+            except Exception as e:
+                print(f"[IMAGE] Error: {e}")
 
             # Pre-generate explanation
             explain_text, explain_audio = "", None
@@ -7488,9 +7489,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             pass
         image_file = None
         try:
-            image_file = generate_image(chunk["word"], chunk.get("carrier_sentence"))
-        except Exception:
-            pass
+            carrier = chunk["carrier_sentence"] if "carrier_sentence" in chunk.keys() else None
+            image_file = generate_image(chunk["word"], carrier)
+        except Exception as e:
+            print(f"[IMAGE] Error generating image for '{chunk['word']}': {e}")
 
         due_count = len(get_due_chunks())
 
