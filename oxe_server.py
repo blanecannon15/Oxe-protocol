@@ -2596,7 +2596,8 @@ SEARCH_HTML = r"""<!DOCTYPE html>
     <button class="search-clear" id="search-clear" onclick="clearSearch()">&times;</button>
   </div>
   <div class="mode-toggle">
-    <button class="mode-btn active" id="mode-palavras" onclick="setSearchMode('palavras')">Palavras</button>
+    <button class="mode-btn active" id="mode-tudo" onclick="setSearchMode('tudo')">Tudo</button>
+    <button class="mode-btn" id="mode-palavras" onclick="setSearchMode('palavras')">Palavras</button>
     <button class="mode-btn" id="mode-chunks" onclick="setSearchMode('chunks')">Chunks</button>
   </div>
   <div class="autocomplete" id="autocomplete"></div>
@@ -2714,13 +2715,14 @@ let debounceTimer = null;
 let currentData = null;
 let currentWordId = null;
 let tabCache = {};  // {tabIdx: data} — cache per word selection
-let searchMode = 'palavras';  // 'palavras' or 'chunks'
+let searchMode = 'tudo';  // 'tudo', 'palavras', or 'chunks'
 
 function setSearchMode(mode) {
   searchMode = mode;
+  document.getElementById('mode-tudo').classList.toggle('active', mode === 'tudo');
   document.getElementById('mode-palavras').classList.toggle('active', mode === 'palavras');
   document.getElementById('mode-chunks').classList.toggle('active', mode === 'chunks');
-  searchInput.placeholder = mode === 'chunks' ? 'Buscar chunk...' : 'Buscar palavra...';
+  searchInput.placeholder = mode === 'chunks' ? 'Buscar chunk...' : mode === 'tudo' ? 'Buscar tudo...' : 'Buscar palavra...';
   // Hide all result panels
   document.getElementById('result-card').classList.remove('visible');
   document.getElementById('chunk-result-card').classList.remove('visible');
@@ -2730,7 +2732,8 @@ function setSearchMode(mode) {
   // Re-search if there's text
   var q = searchInput.value.trim();
   if (q.length >= 2) {
-    if (mode === 'chunks') fetchChunkSearch(q);
+    if (mode === 'tudo') fetchUnifiedSearch(q);
+    else if (mode === 'chunks') fetchChunkSearch(q);
     else fetchSearch(q);
   }
 }
@@ -2740,7 +2743,9 @@ searchInput.addEventListener('input', function() {
   const q = this.value.trim();
   clearBtn.style.display = q ? 'flex' : 'none';
   if (q.length < 2) { acBox.classList.remove('visible'); return; }
-  if (searchMode === 'chunks') {
+  if (searchMode === 'tudo') {
+    debounceTimer = setTimeout(() => fetchUnifiedSearch(q), 300);
+  } else if (searchMode === 'chunks') {
     debounceTimer = setTimeout(() => fetchChunkSearch(q), 300);
   } else {
     debounceTimer = setTimeout(() => fetchSearch(q), 300);
@@ -2779,6 +2784,35 @@ async function fetchSearch(q) {
           '<span class="ac-tier">Tier ' + r.difficulty_tier + '</span></div>';
       }).join('');
     }
+    acBox.classList.add('visible');
+  } catch(e) { acBox.classList.remove('visible'); }
+}
+
+async function fetchUnifiedSearch(q) {
+  try {
+    const res = await fetch('/api/search/unified?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    let html = '';
+    if (data.words && data.words.length > 0) {
+      html += '<div style="padding:4px 12px;font-size:11px;color:#8B8BA7;text-transform:uppercase;letter-spacing:1px">Palavras</div>';
+      html += data.words.slice(0, 8).map(r =>
+        '<div class="ac-item" onclick="selectWord(' + r.item_id + ',\'' + r.term.replace(/'/g, "\\'") + '\',' + (r.difficulty_tier||1) + ',' + (r.frequency_rank||0) + ')">' +
+        '<span class="ac-word">' + r.term + '</span>' +
+        '<span class="ac-tier">Tier ' + (r.difficulty_tier||'?') + '</span></div>'
+      ).join('');
+    }
+    if (data.chunks && data.chunks.length > 0) {
+      html += '<div style="padding:4px 12px;font-size:11px;color:#8B8BA7;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Chunks</div>';
+      html += data.chunks.slice(0, 6).map(r =>
+        '<div class="ac-item" onclick="openChunkDetail(' + r.item_id + ',\'' + r.term.replace(/'/g, "\\'") + '\')">' +
+        '<span class="ac-word">' + r.term + '</span>' +
+        '<span class="ac-tier" style="color:#3B82F6">chunk</span></div>'
+      ).join('');
+    }
+    if (!html) {
+      html = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
+    }
+    acBox.innerHTML = html;
     acBox.classList.add('visible');
   } catch(e) { acBox.classList.remove('visible'); }
 }
