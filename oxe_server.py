@@ -2243,8 +2243,21 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   }
   .ac-item:active { background: rgba(59,130,246,0.1); }
   .ac-item:last-child { border-bottom: none; }
-  .ac-word { font-weight: 600; }
+  .ac-word { font-weight: 600; flex:1; }
   .ac-tier { font-size: 0.7em; color: #525263; }
+  .ac-actions { display:flex; gap:4px; margin-left:8px; flex-shrink:0; }
+  .ac-btn { width:32px; height:32px; border:none; border-radius:8px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+    transition:background 0.15s,transform 0.1s; }
+  .ac-btn:active { transform:scale(0.9); }
+  .ac-btn-play { background:rgba(94,106,210,0.15); color:#5E6AD2; }
+  .ac-btn-play:hover { background:rgba(94,106,210,0.25); }
+  .ac-btn-add { background:rgba(52,211,153,0.15); color:#34d399; }
+  .ac-btn-add:hover { background:rgba(52,211,153,0.25); }
+  .ac-btn-add.done { background:rgba(52,211,153,0.08); color:#525263; pointer-events:none; }
+  .ac-audio-dot { width:6px; height:6px; border-radius:3px; margin-left:6px; flex-shrink:0; }
+  .ac-audio-dot.has-audio { background:#34d399; }
+  .ac-audio-dot.no-audio { background:#f87171; }
 
   .page { padding: 20px 16px; }
 
@@ -2285,6 +2298,12 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   }
   .result-audio-btn:active { transform: scale(0.97); }
   .result-audio-btn svg { width: 16px; height: 16px; fill: currentColor; }
+  .result-audio-btn.audio-cached { border-color: rgba(52,211,153,0.3); color: #34d399; background: rgba(52,211,153,0.1); }
+  .result-audio-btn.audio-cached::after { content: ' \2713'; font-size: 10px; }
+  .result-audio-btn.audio-missing { border-color: rgba(248,113,113,0.3); color: #f87171; background: rgba(248,113,113,0.08); }
+  .result-audio-btn.audio-missing::after { content: ' gerar'; font-size: 10px; }
+  .result-audio-btn.audio-loading { border-color: rgba(255,255,255,0.1); color: #888; }
+  .result-audio-btn.audio-loading::after { content: ' ...'; font-size: 10px; }
 
   /* ── Tabs ── */
   .tab-row {
@@ -2766,22 +2785,49 @@ function clearSearch() {
   document.getElementById('empty-state').style.display = '';
 }
 
+const _searchCache = {};
+const _CACHE_TTL = 60000; // 60s
+
+function _cacheGet(key) {
+  var e = _searchCache[key];
+  if (e && Date.now() - e.ts < _CACHE_TTL) return e.data;
+  return null;
+}
+function _cacheSet(key, data) {
+  _searchCache[key] = {data: data, ts: Date.now()};
+  // Evict oldest if > 100 entries
+  var keys = Object.keys(_searchCache);
+  if (keys.length > 100) delete _searchCache[keys[0]];
+}
+
 async function fetchSearch(q) {
   try {
-    const res = await fetch('/api/search?q=' + encodeURIComponent(q));
-    const data = await res.json();
+    var cacheKey = 'w:' + q;
+    var cached = _cacheGet(cacheKey);
+    var data;
+    if (cached) { data = cached; }
+    else {
+      const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+      data = await res.json();
+      _cacheSet(cacheKey, data);
+    }
     if (!data.results || data.results.length === 0) {
       acBox.innerHTML = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
     } else {
       acBox.innerHTML = data.results.map(r => {
+        var esc = r.word.replace(/'/g, "\\'");
         if (r.is_live_lookup) {
-          return '<div class="ac-item" onclick="selectWord(-1,\'' + r.word.replace(/'/g, "\\'") + '\',0,0)">' +
+          return '<div class="ac-item" onclick="selectWord(-1,\'' + esc + '\',0,0)">' +
             '<span class="ac-word">' + r.word + '</span>' +
             '<span class="ac-tier" style="color:#3B82F6">Buscar ao vivo</span></div>';
         }
-        return '<div class="ac-item" onclick="selectWord(' + r.word_id + ',\'' + r.word.replace(/'/g, "\\'") + '\',' + r.difficulty_tier + ',' + r.frequency_rank + ')">' +
-          '<span class="ac-word">' + r.word + '</span>' +
-          '<span class="ac-tier">Tier ' + r.difficulty_tier + '</span></div>';
+        return '<div class="ac-item">' +
+          '<span class="ac-word" onclick="selectWord(' + r.word_id + ',\'' + esc + '\',' + r.difficulty_tier + ',' + r.frequency_rank + ')">' + r.word + '</span>' +
+          '<span class="ac-tier">T' + r.difficulty_tier + '</span>' +
+          '<span class="ac-actions">' +
+            '<button class="ac-btn ac-btn-play" onclick="event.stopPropagation();quickPlay(' + r.word_id + ')" title="Ouvir">&#x1f50a;</button>' +
+            '<button class="ac-btn ac-btn-add" onclick="event.stopPropagation();quickAdd(' + r.word_id + ',\'' + esc + '\',this)" title="Adicionar">+</button>' +
+          '</span></div>';
       }).join('');
     }
     acBox.classList.add('visible');
@@ -2790,24 +2836,41 @@ async function fetchSearch(q) {
 
 async function fetchUnifiedSearch(q) {
   try {
-    const res = await fetch('/api/search/unified?q=' + encodeURIComponent(q));
-    const data = await res.json();
+    var cacheKey = 'u:' + q;
+    var cached = _cacheGet(cacheKey);
+    var data;
+    if (cached) { data = cached; }
+    else {
+      const res = await fetch('/api/search/unified?q=' + encodeURIComponent(q));
+      data = await res.json();
+      _cacheSet(cacheKey, data);
+    }
     let html = '';
     if (data.words && data.words.length > 0) {
       html += '<div style="padding:4px 12px;font-size:11px;color:#8B8BA7;text-transform:uppercase;letter-spacing:1px">Palavras</div>';
-      html += data.words.slice(0, 8).map(r =>
-        '<div class="ac-item" onclick="selectWord(' + r.item_id + ',\'' + r.term.replace(/'/g, "\\'") + '\',' + (r.difficulty_tier||1) + ',' + (r.frequency_rank||0) + ')">' +
-        '<span class="ac-word">' + r.term + '</span>' +
-        '<span class="ac-tier">Tier ' + (r.difficulty_tier||'?') + '</span></div>'
-      ).join('');
+      html += data.words.slice(0, 8).map(r => {
+        var esc = r.term.replace(/'/g, "\\'");
+        var ml = r.mastery_level || 0;
+        var audioDot = ml > 0 ? '<span class="ac-audio-dot has-audio" title="Audio disponivel"></span>'
+                               : '<span class="ac-audio-dot no-audio" title="Sem audio"></span>';
+        return '<div class="ac-item">' +
+          '<span class="ac-word" onclick="selectWord(' + r.item_id + ',\'' + esc + '\',' + (r.difficulty_tier||1) + ',' + (r.frequency_rank||0) + ')">' + r.term + '</span>' +
+          '<span class="ac-tier">T' + (r.difficulty_tier||'?') + '</span>' +
+          audioDot +
+          '<span class="ac-actions">' +
+            '<button class="ac-btn ac-btn-play" onclick="event.stopPropagation();quickPlay(' + r.item_id + ')" title="Ouvir">&#x1f50a;</button>' +
+            '<button class="ac-btn ac-btn-add" id="qa-' + r.item_id + '" onclick="event.stopPropagation();quickAdd(' + r.item_id + ',\'' + esc + '\',this)" title="Adicionar ao SRS">+</button>' +
+          '</span></div>';
+      }).join('');
     }
     if (data.chunks && data.chunks.length > 0) {
       html += '<div style="padding:4px 12px;font-size:11px;color:#8B8BA7;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Chunks</div>';
-      html += data.chunks.slice(0, 6).map(r =>
-        '<div class="ac-item" onclick="openChunkDetail(' + r.item_id + ',\'' + r.term.replace(/'/g, "\\'") + '\')">' +
-        '<span class="ac-word">' + r.term + '</span>' +
-        '<span class="ac-tier" style="color:#3B82F6">chunk</span></div>'
-      ).join('');
+      html += data.chunks.slice(0, 6).map(r => {
+        var esc = r.term.replace(/'/g, "\\'");
+        return '<div class="ac-item" onclick="openChunkDetail(' + r.item_id + ',\'' + esc + '\')">' +
+          '<span class="ac-word">' + r.term + '</span>' +
+          '<span class="ac-tier" style="color:#3B82F6">chunk</span></div>';
+      }).join('');
     }
     if (!html) {
       html = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
@@ -2815,6 +2878,38 @@ async function fetchUnifiedSearch(q) {
     acBox.innerHTML = html;
     acBox.classList.add('visible');
   } catch(e) { acBox.classList.remove('visible'); }
+}
+
+// ── Quick actions from search results ──
+function quickPlay(wordId) {
+  var p = document.getElementById('player');
+  p.src = '/api/word/' + wordId + '/audio/stream';
+  p.play().catch(function(){
+    // Fallback: generate on the fly
+    fetch('/api/word/' + wordId + '/audio').then(r=>r.json()).then(d=>{
+      if (d && (d.audio_file || d.filename)) {
+        p.src = '/audio/' + (d.audio_file || d.filename);
+        p.play().catch(function(){});
+      }
+    }).catch(function(){});
+  });
+}
+
+async function quickAdd(wordId, word, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await fetch('/api/search/add-to-srs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({word_id: wordId, chunk: word, carrier: word}),
+    });
+    btn.textContent = '\u2713';
+    btn.classList.add('done');
+  } catch(e) {
+    btn.textContent = '!';
+    btn.disabled = false;
+  }
 }
 
 let currentWord = '';
@@ -2895,12 +2990,21 @@ async function selectWord(wordId, word, tier, rank) {
   for (var t = 1; t <= 6; t++) { loadTabData(t); }
 
   // Pre-fetch audio so Ouvir button works on first tap (mobile autoplay policy)
+  var audioBtn = document.getElementById('r-audio-btn');
+  audioBtn.classList.remove('audio-cached','audio-missing','audio-loading');
+  audioBtn.classList.add('audio-loading');
   fetch('/api/word/' + wordId + '/audio')
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var f = d && (d.audio_file || d.filename);
-      if (f) currentData.audio_file = f;
-    }).catch(function(){});
+      audioBtn.classList.remove('audio-loading');
+      if (f) {
+        currentData.audio_file = f;
+        audioBtn.classList.add('audio-cached');
+      } else {
+        audioBtn.classList.add('audio-missing');
+      }
+    }).catch(function(){ audioBtn.classList.remove('audio-loading'); audioBtn.classList.add('audio-missing'); });
 
   // Fetch automaticity state + fragility
   fetchWordState(wordId);
@@ -5053,11 +5157,29 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
     <div class="card-arrow">&#x203a;</div>
   </a>
 
+  <a href="/conversa" class="card conversa">
+    <div class="card-icon" style="background:rgba(168,85,247,0.12);color:#a855f7">&#x1f4ac;</div>
+    <div class="card-text">
+      <div class="card-title">Conversa</div>
+      <div class="card-sub">Prática de fala com scaffolding por estágio</div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
+
   <a href="/driving" class="card driving" style="border-color:rgba(94,106,210,0.3)">
     <div class="card-icon" style="background:rgba(94,106,210,0.15);color:#818cf8;font-size:32px">&#x1f697;</div>
     <div class="card-text">
       <div class="card-title">Modo Dirigir</div>
       <div class="card-sub">SRS + sombreamento sem olhar na tela — botões gigantes</div>
+    </div>
+    <div class="card-arrow">&#x203a;</div>
+  </a>
+
+  <a href="/dashboard" class="card dash">
+    <div class="card-icon" style="background:rgba(52,211,153,0.12);color:#34d399">&#x1f4ca;</div>
+    <div class="card-text">
+      <div class="card-title">Dashboard</div>
+      <div class="card-sub">Automaticidade, áudio, fadiga, progresso</div>
     </div>
     <div class="card-arrow">&#x203a;</div>
   </a>
@@ -5078,6 +5200,167 @@ fetch('/api/fragile/summary').then(r=>r.json()).then(d=>{
     document.getElementById('fragile-count').textContent=total+' itens frageis';
   }
 }).catch(()=>{});
+</script>
+</body></html>
+"""
+
+DASHBOARD_HTML = r"""<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dashboard — Oxe Protocol</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5f5f5;
+  min-height:100vh;padding:16px 16px 90px}
+.hdr{text-align:center;padding:20px 0 16px}
+.hdr h1{font-size:22px;font-weight:600}
+.hdr p{font-size:13px;color:#888;margin-top:4px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:480px;margin:0 auto}
+.grid3{grid-template-columns:1fr 1fr 1fr}
+.kpi{background:#161618;border:1px solid #222;border-radius:14px;padding:16px;text-align:center}
+.kpi-val{font-size:28px;font-weight:700;margin-bottom:4px}
+.kpi-lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px}
+.blue{color:#5E6AD2}.green{color:#34d399}.orange{color:#f97316}.red{color:#f87171}.purple{color:#a78bfa}
+.section{max-width:480px;margin:20px auto 0}
+.section h2{font-size:16px;font-weight:600;margin-bottom:10px}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.bar-label{font-size:12px;color:#aaa;width:100px;text-align:right;flex-shrink:0}
+.bar-track{flex:1;height:8px;background:#1a1a1c;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width 0.5s}
+.bar-val{font-size:12px;color:#888;width:40px}
+.clock-row{display:flex;gap:12px;margin-bottom:8px}
+.clock-card{flex:1;background:#161618;border:1px solid #222;border-radius:10px;padding:12px;text-align:center}
+.clock-val{font-size:20px;font-weight:700}
+.clock-lbl{font-size:10px;color:#888;margin-top:2px}
+.audio-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.audio-accent{font-size:13px;font-weight:600;width:80px}
+.audio-bar{flex:1;height:6px;background:#1a1a1c;border-radius:3px;overflow:hidden}
+.audio-fill{height:100%;background:#5E6AD2;border-radius:3px}
+.audio-pct{font-size:12px;color:#888;width:40px;text-align:right}
+.fragile-grid{display:flex;flex-wrap:wrap;gap:8px}
+.fragile-chip{background:#1a1a1c;border-radius:8px;padding:8px 14px;font-size:13px}
+.fragile-cnt{font-weight:700;margin-right:4px}
+</style></head><body>
+<div class="hdr">
+  <h1>Dashboard</h1>
+  <p>Visao geral do sistema</p>
+</div>
+
+<div class="grid grid3" id="top-kpis">
+  <div class="kpi"><div class="kpi-val blue" id="k-tier">—</div><div class="kpi-lbl">Tier</div></div>
+  <div class="kpi"><div class="kpi-val green" id="k-streak">—</div><div class="kpi-lbl">Sequencia</div></div>
+  <div class="kpi"><div class="kpi-val purple" id="k-level">—</div><div class="kpi-lbl">Nivel</div></div>
+</div>
+
+<div class="section">
+  <h2>Automaticidade</h2>
+  <div id="state-bars"></div>
+</div>
+
+<div class="section">
+  <h2>Sessao de Hoje</h2>
+  <div class="clock-row" id="clock-row">
+    <div class="clock-card"><div class="clock-val" id="c-sessions">0</div><div class="clock-lbl">Sessoes</div></div>
+    <div class="clock-card"><div class="clock-val" id="c-reviews">0</div><div class="clock-lbl">Revisoes</div></div>
+    <div class="clock-card"><div class="clock-val" id="c-minutes">0</div><div class="clock-lbl">Minutos</div></div>
+    <div class="clock-card"><div class="clock-val" id="c-accuracy">—</div><div class="clock-lbl">Acuracia</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Cobertura de Audio</h2>
+  <div id="audio-coverage"></div>
+</div>
+
+<div class="section">
+  <h2>Itens Frageis</h2>
+  <div class="fragile-grid" id="fragile-grid"></div>
+</div>
+
+<div class="section">
+  <h2>Fala</h2>
+  <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="kpi"><div class="kpi-val blue" id="k-speech">1</div><div class="kpi-lbl">Estagio</div></div>
+    <div class="kpi"><div class="kpi-val green" id="k-fatigue">0</div><div class="kpi-lbl">Fadiga</div></div>
+  </div>
+</div>
+
+{tab_bar}
+<script>
+const STATE_COLORS = {
+  UNKNOWN:'#525263', RECOGNIZED:'#f87171', CONTEXT_KNOWN:'#fb923c',
+  EFFORTFUL_AUDIO:'#fbbf24', AUTOMATIC_CLEAN:'#34d399',
+  AUTOMATIC_NATIVE:'#5E6AD2', AVAILABLE_OUTPUT:'#a78bfa'
+};
+const STATE_LABELS = {
+  UNKNOWN:'Desconhecido', RECOGNIZED:'Reconhecido', CONTEXT_KNOWN:'Contexto',
+  EFFORTFUL_AUDIO:'Audio Esforco', AUTOMATIC_CLEAN:'Auto Limpo',
+  AUTOMATIC_NATIVE:'Auto Nativo', AVAILABLE_OUTPUT:'Producao'
+};
+
+async function loadDashboard() {
+  try {
+    const [dashRes, clockRes, audioRes] = await Promise.all([
+      fetch('/api/dashboard').then(r=>r.json()),
+      fetch('/api/clock/today').then(r=>r.json()),
+      fetch('/api/audio/coverage').then(r=>r.json()),
+    ]);
+
+    // Top KPIs
+    document.getElementById('k-tier').textContent = (dashRes.tier||{}).current || '?';
+    document.getElementById('k-streak').textContent = dashRes.streak || 0;
+    document.getElementById('k-level').textContent = dashRes.content_level || 'P1';
+
+    // State bars
+    var dist = (dashRes.acquisition_state||{}).distribution || {};
+    var total = 0; for (var s in dist) total += dist[s]||0;
+    var barsHtml = '';
+    var states = ['UNKNOWN','RECOGNIZED','CONTEXT_KNOWN','EFFORTFUL_AUDIO','AUTOMATIC_CLEAN','AUTOMATIC_NATIVE','AVAILABLE_OUTPUT'];
+    states.forEach(function(st) {
+      var cnt = dist[st]||0;
+      var pct = total > 0 ? Math.round(100*cnt/total) : 0;
+      barsHtml += '<div class="bar-row">' +
+        '<div class="bar-label">' + (STATE_LABELS[st]||st) + '</div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + (STATE_COLORS[st]||'#555') + '"></div></div>' +
+        '<div class="bar-val">' + cnt + '</div></div>';
+    });
+    document.getElementById('state-bars').innerHTML = barsHtml;
+
+    // Clock
+    document.getElementById('c-sessions').textContent = clockRes.total_sessions || 0;
+    document.getElementById('c-reviews').textContent = clockRes.total_reviews || 0;
+    document.getElementById('c-minutes').textContent = Math.round(clockRes.total_minutes || 0);
+    document.getElementById('c-accuracy').textContent = clockRes.avg_accuracy ? Math.round(clockRes.avg_accuracy) + '%' : '—';
+
+    // Audio coverage
+    var acHtml = '';
+    (audioRes||[]).forEach(function(a) {
+      if (a.item_type !== 'word') return;
+      acHtml += '<div class="audio-row">' +
+        '<div class="audio-accent">' + a.accent + '</div>' +
+        '<div class="audio-bar"><div class="audio-fill" style="width:' + (a.coverage_pct||0) + '%"></div></div>' +
+        '<div class="audio-pct">' + (a.coverage_pct||0) + '%</div></div>';
+    });
+    document.getElementById('audio-coverage').innerHTML = acHtml || '<div style="color:#525263;font-size:13px">Sem dados — execute scan</div>';
+
+    // Fragile
+    var fragile = dashRes.fragile_summary || {};
+    var fHtml = '';
+    var fLabels = {familiar_but_fragile:'Familiar Fragil',known_but_slow:'Lento',text_only:'So Texto',clean_audio_only:'So Audio Limpo',blocked_by_prosody:'Prosodia'};
+    for (var ft in fragile) {
+      if (fragile[ft] > 0) {
+        fHtml += '<div class="fragile-chip"><span class="fragile-cnt orange">' + fragile[ft] + '</span>' + (fLabels[ft]||ft) + '</div>';
+      }
+    }
+    document.getElementById('fragile-grid').innerHTML = fHtml || '<div style="color:#525263;font-size:13px">Nenhum item fragil</div>';
+
+    // Speech + fatigue
+    document.getElementById('k-speech').textContent = (dashRes.speech||{}).stage || 1;
+    document.getElementById('k-fatigue').textContent = Math.round((dashRes.fatigue||{}).fatigue_score || 0);
+
+  } catch(e) { console.error('Dashboard load error:', e); }
+}
+loadDashboard();
 </script>
 </body></html>
 """
@@ -6273,6 +6556,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json(clock_get_sessions(date, limit))
         elif path == "/api/clock/weekly":
             self._json(clock_get_weekly_summary())
+
+        # ── Dashboard ──
+        elif path == "/dashboard":
+            self._html(DASHBOARD_HTML.replace("{tab_bar}", TAB_BAR_HTML("inicio")))
 
         # ── Training Hub ──
         elif path == "/train":
@@ -9057,6 +9344,29 @@ def main():
         print("  Search index built.")
     except Exception as e:
         print(f"  WARNING: build_full_index() failed: {e}")
+
+    # Background audio coverage scan + generation job
+    def _audio_scan_loop():
+        """Periodic scan for missing audio every 10 minutes."""
+        import time as _t
+        _t.sleep(15)  # let server finish starting
+        while True:
+            try:
+                from audio_audit import full_scan as _fs, generate_next_batch as _gnb
+                result = _fs()
+                if result.get("total_rows_added", 0) > 0:
+                    print(f"  [audio-scan] Added {result['total_rows_added']} coverage rows")
+                # Auto-generate a small batch of high-priority missing audio
+                gen = _gnb(3)
+                if gen > 0:
+                    print(f"  [audio-scan] Generated {gen} audio files")
+            except Exception as e:
+                print(f"  [audio-scan] Error: {e}")
+            _t.sleep(600)  # 10 minutes
+
+    _audio_thread = threading.Thread(target=_audio_scan_loop, daemon=True)
+    _audio_thread.start()
+
     ip = get_local_ip()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", port), OxeHandler)
 
