@@ -5970,7 +5970,10 @@ body{
   window.toggleReveal = toggleReveal;
 
   function playAudio(onEnd) {
-    if (!chunk || !chunk.audio_file) { if (onEnd) onEnd(); return; }
+    if (!chunk || !chunk.audio_file) {
+      setStatus('Sem áudio — verifique ElevenLabs', 'error');
+      return;
+    }
     if (audio) { audio.pause(); audio = null; }
     audio = new Audio('/audio/' + chunk.audio_file);
     setStatus('Ouvindo...', 'playing');
@@ -5979,10 +5982,13 @@ body{
       else afterPlayback();
     };
     audio.onerror = function() {
-      if (onEnd) onEnd();
-      else afterPlayback();
+      setStatus('Erro no áudio — próximo...', 'error');
+      setTimeout(function() { if (onEnd) onEnd(); else loadNext(); }, 2000);
     };
-    audio.play().catch(function() { if (onEnd) onEnd(); else afterPlayback(); });
+    audio.play().catch(function() {
+      setStatus('Erro no áudio', 'error');
+      setTimeout(function() { if (onEnd) onEnd(); else loadNext(); }, 2000);
+    });
   }
 
   function afterPlayback() {
@@ -6656,7 +6662,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             audio_file = generate_tts(chunk["carrier_sentence"])
             image_file = None
             try:
-                image_file = generate_image(chunk["word"])
+                image_file = generate_image(chunk["word"], chunk.get("carrier_sentence"))
             except Exception:
                 pass
 
@@ -7482,7 +7488,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             pass
         image_file = None
         try:
-            image_file = generate_image(chunk["word"])
+            image_file = generate_image(chunk["word"], chunk.get("carrier_sentence"))
         except Exception:
             pass
 
@@ -8910,6 +8916,10 @@ def main():
     except Exception:
         due = 0
 
+    # API key checks
+    has_tts = bool(os.environ.get("ELEVENLABS_API_KEY"))
+    has_llm = bool(os.environ.get("OPENAI_API_KEY"))
+
     print(f"\n  Oxe Protocol — Unified Server")
     print(f"  {'='*44}")
     print(f"  Phone:   {proto}://{ip}:{port}")
@@ -8918,6 +8928,8 @@ def main():
         print(f"  HTTPS:   ON (self-signed cert)")
     print(f"  Tier:    {tier} ({TIER_LABELS.get(tier, '?')})")
     print(f"  Due:     {due} words")
+    print(f"  TTS:     {'ON' if has_tts else 'OFF — set ELEVENLABS_API_KEY'}")
+    print(f"  Images:  {'ON' if has_llm else 'OFF — set OPENAI_API_KEY'}")
     print(f"  {'='*44}")
     print(f"  /          Home")
     print(f"  /drill     1+T Drills + Pronunciation + Cloze")

@@ -129,6 +129,7 @@ def generate_tts(text):
     """Generate TTS, return filename. Returns None on any failure (quota, network, etc)."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
+        print("[TTS] WARNING: ELEVENLABS_API_KEY not set — no audio will be generated")
         return None
 
     try:
@@ -154,7 +155,8 @@ def generate_tts(text):
             for chunk in audio_iter:
                 f.write(chunk)
         return fname
-    except Exception:
+    except Exception as e:
+        print(f"[TTS] Error generating audio for '{text[:50]}': {e}")
         return None
 
 
@@ -174,7 +176,60 @@ def get_cached_image(word):
     return None
 
 
-def _bg_generate_image(word):
+import random as _img_random
+
+_BAHIA_SCENES = [
+    "a lively street in Pelourinho with colorful colonial facades",
+    "a sunset beach at Porto da Barra with palm trees and sand",
+    "a bustling Mercado Modelo market stall with local crafts",
+    "a capoeira roda on a cobblestone square in Salvador",
+    "a vibrant Carnaval scene with axé dancers in colorful costumes",
+    "a fishing boat on the Bay of All Saints at golden hour",
+    "a baiana de acarajé cooking at her street cart",
+    "a view from Elevador Lacerda looking over the lower city",
+    "a terreiro ceremony with candles and flowers",
+    "a lively boteco bar with friends sharing petiscos",
+    "a Salvador rooftop overlooking the ocean at dusk",
+    "a tropical garden courtyard with bougainvillea and mango trees",
+]
+
+_STYLES = [
+    "warm tropical watercolor illustration, rich saturated colors",
+    "bold flat-color digital illustration, vibrant palette",
+    "lush painted illustration with golden-hour lighting",
+    "colorful graphic novel style with strong outlines",
+    "impressionist tropical scene with loose brushstrokes",
+]
+
+
+def _build_image_prompt(word, carrier_sentence=None):
+    """Build a diverse, semantically-rich DALL-E prompt for a word/chunk."""
+    scene = _img_random.choice(_BAHIA_SCENES)
+    style = _img_random.choice(_STYLES)
+
+    if carrier_sentence and len(carrier_sentence) > 10:
+        # Use the full carrier sentence for context — much more specific
+        prompt = (
+            f"Illustrate the scene: \"{carrier_sentence}\" — "
+            f"set in {scene}. "
+            f"Focus on the action and emotion of the moment. "
+            f"No text, no words, no letters in the image. "
+            f"{style}."
+        )
+    else:
+        # Fallback for bare words
+        prompt = (
+            f"A striking illustration showing the meaning of the Portuguese word '{word}' — "
+            f"depict a specific moment or action that embodies this word, "
+            f"set in {scene}. "
+            f"Make the central subject unique and memorable. "
+            f"No text, no words, no letters in the image. "
+            f"{style}."
+        )
+    return prompt
+
+
+def _bg_generate_image(word, carrier_sentence=None):
     """Background thread: generate DALL-E image and cache it."""
     safe = "".join(c if c.isalnum() else "_" for c in word)
     fname = f"img_{safe}.png"
@@ -182,13 +237,7 @@ def _bg_generate_image(word):
     try:
         import openai
         client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-        prompt = (
-            f"A vivid, colorful illustration representing the concept of '{word}' "
-            f"in the context of Salvador, Bahia, Brazil. "
-            f"Include Bahian cultural elements — colorful colonial buildings, palm trees, "
-            f"or street scenes from Pelourinho. No text, no words, no letters in the image. "
-            f"Warm tropical colors, clean modern illustration style."
-        )
+        prompt = _build_image_prompt(word, carrier_sentence)
         resp = client.images.generate(
             model="dall-e-3",
             prompt=prompt,
@@ -205,13 +254,12 @@ def _bg_generate_image(word):
             _image_pending.discard(word)
 
 
-def generate_image(word):
-    """Return cached image, generating synchronously if needed (user wants to see it)."""
+def generate_image(word, carrier_sentence=None):
+    """Return cached image, generating synchronously if needed."""
     cached = get_cached_image(word)
     if cached:
         return cached
-    # Generate now — user wants the image before drilling
-    _bg_generate_image(word)
+    _bg_generate_image(word, carrier_sentence)
     return get_cached_image(word)
 
 
@@ -1035,6 +1083,11 @@ function startMasteryLoop() {
 }
 
 function playMasteryRep() {
+  if (!currentChunk || !currentChunk.audio_file) {
+    $('pass-instruction').textContent = 'Sem áudio disponível. Verifique a chave ElevenLabs.';
+    completeDrill();
+    return;
+  }
   masteryReps++;
   const rc = $('rep-counter');
   rc.textContent = masteryReps + '/3';
@@ -1153,7 +1206,11 @@ async function completeDrill() {
 
 // ── Audio ─────────────────────────────────────────────────
 function playAudio() {
-  if (!currentChunk || !currentChunk.audio_file) return;
+  if (!currentChunk || !currentChunk.audio_file) {
+    console.warn('[OXE] No audio_file — TTS may have failed');
+    $('pass-instruction').textContent = 'Sem áudio — verifique ElevenLabs API key';
+    return;
+  }
   const audioType = modeConfig ? modeConfig.audio_type : 'clean';
 
   if (audioType === 'both' && currentChunk.native_audio_file) {
@@ -1784,7 +1841,7 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
         audio_file = generate_tts(chunk["carrier_sentence"])
         image_file = None
         try:
-            image_file = generate_image(chunk["word"])
+            image_file = generate_image(chunk["word"], chunk.get("carrier_sentence"))
         except Exception:
             pass
 

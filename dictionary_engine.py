@@ -94,6 +94,7 @@ def generate_tts(text):
     """Generate ElevenLabs TTS audio with Bahian voice. Returns the filename or None."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
+        print("[TTS] WARNING: ELEVENLABS_API_KEY not set — no audio will be generated")
         return None
     try:
         from elevenlabs import ElevenLabs
@@ -116,7 +117,8 @@ def generate_tts(text):
             for chunk in audio_iter:
                 f.write(chunk)
         return fname
-    except Exception:
+    except Exception as e:
+        print(f"[TTS] Error generating audio for '{text[:50]}': {e}")
         return None
 
 
