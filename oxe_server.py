@@ -5718,9 +5718,9 @@ body{
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
 .reveal-chunk{
   font-size:36px;font-weight:800;text-align:center;letter-spacing:-0.5px;
-  background:linear-gradient(135deg,#60a5fa,#a78bfa,#f472b6);
+  background:linear-gradient(135deg,#5E6AD2,#7c85e0,#5E6AD2);
   background-size:200% 200%;
-  animation:revealGlow 2s ease infinite;
+  animation:revealGlow 3s ease infinite;
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   margin-bottom:4px;
 }
