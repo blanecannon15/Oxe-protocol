@@ -261,7 +261,7 @@ HOME_HTML = r"""<!DOCTYPE html>
     background: linear-gradient(135deg, #4F7BEF, #7C5CFC);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
-  .header-meta { font-size: 0.72em; color: #525263; display: flex; gap: 10px; align-items: center; }
+  .header-meta { font-size: 0.72em; color: #7a7a8e; display: flex; gap: 10px; align-items: center; }
   .header-meta b { color: #7a7a8e; }
 
   .page { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; }
@@ -318,7 +318,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   }
   .nav-text { flex: 1; }
   .nav-title { font-size: 0.9em; font-weight: 600; }
-  .nav-sub { font-size: 0.7em; color: #525263; margin-top: 1px; }
+  .nav-sub { font-size: 0.7em; color: #7a7a8e; margin-top: 1px; }
   .nav-arrow { color: #3a3a4a; font-size: 0.8em; }
 
   /* ── Progress (minimal) ── */
@@ -330,7 +330,7 @@ HOME_HTML = r"""<!DOCTYPE html>
     flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden;
   }
   .progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #3B82F6, #7C5CFC); transition: width 0.6s; }
-  .progress-label { font-size: 0.7em; color: #525263; white-space: nowrap; }
+  .progress-label { font-size: 0.7em; color: #7a7a8e; white-space: nowrap; }
   .progress-label b { color: #a78bfa; }
 
   /* ── Insight row ── */
@@ -344,7 +344,7 @@ HOME_HTML = r"""<!DOCTYPE html>
     text-align: center;
   }
   .insight-val { font-size: 0.95em; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .insight-lbl { font-size: 0.6em; color: #525263; text-transform: uppercase; margin-top: 2px; }
+  .insight-lbl { font-size: 0.6em; color: #7a7a8e; text-transform: uppercase; margin-top: 2px; }
   .insight-val.blue { color: #60a5fa; }
   .insight-val.green { color: #34d399; }
   .insight-val.purple { color: #a78bfa; }
@@ -372,7 +372,7 @@ HOME_HTML = r"""<!DOCTYPE html>
     flex: 1 1 calc(50% - 3px); min-width: 0; padding: 12px 14px; border-radius: 12px;
     background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
   }
-  .state-chip-label { font-size: 0.58em; color: #525263; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+  .state-chip-label { font-size: 0.58em; color: #7a7a8e; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
   .state-chip-val { font-size: 1.15em; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .state-chip-sub { font-size: 0.62em; color: #3a3a4a; margin-top: 1px; }
 
@@ -408,7 +408,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   .plan-block { flex: 1; border-radius: 3px; position: relative; }
   .plan-block.done { opacity: 0.3; }
   .plan-legend { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
-  .plan-legend-item { font-size: 0.58em; color: #525263; display: flex; align-items: center; gap: 4px; }
+  .plan-legend-item { font-size: 0.58em; color: #7a7a8e; display: flex; align-items: center; gap: 4px; }
   .plan-legend-dot { width: 8px; height: 8px; border-radius: 2px; }
 </style>
 </head><body>
@@ -467,7 +467,7 @@ HOME_HTML = r"""<!DOCTYPE html>
   <div class="next-block-cta" id="next-block" onclick="startNextBlock()">
     <div class="next-block-ico" id="nb-ico">&#x25b6;&#xfe0f;</div>
     <div class="next-block-info">
-      <div class="next-block-title" id="nb-title">Proximo Bloco</div>
+      <div class="next-block-title" id="nb-title">Pr&#243;ximo Bloco</div>
       <div class="next-block-desc" id="nb-desc">Carregando plano...</div>
     </div>
     <div class="next-block-arrow">&#x203a;</div>
@@ -494,11 +494,11 @@ HOME_HTML = r"""<!DOCTYPE html>
     </div>
     <div class="insight-pill">
       <div class="insight-val green" id="i-auto">0</div>
-      <div class="insight-lbl">Automaticas</div>
+      <div class="insight-lbl">Autom&#225;ticas</div>
     </div>
     <div class="insight-pill">
       <div class="insight-val purple" id="i-milestone">--</div>
-      <div class="insight-lbl">Proxima Meta</div>
+      <div class="insight-lbl">Pr&#243;xima Meta</div>
     </div>
   </div>
 
@@ -514,7 +514,7 @@ HOME_HTML = r"""<!DOCTYPE html>
       <div class="nav-ico" style="background:rgba(59,130,246,0.10)">&#x1f4d6;</div>
       <div class="nav-text">
         <div class="nav-title">Biblioteca</div>
-        <div class="nav-sub" id="nav-stories">Historias e podcasts</div>
+        <div class="nav-sub" id="nav-stories">Hist&#243;rias e podcasts</div>
       </div>
       <div class="nav-arrow">&#x203a;</div>
     </a>
@@ -522,7 +522,7 @@ HOME_HTML = r"""<!DOCTYPE html>
       <div class="nav-ico" style="background:rgba(124,92,252,0.10)">&#x1f4ac;</div>
       <div class="nav-text">
         <div class="nav-title">Conversa</div>
-        <div class="nav-sub">Pratica de fala guiada</div>
+        <div class="nav-sub">Pr&#225;tica de fala guiada</div>
       </div>
       <div class="nav-arrow">&#x203a;</div>
     </a>
@@ -554,7 +554,7 @@ HOME_HTML = r"""<!DOCTYPE html>
       <div class="nav-ico" style="background:rgba(248,113,113,0.10)">&#x1f3a4;</div>
       <div class="nav-text">
         <div class="nav-title">Escada da Fala</div>
-        <div class="nav-sub" id="nav-speech">Estagio 1 - Eco</div>
+        <div class="nav-sub" id="nav-speech">Est&#225;gio 1 - Eco</div>
       </div>
       <div class="nav-arrow">&#x203a;</div>
     </a>
@@ -562,7 +562,7 @@ HOME_HTML = r"""<!DOCTYPE html>
       <div class="nav-ico" style="background:rgba(167,139,250,0.10)">&#x1f517;</div>
       <div class="nav-text">
         <div class="nav-title">Chunks</div>
-        <div class="nav-sub">Familias de expressoes</div>
+        <div class="nav-sub">Fam&#237;lias de express&#245;es</div>
       </div>
       <div class="nav-arrow">&#x203a;</div>
     </a>
@@ -572,9 +572,9 @@ HOME_HTML = r"""<!DOCTYPE html>
   <div class="sync-row" style="margin:0 0 16px;padding:14px 16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;animation:fadeIn 0.3s ease-out 0.2s both">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       <div style="font-size:0.75em;color:#7a7a8e;font-weight:600">MODO AVIAO</div>
-      <div id="sync-status" style="font-size:0.7em;color:#525263"></div>
+      <div id="sync-status" style="font-size:0.7em;color:#7a7a8e"></div>
     </div>
-    <div id="sync-info" style="font-size:0.72em;color:#525263;margin-bottom:10px"></div>
+    <div id="sync-info" style="font-size:0.72em;color:#7a7a8e;margin-bottom:10px"></div>
     <div style="display:flex;gap:8px">
       <button id="sync-btn" onclick="fullSync()" style="flex:1;padding:12px;background:linear-gradient(135deg,#4F7BEF,#7C5CFC);color:#fff;border:none;border-radius:10px;font-size:0.85em;font-weight:700;cursor:pointer">
         Baixar Tudo
@@ -656,7 +656,7 @@ requestAnimationFrame(function(){
     document.getElementById('prog-fill').style.width = pct + '%';
     var sp = d.speech||{};
     var stg = sp.stage||1;
-    document.getElementById('nav-speech').textContent = 'Estagio ' + stg + ' - ' + (SPEECH_NAMES[stg]||'');
+    document.getElementById('nav-speech').textContent = 'Est\u00e1gio ' + stg + ' - ' + (SPEECH_NAMES[stg]||'');
     var plan = d.today||{};
     if(plan.completed_pct) document.getElementById('nav-plan').textContent = Math.round(plan.completed_pct) + '% completo';
 
@@ -1756,7 +1756,7 @@ msgInput.addEventListener('keydown', e => {
 function updateStageBanner(stage) {
   currentStage = stage;
   stageBanner.className = 'stage-banner s' + stage;
-  stageLabel.textContent = 'Nivel ' + stage + ' \\u2014 ' + (STAGE_NAMES[stage] || 'Livre');
+  stageLabel.textContent = 'N\u00edvel ' + stage + ' \\u2014 ' + (STAGE_NAMES[stage] || 'Livre');
   stageHint.textContent = STAGE_HINTS[stage] || '';
 }
 
@@ -2038,23 +2038,23 @@ function showSummary(data, durationSec) {
     if (ladder.advanced) {
       lhtml += '<div style="text-align:center;padding:16px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.15);border-radius:14px;margin-bottom:12px">' +
         '<div style="font-size:28px;margin-bottom:6px">&#x1f389;</div>' +
-        '<div style="font-size:16px;font-weight:700;color:#34d399">Estagio ' + ladder.new_stage + ' desbloqueado!</div>' +
-        '<div style="font-size:13px;color:#888;margin-top:4px">' + escH(STAGE_NAMES[ladder.new_stage] || '') + '</div></div>';
+        '<div style="font-size:16px;font-weight:700;color:#34d399">Est\u00e1gio ' + ladder.new_stage + ' desbloqueado!</div>' +
+        '<div style="font-size:13px;color:#9ca3af;margin-top:4px">' + escH(STAGE_NAMES[ladder.new_stage] || '') + '</div></div>';
     } else if (ladder.regressed) {
       lhtml += '<div style="text-align:center;padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:14px;margin-bottom:12px">' +
-        '<div style="font-size:16px;font-weight:700;color:#ef4444">Regressao: Estagio ' + ladder.from_stage + ' &rarr; ' + ladder.to_stage + '</div>' +
-        '<div style="font-size:13px;color:#888;margin-top:4px">Precisa reforcar antes de avancar</div></div>';
+        '<div style="font-size:16px;font-weight:700;color:#ef4444">Regress\u00e3o: Est\u00e1gio ' + ladder.from_stage + ' \u2192 ' + ladder.to_stage + '</div>' +
+        '<div style="font-size:13px;color:#9ca3af;margin-top:4px">Precisa refor\u00e7ar antes de avan\u00e7ar</div></div>';
     }
     // Gate progress
     var gates = ladder.gates;
     if (gates && gates.criteria) {
-      lhtml += '<h3>Progresso do Estagio ' + (gates.current_stage||1) + '</h3>';
+      lhtml += '<h3>Progresso do Est\u00e1gio ' + (gates.current_stage||1) + '</h3>';
       for (var crit in gates.criteria) {
         var c = gates.criteria[crit];
         var pct = c.required > 0 ? Math.min(Math.round(c.actual / c.required * 100), 100) : 0;
         var barColor = c.met ? '#34d399' : '#3B82F6';
         lhtml += '<div style="margin-bottom:8px">' +
-          '<div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:3px">' +
+          '<div style="display:flex;justify-content:space-between;font-size:12px;color:#9ca3af;margin-bottom:3px">' +
           '<span>' + crit.replace(/_/g,' ') + '</span>' +
           '<span style="color:' + (c.met?'#34d399':'#888') + '">' + Math.round(c.actual) + '/' + c.required + (c.met?' &#x2713;':'') + '</span></div>' +
           '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden">' +
@@ -3595,6 +3595,7 @@ PLAN_HTML = r"""<!DOCTYPE html>
   @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
   @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0.4)} 50%{box-shadow:0 0 0 10px rgba(59,130,246,0)} }
   @keyframes timerPulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+  @media (max-width: 374px) { .time-grid { grid-template-columns: 1fr 1fr; } }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: #0a0a0b; color: #fafafa; font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
@@ -3688,7 +3689,7 @@ PLAN_HTML = r"""<!DOCTYPE html>
   }
   .block-card.completed { opacity: 0.4; }
   .block-card.completed::before { background: #34d399; border-color: #34d399; }
-  .block-card.current { border-color: #3B82F6 !important; animation: pulse 2s infinite; }
+  .block-card.current { border-color: #3B82F6 !important; animation: pulse 2s 3; }
   .block-card.current::before { background: #3B82F6; border-color: #3B82F6; }
   .block-card.upcoming { opacity: 0.5; }
   .block-top { display: flex; align-items: center; gap: 8px; }
@@ -3774,7 +3775,7 @@ PLAN_HTML = r"""<!DOCTYPE html>
   <a href="/library" class="activity-btn" onclick="timerStart('listening')">
     <span class="ab-icon">&#127911;</span>
     <span class="ab-name">Escuta</span>
-    <span class="ab-sub">Historias + podcasts</span>
+    <span class="ab-sub">Hist&#243;rias + podcasts</span>
   </a>
   <a href="/shadowing" class="activity-btn" onclick="timerStart('shadowing')">
     <span class="ab-icon">&#128483;</span>
@@ -3784,7 +3785,7 @@ PLAN_HTML = r"""<!DOCTYPE html>
   <a href="/conversa" class="activity-btn" onclick="timerStart('conversa')">
     <span class="ab-icon">&#128172;</span>
     <span class="ab-name">Conversa</span>
-    <span class="ab-sub">Pratica guiada</span>
+    <span class="ab-sub">Pr&#225;tica guiada</span>
   </a>
   <a href="/assembly" class="activity-btn" onclick="timerStart('assembly')">
     <span class="ab-icon">&#129513;</span>
@@ -4740,7 +4741,7 @@ body{
 </div>
 
 <div class="layer-bar" id="layer-bar"></div>
-<div id="pass-desc" style="text-align:center;font-size:12px;color:#888;margin-top:4px"></div>
+<div id="pass-desc" style="text-align:center;font-size:12px;color:#9ca3af;margin-top:4px"></div>
 
 <div class="wave-container" id="wave-container">
   <div class="wave-bars" id="wave-bars"></div>
@@ -4755,7 +4756,7 @@ body{
 
 <div class="score-panel" id="score-panel">
   <div class="score-big" id="score-big">--</div>
-  <div class="score-label">Pronuncia</div>
+  <div class="score-label">Pron&#250;ncia</div>
   <div class="score-details" id="score-details"></div>
 </div>
 
@@ -4769,7 +4770,7 @@ body{
 </div>
 <div class="btn-row">
   <button class="btn btn-next" id="btn-next" onclick="nextChunk()" disabled>
-    Proximo &#x203a;
+    Pr&#243;ximo &#x203a;
   </button>
 </div>
 
@@ -5126,26 +5127,28 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
   min-height:100vh;padding:16px 16px 90px}
 .header{text-align:center;padding:20px 0 10px}
 .header h1{font-size:22px;font-weight:600;color:#f5f5f5}
-.header p{font-size:13px;color:#888;margin-top:4px}
-.cards{display:flex;flex-direction:column;gap:14px;max-width:480px;margin:24px auto}
+.header p{font-size:13px;color:#9ca3af;margin-top:4px}
+.cards{display:flex;flex-direction:column;gap:14px;max-width:min(100%,480px);margin:24px auto}
 .card{display:flex;align-items:center;gap:16px;background:#161618;border:1px solid #222;
   border-radius:16px;padding:20px;text-decoration:none;color:inherit;
   transition:transform 0.15s,border-color 0.15s}
 .card:active{transform:scale(0.98);border-color:#5E6AD2}
+.card:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}
 .card-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;
   justify-content:center;font-size:28px;flex-shrink:0}
 .card-text{flex:1}
 .card-title{font-size:17px;font-weight:600;margin-bottom:4px}
-.card-sub{font-size:13px;color:#888;line-height:1.4}
+.card-sub{font-size:13px;color:#9ca3af;line-height:1.4}
 .card-count{font-size:13px;font-weight:600;color:#5E6AD2;margin-top:6px}
-.card-arrow{color:#555;font-size:22px}
+.card-arrow{color:#666;font-size:22px}
 .srs .card-icon{background:rgba(94,106,210,0.12);color:#5E6AD2}
 .shadow .card-icon{background:rgba(248,113,113,0.12);color:#f87171}
 .assembly .card-icon{background:rgba(52,211,153,0.12);color:#34d399}
 .stats{display:flex;justify-content:center;gap:20px;margin-top:24px}
 .stat{text-align:center}
-.stat-val{font-size:24px;font-weight:700}
-.stat-lbl{font-size:11px;color:#888;margin-top:2px}
+.stat-val{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat-lbl{font-size:11px;color:#9ca3af;margin-top:2px}
+.blue{color:#5E6AD2}.green{color:#34d399}.purple{color:#a78bfa}
 </style></head><body>
 <div class="header">
   <h1>Treinar</h1>
@@ -5155,7 +5158,7 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
 <div class="stats">
   <div class="stat"><div class="stat-val blue" id="s-due">—</div><div class="stat-lbl">Pendentes</div></div>
   <div class="stat"><div class="stat-val green" id="s-today">—</div><div class="stat-lbl">Hoje</div></div>
-  <div class="stat"><div class="stat-val purple" id="s-streak">—</div><div class="stat-lbl">Sequência</div></div>
+  <div class="stat"><div class="stat-val purple" id="s-streak">—</div><div class="stat-lbl">Sequ&#234;ncia</div></div>
 </div>
 
 <div class="cards">
@@ -5255,42 +5258,42 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
   min-height:100vh;padding:16px 16px 90px}
 .hdr{text-align:center;padding:20px 0 16px}
 .hdr h1{font-size:22px;font-weight:600}
-.hdr p{font-size:13px;color:#888;margin-top:4px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:480px;margin:0 auto}
+.hdr p{font-size:13px;color:#9ca3af;margin-top:4px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:min(100%,480px);margin:0 auto}
 .grid3{grid-template-columns:1fr 1fr 1fr}
 .kpi{background:#161618;border:1px solid #222;border-radius:14px;padding:16px;text-align:center}
-.kpi-val{font-size:28px;font-weight:700;margin-bottom:4px}
-.kpi-lbl{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px}
+.kpi-val{font-size:28px;font-weight:700;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.kpi-lbl{font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px}
 .blue{color:#5E6AD2}.green{color:#34d399}.orange{color:#f97316}.red{color:#f87171}.purple{color:#a78bfa}
-.section{max-width:480px;margin:20px auto 0}
+.section{max-width:min(100%,480px);margin:20px auto 0}
 .section h2{font-size:16px;font-weight:600;margin-bottom:10px}
 .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.bar-label{font-size:12px;color:#aaa;width:100px;text-align:right;flex-shrink:0}
+.bar-label{font-size:12px;color:#b0b0c0;width:100px;text-align:right;flex-shrink:0}
 .bar-track{flex:1;height:8px;background:#1a1a1c;border-radius:4px;overflow:hidden}
 .bar-fill{height:100%;border-radius:4px;transition:width 0.5s}
-.bar-val{font-size:12px;color:#888;width:40px}
+.bar-val{font-size:12px;color:#9ca3af;width:40px;font-variant-numeric:tabular-nums}
 .clock-row{display:flex;gap:12px;margin-bottom:8px}
 .clock-card{flex:1;background:#161618;border:1px solid #222;border-radius:10px;padding:12px;text-align:center}
-.clock-val{font-size:20px;font-weight:700}
-.clock-lbl{font-size:10px;color:#888;margin-top:2px}
+.clock-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.clock-lbl{font-size:10px;color:#9ca3af;margin-top:2px}
 .audio-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 .audio-accent{font-size:13px;font-weight:600;width:80px}
 .audio-bar{flex:1;height:6px;background:#1a1a1c;border-radius:3px;overflow:hidden}
 .audio-fill{height:100%;background:#5E6AD2;border-radius:3px}
-.audio-pct{font-size:12px;color:#888;width:40px;text-align:right}
+.audio-pct{font-size:12px;color:#9ca3af;width:40px;text-align:right}
 .fragile-grid{display:flex;flex-wrap:wrap;gap:8px}
 .fragile-chip{background:#1a1a1c;border-radius:8px;padding:8px 14px;font-size:13px}
 .fragile-cnt{font-weight:700;margin-right:4px}
 </style></head><body>
 <div class="hdr">
   <h1>Dashboard</h1>
-  <p>Visao geral do sistema</p>
+  <p>Vis&#227;o geral do sistema</p>
 </div>
 
 <div class="grid grid3" id="top-kpis">
   <div class="kpi"><div class="kpi-val blue" id="k-tier">—</div><div class="kpi-lbl">Tier</div></div>
-  <div class="kpi"><div class="kpi-val green" id="k-streak">—</div><div class="kpi-lbl">Sequencia</div></div>
-  <div class="kpi"><div class="kpi-val purple" id="k-level">—</div><div class="kpi-lbl">Nivel</div></div>
+  <div class="kpi"><div class="kpi-val green" id="k-streak">—</div><div class="kpi-lbl">Sequ&#234;ncia</div></div>
+  <div class="kpi"><div class="kpi-val purple" id="k-level">—</div><div class="kpi-lbl">N&#237;vel</div></div>
 </div>
 
 <div class="section">
@@ -5299,29 +5302,29 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0a;color:#f5
 </div>
 
 <div class="section">
-  <h2>Sessao de Hoje</h2>
+  <h2>Sess&#227;o de Hoje</h2>
   <div class="clock-row" id="clock-row">
-    <div class="clock-card"><div class="clock-val" id="c-sessions">0</div><div class="clock-lbl">Sessoes</div></div>
-    <div class="clock-card"><div class="clock-val" id="c-reviews">0</div><div class="clock-lbl">Revisoes</div></div>
+    <div class="clock-card"><div class="clock-val" id="c-sessions">0</div><div class="clock-lbl">Sess&#245;es</div></div>
+    <div class="clock-card"><div class="clock-val" id="c-reviews">0</div><div class="clock-lbl">Revis&#245;es</div></div>
     <div class="clock-card"><div class="clock-val" id="c-minutes">0</div><div class="clock-lbl">Minutos</div></div>
-    <div class="clock-card"><div class="clock-val" id="c-accuracy">—</div><div class="clock-lbl">Acuracia</div></div>
+    <div class="clock-card"><div class="clock-val" id="c-accuracy">—</div><div class="clock-lbl">Acur&#225;cia</div></div>
   </div>
 </div>
 
 <div class="section">
-  <h2>Cobertura de Audio</h2>
+  <h2>Cobertura de &#193;udio</h2>
   <div id="audio-coverage"></div>
 </div>
 
 <div class="section">
-  <h2>Itens Frageis</h2>
+  <h2>Itens Fr&#225;geis</h2>
   <div class="fragile-grid" id="fragile-grid"></div>
 </div>
 
 <div class="section">
   <h2>Fala</h2>
   <div class="grid" style="grid-template-columns:1fr 1fr">
-    <div class="kpi"><div class="kpi-val blue" id="k-speech">1</div><div class="kpi-lbl">Estagio</div></div>
+    <div class="kpi"><div class="kpi-val blue" id="k-speech">1</div><div class="kpi-lbl">Est&#225;gio</div></div>
     <div class="kpi"><div class="kpi-val green" id="k-fatigue">0</div><div class="kpi-lbl">Fadiga</div></div>
   </div>
 </div>
@@ -5335,8 +5338,8 @@ const STATE_COLORS = {
 };
 const STATE_LABELS = {
   UNKNOWN:'Desconhecido', RECOGNIZED:'Reconhecido', CONTEXT_KNOWN:'Contexto',
-  EFFORTFUL_AUDIO:'Audio Esforco', AUTOMATIC_CLEAN:'Auto Limpo',
-  AUTOMATIC_NATIVE:'Auto Nativo', AVAILABLE_OUTPUT:'Producao'
+  EFFORTFUL_AUDIO:'\u00c1udio Esfor\u00e7o', AUTOMATIC_CLEAN:'Auto Limpo',
+  AUTOMATIC_NATIVE:'Auto Nativo', AVAILABLE_OUTPUT:'Produ\u00e7\u00e3o'
 };
 
 async function loadDashboard() {
@@ -5422,10 +5425,11 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0b;color:#f5
   cursor:pointer;text-decoration:none;color:#fff}
 .back svg{width:18px;height:18px;fill:#fff}
 .header h1{font-size:20px;font-weight:700;color:#f97316}
-.header .count{font-size:13px;color:#888;margin-left:auto}
-.tabs{display:flex;gap:6px;padding:0 20px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.header .count{font-size:13px;color:#9ca3af;margin-left:auto}
+.tabs{display:flex;gap:6px;padding:0 20px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;-ms-overflow-style:none}
+.tabs::-webkit-scrollbar{display:none}
 .tab{padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;
-  cursor:pointer;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:#888;
+  cursor:pointer;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);color:#9ca3af;
   -webkit-tap-highlight-color:transparent;transition:all 0.2s}
 .tab.active{background:rgba(249,115,22,0.12);border-color:rgba(249,115,22,0.2);color:#f97316}
 .tab .badge{display:inline-block;min-width:18px;text-align:center;padding:1px 6px;border-radius:10px;
@@ -5438,12 +5442,12 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#0a0a0b;color:#f5
 .item:active{transform:scale(0.98)}
 .item-main{flex:1;min-width:0}
 .item-chunk{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.item-meta{font-size:12px;color:#888;margin-top:2px}
+.item-meta{font-size:12px;color:#9ca3af;margin-top:2px}
 .item-score{font-size:13px;font-weight:700;color:#f97316;min-width:36px;text-align:right}
 .item-state{font-size:10px;padding:2px 8px;border-radius:6px;font-weight:600;
   background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);text-transform:uppercase}
 .empty{text-align:center;padding:60px 20px;color:#555}
-.empty h2{font-size:18px;margin-bottom:8px;color:#888}
+.empty h2{font-size:18px;margin-bottom:8px;color:#9ca3af}
 .drill-btn{display:block;margin:20px;padding:16px;text-align:center;
   background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font-size:16px;font-weight:700;
   border:none;border-radius:14px;cursor:pointer;text-decoration:none;
