@@ -5725,7 +5725,7 @@ body{
   margin-bottom:4px;
 }
 @keyframes revealGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
-.reveal-sentence{font-size:17px;color:rgba(255,255,255,0.55);text-align:center;max-width:340px;line-height:1.6;font-style:italic}
+.reveal-sentence{font-size:16px;color:rgba(255,255,255,0.75);text-align:center;max-width:90%;line-height:1.6;font-style:italic;padding:0 16px;word-wrap:break-word}
 .reveal-rating{font-size:15px;font-weight:700;padding:8px 20px;border-radius:24px;margin-top:12px;letter-spacing:0.5px}
 .reveal-rating.r1{background:rgba(239,68,68,0.2);color:#ef4444}
 .reveal-rating.r2{background:rgba(249,115,22,0.2);color:#f97316}
@@ -5837,11 +5837,7 @@ body{
         el.textContent = elapsed.toFixed(1) + 's';
         if (elapsed > 1.0) {
           el.classList.add('slow');
-          // Gap 2 fix: auto-trigger recursive explanation the moment latency crosses 1s
-          if (!latencyExplainFired && currentChunk) {
-            latencyExplainFired = true;
-            fireRecursiveExplanation();
-          }
+          // Mark as slow — explanation will fire after rating if Hard/Again
         } else {
           el.classList.remove('slow');
         }
@@ -5855,13 +5851,14 @@ body{
     const word = currentChunk.target_chunk || currentChunk.word;
     if (!word) return;
     const chunkId = currentChunk.chunk_id;
+    const gen = _audioGen;  // capture current generation
     const playExplain = () => {
-      // Guard: don't play if user already moved on
-      if (_audioKilled || !currentChunk || currentChunk.chunk_id !== chunkId) return;
+      // Guard: don't play if user already moved on or audio was killed
+      if (_audioGen !== gen || !currentChunk || currentChunk.chunk_id !== chunkId) return;
       fetch('/api/drill/explain?word=' + encodeURIComponent(word))
         .then(r => r.json())
         .then(exp => {
-          if (_audioKilled || !currentChunk || currentChunk.chunk_id !== chunkId) return;
+          if (_audioGen !== gen || !currentChunk || currentChunk.chunk_id !== chunkId) return;
           if (exp && exp.audio_file) {
             if (explainAudio) { explainAudio.pause(); explainAudio.src = ''; }
             explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
@@ -5895,14 +5892,15 @@ body{
   function playAudioThenStartTimer() {
     killAllAudio();
     _audioKilled = false;
+    const gen = _audioGen;  // capture gen after kill
     if (!currentChunk || !currentChunk.audio_file) {
       startTimer();
       return;
     }
     audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
-    audio.onended = () => { if (!_audioKilled) startTimer(); };
-    audio.onerror = () => { if (!_audioKilled) startTimer(); };
-    audio.play().catch(() => { if (!_audioKilled) startTimer(); });
+    audio.onended = () => { if (_audioGen === gen) startTimer(); };
+    audio.onerror = () => { if (_audioGen === gen) startTimer(); };
+    audio.play().catch(() => { if (_audioGen === gen) startTimer(); });
   }
 
   // ── Text toggle + simple translation ──
@@ -6018,8 +6016,10 @@ body{
   }
 
   let _audioKilled = false;
+  let _audioGen = 0;  // generation counter — increments on each new chunk/kill
   function killAllAudio() {
     _audioKilled = true;
+    _audioGen++;
     if (audio) { audio.pause(); audio.currentTime = 0; audio.onended = null; audio.onerror = null; audio.src = ''; audio = null; }
     if (explainAudio) { explainAudio.pause(); explainAudio.currentTime = 0; explainAudio.onended = null; explainAudio.src = ''; explainAudio = null; }
     // Kill any other playing audio elements on the page
@@ -6107,8 +6107,35 @@ body{
 
     area.innerHTML = html;
     document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
-    // Play audio first — timer starts AFTER audio finishes
-    playAudioThenStartTimer();
+
+    // Wait for image to load before playing audio
+    const drillImg = area.querySelector('.image-card img');
+    if (drillImg && !drillImg.complete) {
+      drillImg.onload = function() { playAudioThenStartTimer(); };
+      drillImg.onerror = function() { playAudioThenStartTimer(); };
+      // Safety timeout in case image hangs
+      setTimeout(function() { if (!audio) playAudioThenStartTimer(); }, 8000);
+    } else if (!imgSrc && data.word) {
+      // No image yet — poll for it in the background while playing audio
+      playAudioThenStartTimer();
+      let imgPolls = 0;
+      const imgPollId = setInterval(function() {
+        imgPolls++;
+        if (imgPolls > 10 || !currentChunk || currentChunk.chunk_id !== cid) {
+          clearInterval(imgPollId); return;
+        }
+        const testImg = new Image();
+        const wordSlug = data.word.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        testImg.onload = function() {
+          clearInterval(imgPollId);
+          const card = document.querySelector('.image-card');
+          if (card) card.innerHTML = '<img src="' + testImg.src + '" alt="">';
+        };
+        testImg.src = '/image/img_' + wordSlug + '.png?t=' + Date.now();
+      }, 2000);
+    } else {
+      playAudioThenStartTimer();
+    }
     // Prefetch next batch while user reviews this one
     setTimeout(prefetchBatch, 500);
   }
@@ -6162,9 +6189,16 @@ body{
     const overlay = document.getElementById('revealOverlay');
     const cid = currentChunk ? currentChunk.chunk_id : null;
     const streak = cid ? (againStreak[cid] || 0) : 0;
-    // Target word in large letters, chunk underneath
-    document.getElementById('revealChunk').textContent = currentChunk.word || currentChunk.target_chunk;
-    document.getElementById('revealSentence').textContent = currentChunk.target_chunk || '';
+    // Target word in large letters, full carrier sentence underneath with word highlighted
+    const revealWord = currentChunk.word || currentChunk.target_chunk;
+    document.getElementById('revealChunk').textContent = revealWord;
+    const sentence = currentChunk.carrier_sentence || currentChunk.target_chunk || '';
+    if (sentence && revealWord) {
+      const re = new RegExp('(' + revealWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      document.getElementById('revealSentence').innerHTML = sentence.replace(re, '<span style="color:#fff;font-weight:600">$1</span>');
+    } else {
+      document.getElementById('revealSentence').textContent = sentence;
+    }
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
     rEl.className = 'reveal-rating r' + ratingVal;
@@ -6174,6 +6208,8 @@ body{
 
     // On Again — replay audio so user hears it while seeing the target
     if (ratingVal === 1 && currentChunk && currentChunk.audio_file) {
+      _audioKilled = false;
+      _audioGen++;  // new generation so old explain callbacks stay dead
       audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
       audio.play().catch(() => {});
     }
@@ -6241,10 +6277,7 @@ body{
       if (latencyOverride) displayName += ' (lento)';
       revealAnswer(finalRating, displayName, lastBioScore);
 
-      // Spec: on Hard/Again, play recursive explanation if not already fired by latency timer
-      if (finalRating <= 2 && !latencyExplainFired && currentChunk.word) {
-        fireRecursiveExplanation();
-      }
+      // Explanation audio disabled — only carrier audio plays to prevent clashes
     })
     .catch(() => { revealAnswer(finalRating, ratingNames[finalRating], lastBioScore); });
   };
