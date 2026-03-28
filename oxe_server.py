@@ -7160,33 +7160,60 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         # ── Add SRS Card (auto-attach chunk + example) ──
         elif path == "/api/add-srs-card":
-            word = body.get("word", "").strip()
-            tag = body.get("tag")
-            if not word:
-                self._json({"error": "palavra obrigatória"}, status=400)
-                return
-            conn = get_conn()
-            # Find or add word in word_bank
-            row = conn.execute("SELECT id FROM word_bank WHERE LOWER(word)=?", (word.lower(),)).fetchone()
-            if row:
-                word_id = row["id"]
-            else:
-                cur = conn.execute(
-                    "INSERT INTO word_bank (word, frequency_rank, difficulty_tier) VALUES (?, 99999, 1)",
-                    (word,)
-                )
-                word_id = cur.lastrowid
-            conn.commit()
-            conn.close()
-            # Auto-link to high-frequency chunk
-            linked = link_word(word_id)
-            # Get chunk info
-            chunks = get_word_chunks(word_id)
-            self._json({
-                "ok": True, "word_id": word_id, "word": word,
-                "chunks_linked": linked,
-                "chunks": [{"chunk": c.get("target_chunk") or c.get("root_form"), "carrier": c.get("carrier_sentence")} for c in chunks],
-            })
+            try:
+                word = body.get("word", "").strip()
+                tag = body.get("tag")
+                if not word:
+                    self._json({"error": "palavra obrigatória"}, status=400)
+                    return
+                conn = get_conn()
+                # Find or add word in word_bank
+                row = conn.execute("SELECT id FROM word_bank WHERE LOWER(word)=?", (word.lower(),)).fetchone()
+                if row:
+                    word_id = row["id"]
+                else:
+                    from fsrs import Card as _Card
+                    _c = _Card()
+                    _srs = json.dumps({
+                        "due": "2000-01-01T00:00:00+00:00", "stability": _c.stability,
+                        "difficulty": _c.difficulty, "elapsed_days": 0, "scheduled_days": 0,
+                        "reps": 0, "lapses": 0, "state": 0, "last_review": None
+                    })
+                    cur = conn.execute(
+                        "INSERT INTO word_bank (word, frequency_rank, difficulty_tier, srs_state) VALUES (?, 99999, 1, ?)",
+                        (word, _srs)
+                    )
+                    word_id = cur.lastrowid
+                conn.commit()
+                conn.close()
+                # Auto-generate a carrier sentence and add chunk if none exists
+                chunk_conn = get_conn()
+                existing_chunk = chunk_conn.execute(
+                    "SELECT id FROM chunk_queue WHERE word_id=?", (word_id,)
+                ).fetchone()
+                chunk_conn.close()
+                if not existing_chunk:
+                    carrier = build_carrier(word)
+                    add_chunk(word_id, word, carrier, 'manual')
+                # Auto-link to high-frequency chunk families
+                linked = 0
+                try:
+                    linked = link_word(word_id)
+                except Exception:
+                    pass
+                # Get chunk info
+                chunks = []
+                try:
+                    chunks = get_word_chunks(word_id)
+                except Exception:
+                    pass
+                self._json({
+                    "ok": True, "word_id": word_id, "word": word,
+                    "chunks_linked": linked,
+                    "chunks": [{"chunk": c.get("target_chunk") or c.get("root_form"), "carrier": c.get("carrier_sentence")} for c in chunks],
+                })
+            except Exception as e:
+                self._json({"error": str(e)}, status=500)
 
         # ── Shadow Session Log ──
         elif path == "/api/shadow-session-log":
