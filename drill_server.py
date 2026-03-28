@@ -269,12 +269,18 @@ def _bg_generate_image(word, carrier_sentence=None):
 
 
 def generate_image(word, carrier_sentence=None):
-    """Return cached image, generating synchronously if needed. Each chunk gets a unique image."""
+    """Return cached image or kick off background generation. Non-blocking."""
     cached = get_cached_image(word, carrier_sentence)
     if cached:
         return cached
-    _bg_generate_image(word, carrier_sentence)
-    return get_cached_image(word, carrier_sentence)
+    # Fire background generation — don't block the response
+    key = f"{word}_{carrier_sentence[:20] if carrier_sentence else ''}"
+    with _image_lock:
+        if key not in _image_pending:
+            _image_pending.add(key)
+            t = threading.Thread(target=_bg_generate_image, args=(word, carrier_sentence), daemon=True)
+            t.start()
+    return None
 
 
 def prefetch_images(words, carriers=None):
@@ -919,13 +925,35 @@ async function fetchBlockInfo() {
   }
 }
 
+// ── Prefetch queue for fast chunk transitions ──────────────
+let _prefetchQueue = [];
+let _prefetching = false;
+
+function prefetchBatch() {
+  if (_prefetching) return;
+  _prefetching = true;
+  // Warm up next 5 chunks (audio + image gen in background)
+  fetch('/api/drill/prefetch?limit=5').catch(()=>{}).finally(()=>{});
+  // Also prefetch the actual next drill item
+  fetch('/api/drill/next')
+    .then(r => r.json())
+    .then(data => { if (data && !data.error) _prefetchQueue.push(data); })
+    .catch(() => {})
+    .finally(() => { _prefetching = false; });
+}
+
 // ── Fetch next chunk ──────────────────────────────────────
 async function fetchNext() {
+  // Use prefetched data if available (instant transition)
+  if (_prefetchQueue.length > 0) {
+    const data = _prefetchQueue.shift();
+    applyChunkData(data);
+    return;
+  }
   showLoading();
   try {
     const res = await fetch('/api/drill/next');
     const data = await res.json();
-
     if (data.error) {
       $('pass-label').textContent = '';
       $('pass-instruction').textContent = 'Todas revisadas. Descansa, parceiro.';
@@ -933,32 +961,32 @@ async function fetchNext() {
       $('mode-banner').classList.add('hidden');
       return;
     }
+    applyChunkData(data);
+  } catch (e) {
+    $('pass-instruction').textContent = 'Erro: ' + e.message;
+    setTimeout(fetchNext, 3000);
+  }
+}
 
+function applyChunkData(data) {
     currentChunk = data;
     currentPass = data.current_pass || 1;
     masteryReps = 0;
     retries = 0;
-    drillStartTime = null;  // Timer starts AFTER audio finishes
-    textPanelLoaded = false;  // Reset text toggle for new chunk
+    drillStartTime = null;
+    textPanelLoaded = false;
     const tp = $('simplePanel'); if (tp) tp.style.display = 'none';
     const tb = $('textToggleBtn'); if (tb) tb.textContent = 'Mostrar texto';
     previousState = data.current_state || null;
 
-    // Apply mode config from the chunk response or existing block config
     if (data.mode_config) {
       modeConfig = data.mode_config;
     }
-
-    // Update mode banner
     applyModeUI();
-
-    // Show fragile tags
     showFragileTags(data.fragility_types || []);
-
     $('tier-label').textContent = data.tier_label || ('Tier ' + data.tier);
     $('due-label').textContent = (data.due_count || 0) + ' pendentes';
 
-    // Image: respect mode config show_image flag
     const img = $('drill-image');
     const showImage = !modeConfig || modeConfig.show_image !== false;
     if (data.image_file && showImage) {
@@ -967,12 +995,9 @@ async function fetchNext() {
     } else {
       img.classList.remove('visible');
     }
-
     enterPass(currentPass);
-  } catch (e) {
-    $('pass-instruction').textContent = 'Erro: ' + e.message;
-    setTimeout(fetchNext, 3000);
-  }
+    // Prefetch next batch while user works on this chunk
+    setTimeout(prefetchBatch, 500);
 }
 
 // ── Mode UI Helpers ───────────────────────────────────────

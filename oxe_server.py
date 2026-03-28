@@ -6043,6 +6043,8 @@ body{
     document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
     // Play audio first — timer starts AFTER audio finishes
     playAudioThenStartTimer();
+    // Prefetch next batch while user reviews this one
+    setTimeout(prefetchBatch, 500);
   }
 
   function renderEmpty() {
@@ -6053,7 +6055,35 @@ body{
     document.getElementById('dueFooter').textContent = '';
   }
 
+  let prefetchQueue = [];
+  let prefetching = false;
+
+  function prefetchBatch() {
+    if (prefetching) return;
+    prefetching = true;
+    fetch('/api/drill/prefetch?limit=5')
+      .then(r => r.json())
+      .then(data => {
+        // Kick off background asset generation for upcoming chunks
+        if (data && data.items) {
+          // These are now warming up in the background on the server
+        }
+      })
+      .catch(() => {})
+      .finally(() => { prefetching = false; });
+    // Also prefetch the actual next drill item
+    fetch('/api/drill/next')
+      .then(r => { if (r.status === 404) return null; return r.json(); })
+      .then(data => { if (data && !data.error) prefetchQueue.push(data); })
+      .catch(() => {});
+  }
+
   function fetchNext() {
+    if (prefetchQueue.length > 0) {
+      const data = prefetchQueue.shift();
+      renderDrill(data);
+      return;
+    }
     document.getElementById('drillArea').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     fetch('/api/drill/next')
       .then(r => { if (r.status === 404) { renderEmpty(); return null; } return r.json(); })
@@ -6685,6 +6715,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._html(DRIVING_HTML.replace("{tab_bar}", TAB_BAR_HTML("treinar")))
         elif path == "/api/drill/next":
             self._drill_next_chunk()
+        elif path == "/api/drill/prefetch":
+            # Return next N chunks without generating images/audio (fast)
+            limit = int(query.get("limit", ["5"])[0])
+            self._drill_prefetch(limit)
         elif path.startswith("/api/drill/explain"):
             word = query.get("word", [""])[0]
             if word:
@@ -8144,10 +8178,28 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             print(f"[IMAGE] Error generating image for '{chunk['word']}': {e}")
 
-        due_count = len(get_due_chunks())
+        # Fast due count via COUNT(*) instead of fetching all rows
+        due_count = 0
+        try:
+            max_tier = get_unlocked_tier()
+            now = datetime.now(timezone.utc).isoformat()
+            dc_conn = get_conn()
+            due_count = dc_conn.execute(
+                """SELECT COUNT(*) as c FROM chunk_queue cq
+                   JOIN word_bank wb ON cq.word_id = wb.id
+                   WHERE wb.difficulty_tier <= ?
+                     AND json_extract(cq.srs_state, '$.due') <= ?""",
+                (max_tier, now)
+            ).fetchone()["c"]
+            dc_conn.close()
+        except Exception:
+            pass
 
-        # Query fragility info for this chunk
+        # Query fragility + state + mode in a single try block for speed
         fragility_types = []
+        chunk_state = None
+        mode = "audio_meaning_recognition"
+        mode_config = {}
         try:
             frag_conn = get_conn()
             frag_rows = frag_conn.execute(
@@ -8157,21 +8209,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             ).fetchall()
             frag_conn.close()
             fragility_types = [r["fragility_type"] for r in frag_rows]
-        except Exception:
-            pass
-
-        # Get current acquisition state for the chunk
-        chunk_state = None
-        try:
             cs = get_or_create_state('chunk', chunk["id"])
             chunk_state = cs.get("state", "UNKNOWN")
-        except Exception:
-            pass
-
-        # Select training mode based on item state + fragility
-        mode = "audio_meaning_recognition"
-        mode_config = {}
-        try:
             mode = select_mode_for_item('chunk', chunk["id"])
             mode_config = get_drill_config(mode)
         except Exception:
@@ -8193,6 +8232,63 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "mode": mode,
             "mode_config": mode_config,
         })
+
+    def _drill_prefetch(self, limit=5):
+        """Return next N due chunks with cached assets only — no generation. Fast."""
+        max_tier = get_unlocked_tier()
+        now = datetime.now(timezone.utc).isoformat()
+        conn = get_conn()
+        rows = conn.execute(
+            """SELECT cq.*, wb.word, wb.frequency_rank, wb.difficulty_tier
+               FROM chunk_queue cq
+               JOIN word_bank wb ON cq.word_id = wb.id
+               WHERE wb.difficulty_tier <= ?
+                 AND json_extract(cq.srs_state, '$.due') <= ?
+               ORDER BY json_extract(cq.srs_state, '$.due') ASC
+               LIMIT ?""",
+            (max_tier, now, limit),
+        ).fetchall()
+        conn.close()
+        items = []
+        for chunk in rows:
+            # Only use cached assets — no generation
+            cached_audio = None
+            try:
+                from pathlib import Path as P
+                carrier = chunk["carrier_sentence"]
+                safe_w = "".join(c if c.isalnum() else "_" for c in carrier.lower())[:40]
+                for f in (AUDIO_DIR).iterdir():
+                    if f.suffix == '.mp3' and chunk["word"] in f.stem:
+                        cached_audio = f.name
+                        break
+            except Exception:
+                pass
+            cached_image = None
+            try:
+                cached_image = get_cached_image(chunk["word"], chunk["carrier_sentence"])
+            except Exception:
+                pass
+            # Kick off background generation for images
+            try:
+                generate_image(chunk["word"], chunk["carrier_sentence"])
+            except Exception:
+                pass
+            try:
+                generate_tts(chunk["carrier_sentence"])
+            except Exception:
+                pass
+            items.append({
+                "chunk_id": chunk["id"],
+                "word": chunk["word"],
+                "word_id": chunk["word_id"],
+                "target_chunk": chunk["target_chunk"],
+                "carrier_sentence": chunk["carrier_sentence"],
+                "current_pass": chunk["current_pass"],
+                "audio_file": cached_audio,
+                "image_file": cached_image,
+                "tier": chunk["difficulty_tier"],
+            })
+        self._json({"items": items, "count": len(items)})
 
     def _drill_advance_pass(self, body):
         chunk_id = body.get("chunk_id")
