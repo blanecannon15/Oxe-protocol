@@ -36,7 +36,7 @@ QUESTIONS_PER_STORY = 5
 LEVELS = {
     "P1": {
         "label": "Primeiro Passo",
-        "description": "Top 50 words — very simple, repetitive",
+        "description": "50 palavras mais comuns — bem simples, repetitivo",
         "tiers": [1],
         "known_pct": 1.00,
         "stretch_tiers": [],
@@ -47,7 +47,7 @@ LEVELS = {
     },
     "P2": {
         "label": "Primeiras Palavras",
-        "description": "Top 100 words — basic daily situations",
+        "description": "100 palavras mais comuns — situações básicas do dia a dia",
         "tiers": [1],
         "known_pct": 1.00,
         "stretch_tiers": [],
@@ -58,7 +58,7 @@ LEVELS = {
     },
     "P3": {
         "label": "Começando",
-        "description": "Top 300 words — simple stories with context",
+        "description": "300 palavras mais comuns — histórias simples com contexto",
         "tiers": [1],
         "known_pct": 1.00,
         "stretch_tiers": [],
@@ -69,7 +69,7 @@ LEVELS = {
     },
     "A1": {
         "label": "Tudo Tranquilo",
-        "description": "100% Tier 1 — simple daily life",
+        "description": "100% Nível 1 — vida cotidiana simples",
         "tiers": [1],
         "known_pct": 1.00,
         "stretch_tiers": [],
@@ -79,7 +79,7 @@ LEVELS = {
     },
     "A2": {
         "label": "Quase Lá",
-        "description": "95% Tiers 1-2, 5% Tier 3",
+        "description": "95% Níveis 1-2, 5% Nível 3",
         "tiers": [1, 2],
         "known_pct": 0.95,
         "stretch_tiers": [3],
@@ -89,7 +89,7 @@ LEVELS = {
     },
     "B1": {
         "label": "No Pique",
-        "description": "85% Tiers 1-3, 15% Tier 4",
+        "description": "85% Níveis 1-3, 15% Nível 4",
         "tiers": [1, 2, 3],
         "known_pct": 0.85,
         "stretch_tiers": [4],
@@ -99,7 +99,7 @@ LEVELS = {
     },
     "B2": {
         "label": "Desenrolado",
-        "description": "75% Tiers 1-4, 25% Tier 5",
+        "description": "75% Níveis 1-4, 25% Nível 5",
         "tiers": [1, 2, 3, 4],
         "known_pct": 0.75,
         "stretch_tiers": [5],
@@ -109,7 +109,7 @@ LEVELS = {
     },
     "C1": {
         "label": "Quase Nativo",
-        "description": "60% Tiers 1-5, 40% Tier 6",
+        "description": "60% Níveis 1-5, 40% Nível 6",
         "tiers": [1, 2, 3, 4, 5],
         "known_pct": 0.60,
         "stretch_tiers": [6],
@@ -119,7 +119,7 @@ LEVELS = {
     },
     "C2": {
         "label": "Soteropolitano",
-        "description": "50% known + 50% any tier — full dialect",
+        "description": "50% conhecido + 50% qualquer nível — dialeto completo",
         "tiers": [1, 2, 3, 4, 5, 6],
         "known_pct": 0.50,
         "stretch_tiers": [],
@@ -129,7 +129,7 @@ LEVELS = {
     },
     "A3": {
         "label": "Entendendo",
-        "description": "90% Tiers 1-3 — moderate Baiano, some contractions",
+        "description": "90% Níveis 1-3 — baiano moderado, algumas contrações",
         "tiers": [1, 2, 3],
         "known_pct": 0.90,
         "stretch_tiers": [4],
@@ -140,7 +140,7 @@ LEVELS = {
     },
     "A4": {
         "label": "Fluindo",
-        "description": "88% Tiers 1-4 — natural Baiano, connected speech",
+        "description": "88% Níveis 1-4 — baiano natural, fala conectada",
         "tiers": [1, 2, 3, 4],
         "known_pct": 0.88,
         "stretch_tiers": [5],
@@ -151,7 +151,7 @@ LEVELS = {
     },
     "NATIVE_CLEAR": {
         "label": "Nativo Claro",
-        "description": "80% Tiers 1-5 — full Baiano but clear articulation",
+        "description": "80% Níveis 1-5 — baiano completo, articulação clara",
         "tiers": [1, 2, 3, 4, 5],
         "known_pct": 0.80,
         "stretch_tiers": [6],
@@ -162,7 +162,7 @@ LEVELS = {
     },
     "NATIVE_CASUAL": {
         "label": "Nativo Casual",
-        "description": "70% all tiers — casual speech, gírias, elisions",
+        "description": "70% todos os níveis — fala casual, gírias, elisões",
         "tiers": [1, 2, 3, 4, 5, 6],
         "known_pct": 0.70,
         "stretch_tiers": [],
@@ -173,7 +173,7 @@ LEVELS = {
     },
     "NATIVE_CHAOTIC": {
         "label": "Nativo Caótico",
-        "description": "50% all tiers — fast overlapping speech, heavy slang, real street Baiano",
+        "description": "50% todos os níveis — fala rápida, gíria pesada, baiano de rua",
         "tiers": [1, 2, 3, 4, 5, 6],
         "known_pct": 0.50,
         "stretch_tiers": [],
@@ -185,12 +185,12 @@ LEVELS = {
 }
 
 THEMES = [
-    ("vida_de_rua", "Street life — bus, praia, walking through Salvador"),
-    ("comida", "Food — acarajé, moqueca, vatapá, cooking with mainha"),
-    ("festas", "Festivals — Carnaval, Lavagem do Bonfim, Yemanjá, São João"),
-    ("trabalho", "Work — hustling, small business, market, day jobs"),
-    ("familia", "Family — mainha, painho, vizinha, comadre, home life"),
-    ("rolo", "Drama — romantic, neighborhood gossip, small conflicts"),
+    ("vida_de_rua", "Vida de rua — ônibus, praia, caminhando por Salvador"),
+    ("comida", "Comida — acarajé, moqueca, vatapá, cozinhando com mainha"),
+    ("festas", "Festas — Carnaval, Lavagem do Bonfim, Yemanjá, São João"),
+    ("trabalho", "Trabalho — correria, negócio pequeno, feira, bicos"),
+    ("familia", "Família — mainha, painho, vizinha, comadre, vida em casa"),
+    ("rolo", "Rolo — romance, fofoca do bairro, confusões pequenas"),
 ]
 
 SETTINGS = [
