@@ -473,7 +473,7 @@ class OxeTUI(App):
 
         # Record review
         card, new_mastery, downgraded = record_review(word_id, rating, latency_ms)
-        rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
+        rating_name = {1: "De novo", 2: "Difícil", 3: "Bom", 4: "Fácil"}[rating.value]
 
         # Update latency display
         lat = self.query_one("#latency-panel", LatencyMeter)

@@ -1208,7 +1208,7 @@ async function completeDrill() {
 function playAudio() {
   if (!currentChunk || !currentChunk.audio_file) {
     console.warn('[OXE] No audio_file — TTS may have failed');
-    $('pass-instruction').textContent = 'Sem áudio — verifique ElevenLabs API key';
+    $('pass-instruction').textContent = 'Sem áudio — verifique a chave da ElevenLabs';
     return;
   }
   const audioType = modeConfig ? modeConfig.audio_type : 'clean';
@@ -1661,7 +1661,7 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
 
             fname = generate_tts(sentence)
             if not fname:
-                self._json({"error": "TTS failed"})
+                self._json({"error": "Falha ao gerar áudio"})
                 return
 
             tier = get_unlocked_tier()
@@ -1683,13 +1683,13 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
 
         word = get_next_word()
         if not word:
-            self._json({"error": "no_words_due"})
+            self._json({"error": "nenhuma_palavra_pendente"})
             return
 
         carrier = build_carrier(word["word"])
         fname = generate_tts(carrier)
         if not fname:
-            self._json({"error": "TTS failed"})
+            self._json({"error": "Falha ao gerar áudio"})
             return
 
         img_fname = generate_image(word["word"])
@@ -1740,7 +1740,7 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
             penalty_active = True
 
         card, new_mastery, downgraded = record_review(word_id, rating, latency_ms)
-        rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
+        rating_name = {1: "De novo", 2: "Difícil", 3: "Bom", 4: "Fácil"}[rating.value]
 
         # Log
         log_drill(word_id, str(word_id), rating.value, latency_ms)

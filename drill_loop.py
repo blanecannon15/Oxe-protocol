@@ -413,8 +413,8 @@ def run_shadowing_mode(count=10):
         latency_ms = measure_response()
         rating = determine_rating(latency_ms)
         _, _, downgraded = record_review(row["id"], rating, latency_ms)
-        rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
-        extra = " (downgraded)" if downgraded else ""
+        rating_name = {1: "De novo", 2: "Difícil", 3: "Bom", 4: "Fácil"}[rating.value]
+        extra = " (rebaixado)" if downgraded else ""
         print(f"    → {latency_ms}ms — {rating_name}{extra}")
 
     print(f"\n  ✓ Shadowing session complete ({count} words).\n")
@@ -460,7 +460,7 @@ def run_one_cycle():
             rating = Rating.Hard
         print(f"\n  🍊 Laranjada penalty active ({_laranjada_penalty_remaining} remaining)")
 
-    rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
+    rating_name = {1: "De novo", 2: "Difícil", 3: "Bom", 4: "Fácil"}[rating.value]
 
     print(f"\n  ⏱  Latency: {latency_ms}ms")
     print(f"  📊 Rating:  {rating_name}")

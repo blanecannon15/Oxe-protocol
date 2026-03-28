@@ -391,14 +391,14 @@ def get_listening_drill(chunk_id, db_path=DB_PATH):
     """
     chunk = get_chunk_by_id(chunk_id, db_path)
     if not chunk:
-        return {"error": "Chunk not found"}
+        return {"error": "Chunk não encontrado"}
 
     text = chunk.get("carrier_sentence") or chunk.get("chunk_text", "")
     chunk_text = chunk.get("chunk_text", "")
     carrier = chunk.get("carrier_sentence", "")
 
     if not text:
-        return {"error": "No text for chunk"}
+        return {"error": "Sem texto para o chunk"}
 
     # Generate / retrieve all layer audios
     audios = get_layer_audios(text, chunk_id=chunk_id, db_path=db_path)

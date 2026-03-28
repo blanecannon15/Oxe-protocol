@@ -6626,7 +6626,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 explanation, audio_fname = generate_explanation(word)
                 self._json({"explanation": explanation, "audio_file": audio_fname})
             else:
-                self._json({"error": "word required"}, status=400)
+                self._json({"error": "palavra obrigatória"}, status=400)
 
         # ── Shadowing (5-pass cycle from drill_server.py) ──
         elif path == "/shadowing":
@@ -6951,7 +6951,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 resolve_fragility(item_type, item_id, ftype)
                 self._json({"resolved": True})
             else:
-                self._json({"error": "item_id and fragility_type required"}, status=400)
+                self._json({"error": "item_id e fragility_type obrigatórios"}, status=400)
         elif path == "/api/plan/block/complete":
             block_id = body.get("block_id", 0)
             actual = body.get("actual_data", {})
@@ -7023,7 +7023,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 update_voice_profile(accent, **fields)
                 self._json({"ok": True})
             else:
-                self._json({"error": "accent required"}, status=400)
+                self._json({"error": "sotaque obrigatório"}, status=400)
         elif path == "/api/voice/set-activity-accent":
             activity = body.get("activity")
             accent = body.get("accent")  # None resets to default
@@ -7031,7 +7031,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 ok = set_activity_accent(activity, accent)
                 self._json({"ok": ok, "activity": activity, "accent": accent})
             else:
-                self._json({"error": "activity required"}, status=400)
+                self._json({"error": "atividade obrigatória"}, status=400)
 
         # ── Audio Audit POST ──
         elif path == "/api/audio/scan":
@@ -7053,7 +7053,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 n = link_word(word_id)
                 self._json({"linked": n})
             else:
-                self._json({"error": "word_id required"}, status=400)
+                self._json({"error": "word_id obrigatório"}, status=400)
         elif path == "/api/word-chunk/bulk-link":
             limit = body.get("limit", 100)
             n = bulk_link_unlinked(limit)
@@ -7072,7 +7072,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/clock/end":
             sid = body.get("session_id")
             if not sid:
-                self._json({"error": "session_id required"}, status=400)
+                self._json({"error": "session_id obrigatório"}, status=400)
             else:
                 clock_end_session(
                     sid,
@@ -7384,7 +7384,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             latency_ms = r.get("latency_ms")
             biometric = r.get("biometric_score")
             if not chunk_id:
-                results.append({"chunk_id": chunk_id, "ok": False, "error": "missing chunk_id"})
+                results.append({"chunk_id": chunk_id, "ok": False, "error": "chunk_id ausente"})
                 continue
             try:
                 rating_map = {1: Rating.Again, 2: Rating.Hard, 3: Rating.Good, 4: Rating.Easy}
@@ -7408,7 +7408,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     def _podcast_get(self, podcast_id):
         data = get_podcast(podcast_id)
         if data is None:
-            self._json({"error": "not found"}, status=404)
+            self._json({"error": "não encontrado"}, status=404)
             return
         self._json(data)
 
@@ -8209,7 +8209,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
             word = get_next_word()
         if not word:
-            self._json({"error": "no_words_due"})
+            self._json({"error": "nenhuma_palavra_pendente"})
             return
 
         carrier = build_carrier(word["word"])
@@ -8294,7 +8294,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             penalty_active = True
 
         card, new_mastery, downgraded = record_review(word_id, rating, latency_ms)
-        rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
+        rating_name = {1: "De novo", 2: "Difícil", 3: "Bom", 4: "Fácil"}[rating.value]
         log_drill(word_id, str(word_id), rating.value, latency_ms)
 
         tier = get_unlocked_tier()
@@ -8384,7 +8384,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             correct = False
 
         card, new_mastery, downgraded = record_review(word_id, rating, None)
-        rating_name = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}[rating.value]
+        rating_name = {1: "De novo", 2: "Difícil", 3: "Bom", 4: "Fácil"}[rating.value]
         log_drill(word_id, expected, rating.value, 0, drill_type="cloze")
 
         self._json({
@@ -8438,7 +8438,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         native_audio_name = fields.get("native_audio", "")
 
         if not audio_field or not isinstance(audio_field, dict):
-            self._json({"error": "No audio uploaded", "score": 0})
+            self._json({"error": "Nenhum áudio enviado", "score": 0})
             return
 
         # Save uploaded audio
@@ -8451,7 +8451,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         native_path = AUDIO_DIR / native_audio_name
         if not native_path.exists():
-            self._json({"error": "Native audio not found", "score": 0})
+            self._json({"error": "Áudio nativo não encontrado", "score": 0})
             return
 
         try:
@@ -8473,7 +8473,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         native_audio_name = fields.get("native_audio", "")
 
         if not audio_field or not isinstance(audio_field, dict):
-            self._json({"error": "No audio uploaded", "score": 0})
+            self._json({"error": "Nenhum áudio enviado", "score": 0})
             return
 
         ts = int(time.time() * 1000)
@@ -8484,7 +8484,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         native_path = AUDIO_DIR / native_audio_name
         if not native_path.exists():
-            self._json({"error": "Native audio not found", "score": 0})
+            self._json({"error": "Áudio nativo não encontrado", "score": 0})
             return
 
         try:
@@ -9152,7 +9152,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         ).fetchone()
         conn.close()
         if not row:
-            self._json({"error": "not found"})
+            self._json({"error": "não encontrado"})
             return
         audio_chunks = json.loads(row["audio_chunks"]) if row["audio_chunks"] else {}
         self._json({
@@ -9167,7 +9167,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     def _story_generate(self, body):
         level = body.get("level", "A1")
         if level not in LEVELS:
-            self._json({"error": f"Unknown level: {level}"})
+            self._json({"error": f"Nível desconhecido: {level}"})
             return
         init_story_db()
         story_id = generate_story(level)
@@ -9179,14 +9179,14 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 pass
             self._json({"id": story_id})
         else:
-            self._json({"error": "Generation failed"})
+            self._json({"error": "Falha ao gerar história"})
 
     def _story_gen_audio(self, story_id):
         audio = generate_story_audio(story_id)
         if audio:
             self._json({"audio": audio})
         else:
-            self._json({"error": "Audio generation failed"})
+            self._json({"error": "Falha ao gerar áudio"})
 
     def _story_record_play(self, story_id):
         conn = get_conn()
@@ -9307,7 +9307,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         voice_name = body.get("voice_name", "")
         voice_id = body.get("voice_id", "")
         if not voice_name or not voice_id:
-            self._json({"error": "voice_name and voice_id required"}, status=400)
+            self._json({"error": "voice_name e voice_id obrigatórios"}, status=400)
             return
         row_id = register_clone(voice_name, voice_id)
         self._json({"ok": True, "id": row_id})
@@ -9324,7 +9324,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         if native_path and not Path(native_path).is_absolute():
             native_path = str(AUDIO_DIR / native_path)
         if not native_path:
-            self._json({"golden_audio": None, "error": "no native audio for word"})
+            self._json({"golden_audio": None, "error": "sem áudio nativo para esta palavra"})
             return
         filename = get_or_generate_golden(word_id, native_path)
         self._json({"golden_audio": filename})

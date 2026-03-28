@@ -1289,7 +1289,7 @@ class StoryHandler(http.server.BaseHTTPRequestHandler):
         conn.close()
 
         if not row:
-            self._json({"error": "not found"})
+            self._json({"error": "não encontrado"})
             return
 
         audio_chunks = json.loads(row["audio_chunks"]) if row["audio_chunks"] else {}
@@ -1310,12 +1310,12 @@ class StoryHandler(http.server.BaseHTTPRequestHandler):
     def _generate(self, body):
         level = body.get("level", "A1")
         if level not in LEVELS:
-            self._json({"error": f"Unknown level: {level}"})
+            self._json({"error": f"Nível desconhecido: {level}"})
             return
 
         story_id = generate_story(level)
         if not story_id:
-            self._json({"error": "Generation failed"})
+            self._json({"error": "Falha ao gerar história"})
             return
 
         audio = generate_story_audio(story_id)
@@ -1326,7 +1326,7 @@ class StoryHandler(http.server.BaseHTTPRequestHandler):
         if audio:
             self._json({"audio": audio})
         else:
-            self._json({"error": "Audio generation failed"})
+            self._json({"error": "Falha ao gerar áudio"})
 
     def _record_play(self, story_id):
         conn = get_conn()
