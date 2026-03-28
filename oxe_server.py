@@ -2801,6 +2801,11 @@ function _cacheSet(key, data) {
   if (keys.length > 100) delete _searchCache[keys[0]];
 }
 
+function _isEnglish(text) {
+  // If the text has no Portuguese-specific chars and all ASCII, likely English
+  return /^[a-zA-Z\s'-]+$/.test(text) && !/[àáâãçéêíóôõúü]/i.test(text);
+}
+
 async function fetchSearch(q) {
   try {
     var cacheKey = 'w:' + q;
@@ -2808,14 +2813,34 @@ async function fetchSearch(q) {
     var data;
     if (cached) { data = cached; }
     else {
+      // Try Portuguese search first
       const res = await fetch('/api/search?q=' + encodeURIComponent(q));
       data = await res.json();
+      // If no results and looks English, try English→PT translation
+      if ((!data.results || data.results.length === 0) && _isEnglish(q) && q.length >= 3) {
+        const enRes = await fetch('/api/search/en?q=' + encodeURIComponent(q));
+        const enData = await enRes.json();
+        if (enData.translation && enData.results && enData.results.length > 0) {
+          // Show translation header + results
+          data.results = enData.results.map(r => ({
+            word_id: r.id, word: r.word, difficulty_tier: r.tier, frequency_rank: r.rank
+          }));
+          data._en_translation = enData.translation;
+          data._en_query = q;
+        }
+      }
       _cacheSet(cacheKey, data);
     }
     if (!data.results || data.results.length === 0) {
       acBox.innerHTML = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
     } else {
-      acBox.innerHTML = data.results.map(r => {
+      // Show translation banner if it came from English search
+      var banner = '';
+      if (data._en_translation) {
+        banner = '<div style="padding:8px 12px;background:rgba(94,106,210,0.15);color:#5E6AD2;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.06)">' +
+          '🇺🇸 ' + data._en_query + ' → 🇧🇷 <strong>' + data._en_translation + '</strong></div>';
+      }
+      acBox.innerHTML = banner + data.results.map(r => {
         var esc = r.word.replace(/'/g, "\\'");
         if (r.is_live_lookup) {
           return '<div class="ac-item" onclick="selectWord(-1,\'' + esc + '\',0,0)">' +
@@ -6651,6 +6676,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/search/live":
             q = query.get("q", [""])[0]
             self._dict_live_lookup(q)
+        elif path == "/api/search/en":
+            q = query.get("q", [""])[0]
+            self._dict_search_english(q)
         elif path == "/api/search/history":
             self._dict_history()
         elif path == "/api/search/chunks":
@@ -7115,6 +7143,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             chunks = get_next_chunks_for_srs(limit)
             added = add_chunks_to_queue(chunks)
             self._json({"seeded": added})
+
+        # ── Dictionary Cache Bulk Upload ──
+        elif path == "/api/cache/bulk":
+            self._cache_bulk_upload(body)
+            return
 
         # ── Speech Ladder POST ──
         elif path == "/api/speech/advance":
@@ -7912,6 +7945,54 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
     # ── Dictionary Endpoints ──────────────────────────────
 
+    def _dict_search_english(self, q):
+        """Translate English word to highest-frequency Brazilian Portuguese equivalent."""
+        if not q or not q.strip():
+            self._json({"results": [], "query": ""})
+            return
+        q = q.strip().lower()
+        try:
+            import openai
+            client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{
+                    "role": "system",
+                    "content": "You are a Portuguese translator. Given an English word, return ONLY the single most common Brazilian Portuguese equivalent. Just the word, nothing else. No explanation, no alternatives, no punctuation."
+                }, {
+                    "role": "user",
+                    "content": q
+                }],
+                max_tokens=20,
+                temperature=0,
+            )
+            pt_word = resp.choices[0].message.content.strip().lower()
+            # Search word_bank for the Portuguese word
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT id, word, frequency_rank, difficulty_tier FROM word_bank WHERE LOWER(word) = ?",
+                (pt_word,)
+            ).fetchone()
+            if not row:
+                # Try partial match
+                rows = conn.execute(
+                    "SELECT id, word, frequency_rank, difficulty_tier FROM word_bank WHERE LOWER(word) LIKE ? ORDER BY frequency_rank LIMIT 5",
+                    (f"%{pt_word}%",)
+                ).fetchall()
+                conn.close()
+                results = [{"id": r["id"], "word": r["word"], "rank": r["frequency_rank"], "tier": r["difficulty_tier"]} for r in rows]
+                self._json({"query": q, "translation": pt_word, "results": results, "exact": False})
+            else:
+                conn.close()
+                self._json({
+                    "query": q,
+                    "translation": pt_word,
+                    "results": [{"id": row["id"], "word": row["word"], "rank": row["frequency_rank"], "tier": row["difficulty_tier"]}],
+                    "exact": True
+                })
+        except Exception as e:
+            self._json({"error": str(e), "query": q}, status=500)
+
     def _dict_search(self, q):
         if not q:
             self._json({"results": [], "query": ""})
@@ -8044,6 +8125,36 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json(data)
         except Exception as e:
             self._json({"error": str(e)}, status=500)
+
+    def _cache_bulk_upload(self, body):
+        """Accept bulk dictionary cache data and insert into local DB."""
+        rows = body.get("rows", [])
+        if not rows:
+            self._json({"error": "No rows provided"}, status=400)
+            return
+        import sqlite3 as _sq
+        conn = _sq.connect(DB_PATH)
+        conn.execute("""CREATE TABLE IF NOT EXISTS dictionary_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_id INTEGER NOT NULL,
+            tab_name TEXT NOT NULL,
+            data_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(word_id, tab_name)
+        )""")
+        inserted = 0
+        for r in rows:
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO dictionary_cache (word_id, tab_name, data_json) VALUES (?, ?, ?)",
+                    (r["word_id"], r["tab_name"], r["data_json"]),
+                )
+                inserted += 1
+            except Exception:
+                pass
+        conn.commit()
+        conn.close()
+        self._json({"inserted": inserted, "total": len(rows)})
 
     def _dict_add_to_srs(self, body):
         word_id = body.get("word_id")
@@ -9671,7 +9782,13 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
     def _read_body(self):
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length)
-        return json.loads(raw) if raw else {}
+        if not raw:
+            return {}
+        # Handle gzip-compressed requests
+        encoding = self.headers.get("Content-Encoding", "")
+        if "gzip" in encoding:
+            raw = gzip.decompress(raw)
+        return json.loads(raw)
 
     def log_message(self, format, *args):
         if args and str(args[0]).startswith(("4", "5")):
