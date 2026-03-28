@@ -9813,8 +9813,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         '<link rel="apple-touch-icon" href="/pwa/icon-192.png">'
     )
     _PWA_SCRIPT = (
-        "<script>if('serviceWorker' in navigator)"
-        "{navigator.serviceWorker.register('/pwa/sw.js')}</script>"
+        "<script>if('serviceWorker' in navigator){"
+        "caches.keys().then(function(k){k.forEach(function(c){caches.delete(c)})});"
+        "navigator.serviceWorker.register('/pwa/sw.js',{updateViaCache:'none'})"
+        ".then(function(r){r.update()})}</script>"
     )
 
     def _html(self, content):
