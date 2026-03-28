@@ -6155,8 +6155,8 @@ body{
     const overlay = document.getElementById('revealOverlay');
     const cid = currentChunk ? currentChunk.chunk_id : null;
     const streak = cid ? (againStreak[cid] || 0) : 0;
-    // Always show the target chunk in the reveal so user knows what they were learning
-    document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
+    // Show single target word (not chunk) in reveal
+    document.getElementById('revealChunk').textContent = currentChunk.word || currentChunk.target_chunk;
     // Show full carrier sentence in reveal (target is the learning goal)
     document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
     const rEl = document.getElementById('revealRating');
