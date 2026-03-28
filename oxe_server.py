@@ -5851,23 +5851,25 @@ body{
 
   // Spec: latency >1s → deliver spoken explanation using top 1000 PT words (audio, never text)
   function fireRecursiveExplanation() {
-    if (!currentChunk) return;
+    if (!currentChunk || _audioKilled) return;
     const word = currentChunk.target_chunk || currentChunk.word;
     if (!word) return;
-    // Wait for main audio to finish before playing explanation
+    const chunkId = currentChunk.chunk_id;
     const playExplain = () => {
+      // Guard: don't play if user already moved on
+      if (_audioKilled || !currentChunk || currentChunk.chunk_id !== chunkId) return;
       fetch('/api/drill/explain?word=' + encodeURIComponent(word))
         .then(r => r.json())
         .then(exp => {
+          if (_audioKilled || !currentChunk || currentChunk.chunk_id !== chunkId) return;
           if (exp && exp.audio_file) {
-            if (explainAudio) { explainAudio.pause(); }
+            if (explainAudio) { explainAudio.pause(); explainAudio.src = ''; }
             explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
             explainAudio.play().catch(() => {});
           }
         })
         .catch(() => {});
     };
-    // If main audio is still playing, wait for it to end
     if (audio && !audio.ended && !audio.paused) {
       audio.addEventListener('ended', playExplain, { once: true });
     } else {
@@ -5892,14 +5894,15 @@ body{
 
   function playAudioThenStartTimer() {
     killAllAudio();
+    _audioKilled = false;
     if (!currentChunk || !currentChunk.audio_file) {
       startTimer();
       return;
     }
     audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
-    audio.onended = () => { startTimer(); };
-    audio.onerror = () => { startTimer(); };
-    audio.play().catch(() => { startTimer(); });
+    audio.onended = () => { if (!_audioKilled) startTimer(); };
+    audio.onerror = () => { if (!_audioKilled) startTimer(); };
+    audio.play().catch(() => { if (!_audioKilled) startTimer(); });
   }
 
   // ── Text toggle + simple translation ──
@@ -6014,9 +6017,13 @@ body{
     }, 300);
   }
 
+  let _audioKilled = false;
   function killAllAudio() {
-    if (audio) { audio.pause(); audio.onended = null; audio.onerror = null; audio = null; }
-    if (explainAudio) { explainAudio.pause(); explainAudio = null; }
+    _audioKilled = true;
+    if (audio) { audio.pause(); audio.currentTime = 0; audio.onended = null; audio.onerror = null; audio.src = ''; audio = null; }
+    if (explainAudio) { explainAudio.pause(); explainAudio.currentTime = 0; explainAudio.onended = null; explainAudio.src = ''; explainAudio = null; }
+    // Kill any other playing audio elements on the page
+    document.querySelectorAll('audio').forEach(function(a) { a.pause(); a.src = ''; });
     clearInterval(timerInterval);
   }
 

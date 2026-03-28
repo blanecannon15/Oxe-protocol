@@ -1,8 +1,11 @@
 """
-srs_engine.py — FSRS-powered Spaced Repetition engine for the Oxe Protocol.
+srs_engine.py — FSRS-6 powered Spaced Repetition engine for the Oxe Protocol.
 
 Manages voca_20k.db: a 20,000-word bank from BR-PT frequency data.
 Chunks and carrier sentences are generated dynamically from words at review time.
+
+Uses FSRS-6 with 21 scientifically optimized parameters and personalized
+forgetting curve decay (w[20]).
 
 Usage:
     python3 srs_engine.py init                    Create the database
@@ -15,11 +18,93 @@ Usage:
 
 import sqlite3
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fsrs import FSRS, Card, Rating
+
+# ---------------------------------------------------------------------------
+# FSRS-6: 21-parameter defaults with personalized forgetting curve decay
+# ---------------------------------------------------------------------------
+
+FSRS6_WEIGHTS = (
+    0.2120,   # w[0]  Initial stability: Again (~5 hours)
+    1.2931,   # w[1]  Initial stability: Hard (~1.3 days)
+    2.3065,   # w[2]  Initial stability: Good (~2.3 days)
+    8.2956,   # w[3]  Initial stability: Easy (~8.3 days)
+    6.4133,   # w[4]  Base initial difficulty
+    0.8334,   # w[5]  Difficulty sensitivity to first grade
+    3.0194,   # w[6]  Difficulty change rate per grade
+    0.0010,   # w[7]  Mean reversion strength
+    1.8722,   # w[8]  Recall stability increase multiplier
+    0.1666,   # w[9]  Stability saturation exponent
+    0.7960,   # w[10] Retrievability sensitivity on recall
+    1.4835,   # w[11] Post-lapse stability scaling
+    0.0614,   # w[12] Difficulty exponent in lapse formula
+    0.2629,   # w[13] Stability exponent in lapse formula
+    1.6483,   # w[14] Retrievability factor in lapse formula
+    0.6014,   # w[15] Hard rating modifier
+    1.8729,   # w[16] Easy rating modifier
+    0.5425,   # w[17] Same-day review stability coefficient
+    0.0912,   # w[18] Same-day grade offset
+    0.0658,   # w[19] Same-day stability decay
+    0.1542,   # w[20] Forgetting curve decay exponent (FSRS-6)
+)
+
+FSRS6_DESIRED_RETENTION = 0.9
+FSRS6_MAXIMUM_INTERVAL = 365  # cap at 1 year for active language learning
+
+
+class FSRS6(FSRS):
+    """FSRS-6 scheduler with 21 parameters and personalized forgetting curve.
+
+    Extends the base FSRS class to support:
+      - w[19]: same-day stability decay factor
+      - w[20]: personalized forgetting curve DECAY exponent
+      - FACTOR recalculated from the personalized DECAY
+    """
+
+    def __init__(self, w=None, request_retention=None, maximum_interval=None):
+        w = w if w is not None else FSRS6_WEIGHTS
+        request_retention = request_retention if request_retention is not None else FSRS6_DESIRED_RETENTION
+        maximum_interval = maximum_interval if maximum_interval is not None else FSRS6_MAXIMUM_INTERVAL
+
+        # Store the full 21-weight tuple before calling super
+        self._w_full = w
+
+        # Base class accepts the full tuple; it only indexes up to w[18]
+        super().__init__(
+            w=w,
+            request_retention=request_retention,
+            maximum_interval=maximum_interval,
+        )
+
+        # Override DECAY with personalized value from w[20]
+        if len(w) >= 21:
+            self.DECAY = -w[20]  # negative because the formula uses power decay
+        else:
+            self.DECAY = -0.5  # fallback to classic FSRS default
+
+        # Recalculate FACTOR from the new DECAY
+        self.FACTOR = self.p.request_retention ** (1 / self.DECAY) - 1
+
+    def short_term_stability(self, stability, rating):
+        """FSRS-6 short-term stability uses w[17], w[18], and w[19]."""
+        w = self._w_full
+        if len(w) >= 20:
+            return stability * math.exp(
+                w[17] * (rating - 3 + w[18]) * math.pow(stability, -w[19])
+            )
+        # Fallback to base class behavior (FSRS-5 formula)
+        return super().short_term_stability(stability, rating)
+
+
+def _make_fsrs():
+    """Factory for creating the configured FSRS-6 scheduler instance."""
+    return FSRS6()
+
 
 DB_PATH = Path(__file__).parent / "voca_20k.db"
 
@@ -181,7 +266,7 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
     old_mastery = dict(row)["mastery_level"]
 
     card = _deserialize_card(row["srs_state"])
-    f = FSRS()
+    f = _make_fsrs()
     scheduling = f.repeat(card)
     new_card = scheduling[rating].card
 
@@ -973,22 +1058,40 @@ def add_chunk(word_id, target_chunk, carrier_sentence, source, db_path=DB_PATH):
 
 
 def get_next_chunk(db_path=DB_PATH):
-    """Return the next due chunk from chunk_queue, respecting tier unlocks."""
+    """Return the next due chunk from chunk_queue, respecting tier unlocks.
+
+    Priority order:
+    1. Manual/priority words first (source='manual')
+    2. Then by frequency rank (most common words first)
+    3. Randomized among items with similar priority (batch of 10)
+    Already-reviewed items (reps > 0) ordered by due date as normal.
+    """
     max_tier = get_unlocked_tier(db_path)
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection(db_path)
-    row = conn.execute(
+    # Pick from a batch of top candidates, randomized
+    rows = conn.execute(
         """SELECT cq.*, wb.word, wb.frequency_rank, wb.difficulty_tier
            FROM chunk_queue cq
            JOIN word_bank wb ON cq.word_id = wb.id
            WHERE wb.difficulty_tier <= ?
              AND json_extract(cq.srs_state, '$.due') <= ?
-           ORDER BY json_extract(cq.srs_state, '$.due') ASC
-           LIMIT 1""",
+           ORDER BY
+             CASE WHEN json_extract(cq.srs_state, '$.reps') > 0 THEN 0 ELSE 1 END DESC,
+             CASE WHEN json_extract(cq.srs_state, '$.reps') > 0
+                  THEN json_extract(cq.srs_state, '$.due')
+                  ELSE NULL END ASC,
+             CASE WHEN cq.source = 'manual' THEN 0 ELSE 1 END,
+             wb.frequency_rank ASC
+           LIMIT 10""",
         (max_tier, now),
-    ).fetchone()
+    ).fetchall()
     conn.close()
-    return row
+    if not rows:
+        return None
+    # Among the top 10 candidates, pick randomly to avoid repetition
+    import random
+    return random.choice(rows)
 
 
 def get_due_chunks(db_path=DB_PATH):
@@ -1036,7 +1139,7 @@ def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None,
 
     old_mastery = row["mastery_level"]
     card = _deserialize_card(row["srs_state"])
-    f = FSRS()
+    f = _make_fsrs()
     scheduling = f.repeat(card)
     new_card = scheduling[rating].card
 
