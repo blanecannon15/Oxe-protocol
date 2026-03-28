@@ -737,7 +737,36 @@ def migrate_v3(db_path=DB_PATH):
     conn.close()
 
 
-# ── SRS Clock Service ────────────────────────────────────────────────
+# ── V4 Migration: Item tracking fields ────────────────────────────────
+
+def migrate_v4(db_path=DB_PATH):
+    """V4 schema: add replay_count, last_shadow_score, tag to chunk_queue."""
+    conn = get_connection(db_path)
+    for col, coltype, default in [
+        ("replay_count", "INTEGER", "0"),
+        ("last_shadow_score", "REAL", "NULL"),
+        ("tag", "TEXT", "NULL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE chunk_queue ADD COLUMN {col} {coltype} DEFAULT {default}")
+        except Exception:
+            pass  # column already exists
+
+    # Add replay_count to word_bank if missing
+    try:
+        conn.execute("ALTER TABLE word_bank ADD COLUMN replay_count INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE word_bank ADD COLUMN last_shadow_score REAL DEFAULT NULL")
+    except Exception:
+        pass
+
+    conn.commit()
+    conn.close()
+
+
+# ── SRS Clock Service ���───────────────────────────────────────────────
 
 def clock_start_session(session_type="drill", db_path=DB_PATH):
     """Start a new SRS clock session. Returns session id."""

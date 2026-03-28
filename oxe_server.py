@@ -46,7 +46,7 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
-from srs_engine import migrate_v2, migrate_v3
+from srs_engine import migrate_v2, migrate_v3, migrate_v4
 from srs_engine import (
     clock_start_session, clock_end_session, clock_get_today,
     clock_get_sessions, clock_get_weekly_summary,
@@ -7120,6 +7120,83 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             n = bulk_link_unlinked(limit)
             self._json({"linked": n})
 
+        # ── Add SRS Card (auto-attach chunk + example) ──
+        elif path == "/api/add-srs-card":
+            word = body.get("word", "").strip()
+            tag = body.get("tag")
+            if not word:
+                self._json({"error": "palavra obrigatória"}, status=400)
+                return
+            conn = get_conn()
+            # Find or add word in word_bank
+            row = conn.execute("SELECT id FROM word_bank WHERE LOWER(word)=?", (word.lower(),)).fetchone()
+            if row:
+                word_id = row["id"]
+            else:
+                cur = conn.execute(
+                    "INSERT INTO word_bank (word, frequency_rank, difficulty_tier) VALUES (?, 99999, 1)",
+                    (word,)
+                )
+                word_id = cur.lastrowid
+            conn.commit()
+            conn.close()
+            # Auto-link to high-frequency chunk
+            linked = link_word(word_id)
+            # Get chunk info
+            chunks = get_word_chunks(word_id)
+            self._json({
+                "ok": True, "word_id": word_id, "word": word,
+                "chunks_linked": linked,
+                "chunks": [{"chunk": c.get("target_chunk") or c.get("root_form"), "carrier": c.get("carrier_sentence")} for c in chunks],
+            })
+
+        # ── Shadow Session Log ──
+        elif path == "/api/shadow-session-log":
+            items = body.get("items", [])
+            conn = get_conn()
+            for item in items:
+                chunk_id = item.get("chunk_id")
+                score = item.get("shadow_score")
+                replays = item.get("replay_count", 0)
+                latency = item.get("latency_ms")
+                if chunk_id:
+                    conn.execute(
+                        """UPDATE chunk_queue SET
+                           last_shadow_score = COALESCE(?, last_shadow_score),
+                           replay_count = replay_count + ?,
+                           last_retrieval_latency = COALESCE(?, last_retrieval_latency)
+                           WHERE id = ?""",
+                        (score, replays, latency, chunk_id)
+                    )
+            conn.commit()
+            conn.close()
+            self._json({"ok": True, "logged": len(items)})
+
+        # ── Compute Metrics ──
+        elif path == "/api/compute-metrics":
+            conn = get_conn()
+            # Overall SRS metrics
+            total_reviews = conn.execute("SELECT COUNT(*) as c FROM review_history").fetchone()["c"]
+            avg_lat = conn.execute("SELECT AVG(latency_ms) as a FROM review_history WHERE latency_ms > 0").fetchone()["a"]
+            recent_acc = conn.execute(
+                "SELECT AVG(CASE WHEN rating >= 3 THEN 1.0 ELSE 0.0 END) as a FROM review_history ORDER BY id DESC LIMIT 50"
+            ).fetchone()["a"]
+            fragile_count = conn.execute(
+                "SELECT COUNT(*) as c FROM fragile_items WHERE resolved_at IS NULL"
+            ).fetchone()["c"]
+            # Shadow metrics
+            shadow_avg = conn.execute(
+                "SELECT AVG(last_shadow_score) as a FROM chunk_queue WHERE last_shadow_score IS NOT NULL"
+            ).fetchone()["a"]
+            conn.close()
+            self._json({
+                "total_reviews": total_reviews,
+                "avg_latency_ms": round(avg_lat or 0, 1),
+                "recent_accuracy": round((recent_acc or 0) * 100, 1),
+                "fragile_items": fragile_count,
+                "avg_shadow_score": round(shadow_avg or 0, 1),
+            })
+
         # ── Search Index POST ──
         elif path == "/api/search/build-index":
             result = build_full_index()
@@ -9483,6 +9560,10 @@ def main():
         migrate_v3()
     except Exception as e:
         print(f"  WARNING: migrate_v3() failed: {e}")
+    try:
+        migrate_v4()
+    except Exception as e:
+        print(f"  WARNING: migrate_v4() failed: {e}")
     try:
         build_full_index()
         print("  Search index built.")
