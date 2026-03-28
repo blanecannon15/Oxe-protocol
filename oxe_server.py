@@ -6166,8 +6166,18 @@ body{
       overlay.classList.remove('visible');
       fetchNext();
     } else if (ratingVal === 1) {
-      // Again — show longest so user absorbs the target
-      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 3500);
+      // Again — replay audio so user hears it again while seeing the target
+      if (currentChunk && currentChunk.audio_file) {
+        audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
+        audio.play().catch(() => {});
+        // Wait for audio to finish, then hold reveal 1.5s more
+        audio.onended = () => { setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1500); };
+        audio.onerror = () => { setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1500); };
+        // Fallback timeout in case audio is very long
+        setTimeout(() => { if (overlay.classList.contains('visible')) { overlay.classList.remove('visible'); fetchNext(); } }, 8000);
+      } else {
+        setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 3500);
+      }
     } else if (ratingVal === 2) {
       // Hard — show a bit longer
       setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 2500);
