@@ -5732,6 +5732,13 @@ body{
 .reveal-rating.r3{background:rgba(34,197,94,0.2);color:#22c55e}
 .reveal-rating.r4{background:rgba(59,130,246,0.2);color:#3B82F6}
 .reveal-bio{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px}
+.reveal-next-btn{
+  margin-top:20px;padding:12px 32px;border:none;border-radius:12px;
+  background:linear-gradient(135deg,#5E6AD2,#3B82F6);color:#fff;
+  font-size:16px;font-weight:700;cursor:pointer;letter-spacing:0.5px;
+  transition:transform 0.15s,opacity 0.15s;
+}
+.reveal-next-btn:active{transform:scale(0.95);opacity:0.8}
 .target-hint{
   font-size:11px;color:rgba(255,255,255,0.35);text-align:center;
   text-transform:uppercase;letter-spacing:1.5px;font-weight:600;
@@ -5781,6 +5788,7 @@ body{
   <div class="reveal-sentence" id="revealSentence"></div>
   <div class="reveal-rating" id="revealRating"></div>
   <div class="reveal-bio" id="revealBio"></div>
+  <button class="reveal-next-btn" id="revealNextBtn" onclick="window._revealNext()">Próximo →</button>
 </div>
 <div class="due-footer" id="dueFooter"></div>
 <div class="tab-spacer"></div>
@@ -6158,33 +6166,17 @@ body{
     bEl.textContent = bioScore !== null ? Math.round(bioScore) + '/100' : '';
     overlay.classList.add('visible');
 
-    // Gap 4 fix: if force_redrill from biometric, re-present same chunk
+    // On Again — replay audio so user hears it while seeing the target
+    if (ratingVal === 1 && currentChunk && currentChunk.audio_file) {
+      audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
+      audio.play().catch(() => {});
+    }
+
+    // Force redrill: auto-advance after 2s to re-present same chunk
     if (forceRedrill) {
       setTimeout(() => { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2000);
-    } else if (ratingVal === 4) {
-      // Auto-advance on Easy — skip reveal, instant next
-      overlay.classList.remove('visible');
-      fetchNext();
-    } else if (ratingVal === 1) {
-      // Again — replay audio so user hears it again while seeing the target
-      if (currentChunk && currentChunk.audio_file) {
-        audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
-        audio.play().catch(() => {});
-        // Wait for audio to finish, then hold reveal 1.5s more
-        audio.onended = () => { setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1500); };
-        audio.onerror = () => { setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1500); };
-        // Fallback timeout in case audio is very long
-        setTimeout(() => { if (overlay.classList.contains('visible')) { overlay.classList.remove('visible'); fetchNext(); } }, 8000);
-      } else {
-        setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 3500);
-      }
-    } else if (ratingVal === 2) {
-      // Hard — show a bit longer
-      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 2500);
-    } else {
-      // Good — standard reveal
-      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1800);
     }
+    // All other cases: wait for user to tap "Próximo"
   }
 
   window._srsRate = function(ratingVal) {
@@ -6253,6 +6245,13 @@ body{
 
   window._srsReplay = function() { playAudio(); };
 
+  window._revealNext = function() {
+    killAllAudio();
+    const overlay = document.getElementById('revealOverlay');
+    overlay.classList.remove('visible');
+    fetchNext();
+  };
+
   window._srsToggleRec = function() {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
       stopRecording();
@@ -6262,6 +6261,12 @@ body{
   };
 
   document.addEventListener('keydown', function(e) {
+    // If reveal overlay is visible, Enter/Space advances
+    const overlay = document.getElementById('revealOverlay');
+    if (overlay && overlay.classList.contains('visible')) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window._revealNext(); }
+      return;
+    }
     if (e.key >= '1' && e.key <= '4' && currentChunk) {
       const row = document.getElementById('ratingRow');
       if (row && !row.classList.contains('disabled')) window._srsRate(parseInt(e.key));
