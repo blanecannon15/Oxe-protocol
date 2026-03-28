@@ -5717,12 +5717,16 @@ body{
 }
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
 .reveal-chunk{
-  font-size:28px;font-weight:700;text-align:center;
-  background:linear-gradient(135deg,#3B82F6,#8B5CF6);
+  font-size:36px;font-weight:800;text-align:center;letter-spacing:-0.5px;
+  background:linear-gradient(135deg,#60a5fa,#a78bfa,#f472b6);
+  background-size:200% 200%;
+  animation:revealGlow 2s ease infinite;
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:4px;
 }
-.reveal-sentence{font-size:16px;color:rgba(255,255,255,0.6);text-align:center;max-width:320px;line-height:1.5}
-.reveal-rating{font-size:14px;font-weight:600;padding:6px 16px;border-radius:20px;margin-top:8px}
+@keyframes revealGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.reveal-sentence{font-size:17px;color:rgba(255,255,255,0.55);text-align:center;max-width:340px;line-height:1.6;font-style:italic}
+.reveal-rating{font-size:15px;font-weight:700;padding:8px 20px;border-radius:24px;margin-top:12px;letter-spacing:0.5px}
 .reveal-rating.r1{background:rgba(239,68,68,0.2);color:#ef4444}
 .reveal-rating.r2{background:rgba(249,115,22,0.2);color:#f97316}
 .reveal-rating.r3{background:rgba(34,197,94,0.2);color:#22c55e}
@@ -6126,6 +6130,7 @@ body{
   }
 
   function fetchNext() {
+    killAllAudio();
     if (prefetchQueue.length > 0) {
       const data = prefetchQueue.shift();
       renderDrill(data);
@@ -6161,16 +6166,20 @@ body{
       overlay.classList.remove('visible');
       fetchNext();
     } else if (ratingVal === 1) {
-      // Again — show longer so user absorbs the target
+      // Again — show longest so user absorbs the target
+      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 3500);
+    } else if (ratingVal === 2) {
+      // Hard — show a bit longer
       setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 2500);
     } else {
-      // Good/Hard — quick reveal
-      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1200);
+      // Good — standard reveal
+      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1800);
     }
   }
 
   window._srsRate = function(ratingVal) {
     if (!currentChunk) return;
+    killAllAudio();
     const latency = stopTimer();
     const cid = currentChunk.chunk_id;
 
