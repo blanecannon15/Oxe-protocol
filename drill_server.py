@@ -59,26 +59,83 @@ TRAP_LATENCY_MS = 800
 
 INTERJECTIONS = [
     "Oxe,", "Vixe,", "Rapaz,", "Eita,", "Meu irmão,",
-    "Ave Maria,", "Ô xente,",
+    "Ave Maria,", "Ô xente,", "Ô meu,", "Ei,", "Pô,",
 ]
 TAGS = [
     "viu!", "visse.", "tá ligado?", "rapaz.", "né?",
-    "é mermo.", "sabe como é.", "acredita?",
+    "é mermo.", "sabe como é.", "acredita?", "entendeu?",
+    "tá vendo?", "meu rei.", "ó.", "bora?",
 ]
 LOCATIONS = [
     "no Pelourinho", "lá no Rio Vermelho", "na Barra", "em Itapuã",
     "no Candeal", "no Comércio", "na Ribeira", "na Pituba",
+    "ali no Farol", "lá no Subúrbio", "na Cidade Baixa",
 ]
 CARRIERS = [
-    "{intj} tu sabe o que é {word}? {tag}",
+    "{intj} cê sabe o que é {word}? {tag}",
     "{intj} ontem eu vi um negócio de {word} {loc}, {tag}",
     "Eu tava pensando em {word} agora mesmo, {tag}",
     "{intj} {word} é uma coisa que todo baiano conhece, {tag}",
-    "Tu já ouviu falar de {word}? {tag}",
+    "Cê já ouviu falar de {word}? {tag}",
     "A gente sempre fala de {word} {loc}, {tag}",
-    "{intj} sem {word} não dá pra viver, {tag}",
+    "{intj} sem {word} num dá pra viver, {tag}",
     "{intj} {word} é barril demais, {tag}",
+    "Tô ligado em {word} desde moleque, {tag}",
+    "{intj} o cara tava falando de {word} {loc}, {tag}",
+    "Cê num sabe o que é {word}? {tag}",
+    "{intj} eu tô doido pra saber mais de {word}, {tag}",
+    "Mano, {word} é tipo coisa daqui memo, {tag}",
+    "{intj} peguei {word} lá {loc}, {tag}",
+    "Ó, {word} aqui é diferente, {tag}",
+    "Eu tava lá {loc} e pensei em {word}, {tag}",
+    "{intj} cê precisa ver {word}, {tag}",
+    "Num tem como falar de {loc} sem falar de {word}, {tag}",
 ]
+
+# ── Spoken-form contractions (formal → Baiano oral) ──────────
+# Applied to carrier sentences to match real Brazilian speech
+_SPOKEN_FORMS = [
+    # Order matters — longer/more-specific patterns first
+    (r'\bcom você\b', 'contigo'),
+    (r'\bvocê\b', 'cê'),
+    (r'\bestou\b', 'tô'),
+    (r'\bestá\b', 'tá'),
+    (r'\bestava\b', 'tava'),
+    (r'\bestavam\b', 'tavam'),
+    (r'\bestamos\b', 'tamo'),
+    (r'\bpara o\b', 'pro'),
+    (r'\bpara a\b', 'pra'),
+    (r'\bpara os\b', 'pros'),
+    (r'\bpara as\b', 'pras'),
+    # "para" as preposition before verbs/pronouns — NOT the verb "parar"
+    (r'\bpara (mim|ti|nós|eles|elas|eu|tu|ele|ela|onde|quem|que|quando)\b', r'pra \1'),
+    # Tag question patterns → né
+    (r'\bnão é não\b', 'né'),
+    (r'\bnão é\s*\?', 'né?'),
+    (r'\bnão é,', 'né,'),
+    (r', não\?', ', né?'),
+    (r', não$', ', né'),
+    (r'\bnão\b', 'num'),
+    (r'\bem um\b', 'num'),
+    (r'\bem uma\b', 'numa'),
+    # "vamos" only at sentence start (imperative) — not after nós/não/que/etc.
+    (r'^vamos\b', 'bora'),
+    (r'(?<=[,!])\s*vamos\b', ' bora'),
+    (r'\bdepois\b', 'dipois'),
+    (r'\bmesmo\b', 'memo'),
+    (r'\bmenino\b', 'moleque'),
+    (r'\bdinheiro\b', 'grana'),
+]
+import re as _carrier_re
+
+def _to_spoken_form(text):
+    """Convert formal PT to spoken Baiano contractions."""
+    for pattern, replacement in _SPOKEN_FORMS:
+        text = _carrier_re.sub(pattern, replacement, text, flags=_carrier_re.IGNORECASE)
+    # Fix capitalization at sentence start
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    return text
 
 TRAP_SENTENCES = [
     ("Eu corro mais que o ônibus na Barra.", "brag",
@@ -107,12 +164,13 @@ _laranjada_remaining = 0
 
 def build_carrier(word):
     t = random.choice(CARRIERS)
-    return t.format(
+    raw = t.format(
         intj=random.choice(INTERJECTIONS),
         word=word,
         tag=random.choice(TAGS),
         loc=random.choice(LOCATIONS),
     )
+    return _to_spoken_form(raw)
 
 
 def _baiano_tts_text(text):
