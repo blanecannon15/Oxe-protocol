@@ -90,8 +90,9 @@ def _baiano_tts_text(text):
     return text
 
 
-def generate_tts(text):
-    """Generate ElevenLabs TTS audio with Bahian voice. Returns the filename or None."""
+def generate_tts(text, raw=False):
+    """Generate ElevenLabs TTS audio with Bahian voice. Returns the filename or None.
+    If raw=True, skip the Baiano carrier wrapper (for isolated word playback)."""
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
         print("[TTS] WARNING: ELEVENLABS_API_KEY not set — no audio will be generated")
@@ -99,8 +100,9 @@ def generate_tts(text):
     try:
         from elevenlabs import ElevenLabs
         client = ElevenLabs(api_key=api_key)
+        tts_text = text if raw else _baiano_tts_text(text)
         audio_iter = client.text_to_speech.convert(
-            text=_baiano_tts_text(text),
+            text=tts_text,
             voice_id=BAIANO_VOICE_ID,
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
@@ -1017,7 +1019,7 @@ def get_audio_for_word(word):
     Uses the existing generate_tts() function. Returns the filename
     or None if generation fails.
     """
-    return generate_tts(word)
+    return generate_tts(word, raw=True)
 
 
 # ── 10. get_full_word_data ─────────────────────────────────────────

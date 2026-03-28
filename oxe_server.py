@@ -6022,9 +6022,7 @@ body{
         '</div>';
     }
 
-    // Target hint — subtle label so user knows what to listen for
     const targetWord = data.target_chunk || data.word || '';
-    html += '<div class="target-hint">alvo: <span class="tw">' + targetWord + '</span></div>';
 
     // Text toggle — hidden by default, shown on tap
     const sentence = data.carrier_sentence || data.carrier || '';
@@ -6133,8 +6131,16 @@ body{
     // Gap 4 fix: if force_redrill from biometric, re-present same chunk
     if (forceRedrill) {
       setTimeout(() => { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2000);
+    } else if (ratingVal === 4) {
+      // Auto-advance on Easy — skip reveal, instant next
+      overlay.classList.remove('visible');
+      fetchNext();
+    } else if (ratingVal === 1) {
+      // Again — show longer so user absorbs the target
+      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 2500);
     } else {
-      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1800);
+      // Good/Hard — quick reveal
+      setTimeout(() => { overlay.classList.remove('visible'); fetchNext(); }, 1200);
     }
   }
 
@@ -6146,9 +6152,16 @@ body{
     let finalRating = ratingVal;
     let latencyOverride = false;
     const maxLatency = (currentModeConfig.max_response_time_ms || LATENCY_THRESHOLD);
-    if (latency > maxLatency && ratingVal > 2) {
+    // Latency-based auto-rating: >2s forces Hard, <500ms boosts to Easy
+    if (latency > 2000 && ratingVal > 2) {
       finalRating = 2;
       latencyOverride = true;
+    } else if (latency > maxLatency && ratingVal > 2) {
+      finalRating = 2;
+      latencyOverride = true;
+    } else if (latency < 500 && ratingVal === 3) {
+      // Sub-500ms recall on Good → upgrade to Easy (instant automaticity)
+      finalRating = 4;
     }
 
     // Spec: biometric < 85 → auto-mark Hard (only when mode measures biometric)
