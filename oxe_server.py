@@ -8180,7 +8180,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         for r in rows:
             try:
                 conn.execute(
-                    "INSERT OR IGNORE INTO dictionary_cache (word_id, tab_name, data_json) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO dictionary_cache (word_id, tab_name, data_json) VALUES (?, ?, ?)",
                     (r["word_id"], r["tab_name"], r["data_json"]),
                 )
                 inserted += 1
