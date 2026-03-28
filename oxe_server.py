@@ -9613,7 +9613,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         body = content.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "public, max-age=60")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         accept_enc = self.headers.get("Accept-Encoding", "")
         if "gzip" in accept_enc and len(body) > 1024:
             body = gzip.compress(body)
