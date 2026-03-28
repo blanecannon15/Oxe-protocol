@@ -5625,6 +5625,19 @@ body{
 .image-placeholder{width:80px;height:80px;opacity:0.15}
 .image-placeholder svg{width:100%;height:100%;fill:#fff}
 .timer{font-size:14px;color:rgba(255,255,255,0.4);font-variant-numeric:tabular-nums;height:20px}
+.text-toggle-row{margin:4px 0}
+.text-toggle-btn{
+  background:none;border:1px solid rgba(255,255,255,0.12);border-radius:8px;
+  color:rgba(255,255,255,0.5);font-size:12px;padding:6px 14px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:all 0.2s;
+}
+.text-toggle-btn:active{background:rgba(255,255,255,0.06)}
+.srs-text-panel{
+  padding:12px 16px;margin:4px 20px;border-radius:12px;
+  background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+  text-align:center;animation:fadeIn 0.2s ease-out;
+}
+.srs-carrier{font-size:1.05em;line-height:1.5;color:rgba(255,255,255,0.85)}
 .action-row{display:flex;gap:10px;align-items:center}
 .replay-btn,.record-btn{
   display:flex;align-items:center;gap:6px;
@@ -5821,6 +5834,41 @@ body{
     audio.play().catch(() => {});
   }
 
+  function playAudioThenStartTimer() {
+    if (!currentChunk || !currentChunk.audio_file) {
+      // No audio available — start timer immediately
+      startTimer();
+      return;
+    }
+    if (audio) { audio.pause(); audio = null; }
+    audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
+    audio.onended = () => { startTimer(); };
+    audio.onerror = () => { startTimer(); };
+    audio.play().catch(() => { startTimer(); });
+  }
+
+  // ── Text toggle + simple translation ──
+  window._srsToggleText = function() {
+    const panel = document.getElementById('srsTextPanel');
+    if (!panel) return;
+    const visible = panel.style.display !== 'none';
+    panel.style.display = visible ? 'none' : 'block';
+    // Fetch simple translation on first show
+    if (!visible && !panel.dataset.loaded && currentChunk) {
+      panel.dataset.loaded = '1';
+      const word = currentChunk.target_chunk || currentChunk.word;
+      if (word) {
+        fetch('/api/dict/lookup?word=' + encodeURIComponent(word))
+          .then(r => r.json())
+          .then(d => {
+            const el = document.getElementById('srsSimple');
+            if (el && d.definition) el.textContent = d.definition;
+          })
+          .catch(() => {});
+      }
+    }
+  };
+
   // ── Recording for biometric scoring ──
   function startRecording() {
     recordedBlob = null;
@@ -5927,7 +5975,7 @@ body{
 
     // Gap 1 fix: Zero-Reading Mode — text ONLY after 3 consecutive Again OR mode says show_text
     const showText = modeShowText || (againStreak[cid] || 0) >= 3;
-    const imgSrc = data.image_file ? '/images/' + data.image_file.split('/').pop() : null;
+    const imgSrc = data.image_file ? '/image/' + data.image_file.split('/').pop() : null;
 
     // Mode banner
     let html = '';
@@ -5938,18 +5986,31 @@ body{
       html += '</div>';
     }
 
-    // Image card — respect mode config
-    if (modeShowImage) {
+    // Image card — audio-first with DALL-E image
+    if (imgSrc) {
       html += '<div class="image-card">' +
-        (imgSrc ? '<img src="' + imgSrc + '" alt="">'
-          : '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>')
-        + '</div>';
+        '<img src="' + imgSrc + '" alt="">' +
+        '</div>';
+    } else {
+      html += '<div class="image-card">' +
+        '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>' +
+        '</div>';
     }
 
-    // Text: show if mode says so OR 3x Again
-    if (showText) {
-      html += '<div class="text-reveal">' + (data.target_chunk || data.word || '') + '</div>';
+    // Text toggle — hidden by default, shown on tap
+    const sentence = data.carrier_sentence || data.carrier || '';
+    const targetWord = data.target_chunk || data.word || '';
+    html += '<div class="text-toggle-row">' +
+      '<button class="text-toggle-btn" onclick="window._srsToggleText()">' +
+      '<svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:middle;margin-right:4px"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
+      'Mostrar texto</button></div>';
+    html += '<div class="srs-text-panel" id="srsTextPanel" style="display:none">';
+    if (sentence && targetWord) {
+      const re = new RegExp('(' + targetWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      html += '<div class="srs-carrier">' + sentence.replace(re, '<span style="background:#5E6AD2;color:#fff;padding:2px 6px;border-radius:4px">$1</span>') + '</div>';
     }
+    html += '<div class="srs-simple" id="srsSimple" style="color:#9ca3af;font-size:0.85em;margin-top:6px"></div>';
+    html += '</div>';
 
     html += '<div class="timer" id="timerEl">0.0s</div>';
     html += '<div class="action-row">';
@@ -5976,8 +6037,8 @@ body{
 
     area.innerHTML = html;
     document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
-    startTimer();
-    setTimeout(() => playAudio(), 300);
+    // Play audio first — timer starts AFTER audio finishes
+    playAudioThenStartTimer();
   }
 
   function renderEmpty() {
@@ -8190,7 +8251,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 sentence, trap_type, expected = trap
                 fname = generate_tts(sentence)
                 if not fname:
-                    self._json({"error": "TTS failed"})
+                    self._json({"error": "Falha ao gerar áudio"})
                     return
                 tier = get_unlocked_tier()
                 due_count = len(list(get_due_words()))
@@ -8221,7 +8282,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             cloze_text, full_carrier = build_cloze(word["word"], carrier)
             fname = generate_tts(cloze_text)
             if not fname:
-                self._json({"error": "TTS failed"})
+                self._json({"error": "Falha ao gerar áudio"})
                 return
             img_fname = generate_image(word["word"])
             due_words = list(get_due_words())
@@ -8246,7 +8307,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
 
         fname = generate_tts(carrier)
         if not fname:
-            self._json({"error": "TTS failed"})
+            self._json({"error": "Falha ao gerar áudio"})
             return
 
         # Generate DALL-E image (waits if not cached)

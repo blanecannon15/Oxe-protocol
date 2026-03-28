@@ -166,13 +166,28 @@ _image_lock = threading.Lock()
 _image_pending = set()
 
 
-def get_cached_image(word):
-    """Return cached image filename if it exists, else None."""
+def _image_fname(word, carrier_sentence=None):
+    """Build a unique image filename based on word + carrier sentence."""
     safe = "".join(c if c.isalnum() else "_" for c in word)
-    fname = f"img_{safe}.png"
+    if carrier_sentence and len(carrier_sentence) > 10:
+        import hashlib
+        h = hashlib.md5(carrier_sentence.encode()).hexdigest()[:8]
+        return f"img_{safe}_{h}.png"
+    return f"img_{safe}.png"
+
+
+def get_cached_image(word, carrier_sentence=None):
+    """Return cached image filename if it exists, else None."""
+    fname = _image_fname(word, carrier_sentence)
     cached = IMAGE_DIR / fname
     if cached.exists() and cached.stat().st_size > 0:
         return fname
+    # Fallback: check word-only image (legacy)
+    safe = "".join(c if c.isalnum() else "_" for c in word)
+    legacy = f"img_{safe}.png"
+    legacy_path = IMAGE_DIR / legacy
+    if legacy_path.exists() and legacy_path.stat().st_size > 0:
+        return legacy
     return None
 
 
@@ -231,8 +246,7 @@ def _build_image_prompt(word, carrier_sentence=None):
 
 def _bg_generate_image(word, carrier_sentence=None):
     """Background thread: generate DALL-E image and cache it."""
-    safe = "".join(c if c.isalnum() else "_" for c in word)
-    fname = f"img_{safe}.png"
+    fname = _image_fname(word, carrier_sentence)
     cached = IMAGE_DIR / fname
     try:
         import openai
@@ -255,23 +269,25 @@ def _bg_generate_image(word, carrier_sentence=None):
 
 
 def generate_image(word, carrier_sentence=None):
-    """Return cached image, generating synchronously if needed."""
-    cached = get_cached_image(word)
+    """Return cached image, generating synchronously if needed. Each chunk gets a unique image."""
+    cached = get_cached_image(word, carrier_sentence)
     if cached:
         return cached
     _bg_generate_image(word, carrier_sentence)
-    return get_cached_image(word)
+    return get_cached_image(word, carrier_sentence)
 
 
-def prefetch_images(words):
+def prefetch_images(words, carriers=None):
     """Pre-generate images for a list of words in background threads."""
-    for w in words:
-        if get_cached_image(w):
+    for i, w in enumerate(words):
+        carrier = carriers[i] if carriers and i < len(carriers) else None
+        if get_cached_image(w, carrier):
             continue
+        key = f"{w}_{carrier[:20] if carrier else ''}"
         with _image_lock:
-            if w not in _image_pending:
-                _image_pending.add(w)
-                t = threading.Thread(target=_bg_generate_image, args=(w,), daemon=True)
+            if key not in _image_pending:
+                _image_pending.add(key)
+                t = threading.Thread(target=_bg_generate_image, args=(w, carrier), daemon=True)
                 t.start()
 
 
@@ -763,6 +779,13 @@ DRILL_HTML = r"""<!DOCTYPE html>
 <div class="main">
   <img class="drill-image" id="drill-image" alt="">
   <div class="carrier-text hidden" id="carrier-text"></div>
+  <div style="margin:4px 0">
+    <button class="text-toggle-btn" id="textToggleBtn" onclick="toggleTextPanel()" style="background:none;border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;padding:5px 12px;cursor:pointer">Mostrar texto</button>
+  </div>
+  <div class="simple-panel hidden" id="simplePanel" style="padding:10px 16px;margin:0 20px;border-radius:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);text-align:center;display:none">
+    <div id="simpleSentence" style="font-size:0.95em;line-height:1.5;color:rgba(255,255,255,0.85)"></div>
+    <div id="simpleDefinition" style="color:#9ca3af;font-size:0.82em;margin-top:4px"></div>
+  </div>
   <div class="pass-instruction" id="pass-instruction"></div>
   <div class="rep-counter" id="rep-counter"></div>
   <div class="rating-feedback" id="rating-feedback"></div>
@@ -808,7 +831,34 @@ let masteryReps = 0;
 let sessionCount = 0;
 let sessionCorrect = 0;
 let retries = 0;
-let drillStartTime = 0;
+let drillStartTime = null;
+
+// ── Text toggle for translation panel ──
+let textPanelLoaded = false;
+function toggleTextPanel() {
+  const panel = $('simplePanel');
+  if (!panel) return;
+  const visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : 'block';
+  $('textToggleBtn').textContent = visible ? 'Mostrar texto' : 'Esconder texto';
+  // Populate on first show
+  if (!visible && !textPanelLoaded && currentChunk) {
+    textPanelLoaded = true;
+    const sentence = currentChunk.carrier_sentence || '';
+    const word = currentChunk.target_chunk || currentChunk.word || '';
+    if (sentence && word) {
+      const re = new RegExp('(' + word.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + ')', 'gi');
+      $('simpleSentence').innerHTML = sentence.replace(re, '<span style="background:#5E6AD2;color:#fff;padding:2px 6px;border-radius:4px">$1</span>');
+    }
+    // Fetch simple definition
+    if (word) {
+      fetch('/api/dict/lookup?word=' + encodeURIComponent(word))
+        .then(r => r.json())
+        .then(d => { if (d.definition) $('simpleDefinition').textContent = d.definition; })
+        .catch(() => {});
+    }
+  }
+}
 
 // ── New feature state ────────────────────────────────────
 let previousState = null;         // track state before drill for transition detection
@@ -888,7 +938,10 @@ async function fetchNext() {
     currentPass = data.current_pass || 1;
     masteryReps = 0;
     retries = 0;
-    drillStartTime = performance.now();
+    drillStartTime = null;  // Timer starts AFTER audio finishes
+    textPanelLoaded = false;  // Reset text toggle for new chunk
+    const tp = $('simplePanel'); if (tp) tp.style.display = 'none';
+    const tb = $('textToggleBtn'); if (tb) tb.textContent = 'Mostrar texto';
     previousState = data.current_state || null;
 
     // Apply mode config from the chunk response or existing block config
@@ -1119,7 +1172,7 @@ function playMasteryRep() {
 
 // ── Complete Drill ────────────────────────────────────────
 async function completeDrill() {
-  const latencyMs = Math.round(performance.now() - drillStartTime);
+  const latencyMs = drillStartTime ? Math.round(performance.now() - drillStartTime) : 0;
   $('rep-counter').classList.remove('visible');
   $('action-area').innerHTML = '';
   stopCountdown();
@@ -1205,10 +1258,17 @@ async function completeDrill() {
 }
 
 // ── Audio ─────────────────────────────────────────────────
+function startDrillTimer() {
+  // Called when audio finishes — latency measured from end of audio playback
+  drillStartTime = performance.now();
+}
+
 function playAudio() {
   if (!currentChunk || !currentChunk.audio_file) {
     console.warn('[OXE] No audio_file — TTS may have failed');
     $('pass-instruction').textContent = 'Sem áudio — verifique a chave da ElevenLabs';
+    // Start timer anyway so drill can proceed
+    startDrillTimer();
     return;
   }
   const audioType = modeConfig ? modeConfig.audio_type : 'clean';
@@ -1219,25 +1279,24 @@ function playAudio() {
     player.onended = () => {
       setTimeout(() => {
         player.src = '/audio/' + currentChunk.native_audio_file;
-        player.onended = null;
-        player.onerror = null;
-        player.play().catch(() => {});
+        player.onended = () => { startDrillTimer(); };
+        player.onerror = () => { startDrillTimer(); };
+        player.play().catch(() => { startDrillTimer(); });
       }, 600);
     };
-    player.onerror = null;
-    player.play().catch(() => {});
+    player.onerror = () => { startDrillTimer(); };
+    player.play().catch(() => { startDrillTimer(); });
   } else if (audioType === 'native' && currentChunk.native_audio_file) {
-    // Play native audio only
     player.src = '/audio/' + currentChunk.native_audio_file;
-    player.onended = null;
-    player.onerror = null;
-    player.play().catch(() => {});
+    player.onended = () => { startDrillTimer(); };
+    player.onerror = () => { startDrillTimer(); };
+    player.play().catch(() => { startDrillTimer(); });
   } else {
-    // Default: play clean TTS
+    // Default: play clean TTS — timer starts when audio ends
     player.src = '/audio/' + currentChunk.audio_file;
-    player.onended = null;
-    player.onerror = null;
-    player.play().catch(() => {});
+    player.onended = () => { startDrillTimer(); };
+    player.onerror = () => { startDrillTimer(); };
+    player.play().catch(() => { startDrillTimer(); });
   }
 }
 
