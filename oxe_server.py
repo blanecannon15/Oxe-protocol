@@ -7300,13 +7300,17 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 # Get chunk info
                 chunks = []
                 try:
-                    chunks = get_word_chunks(word_id)
+                    raw_chunks = get_word_chunks(word_id)
+                    if isinstance(raw_chunks, list):
+                        for c in raw_chunks:
+                            if isinstance(c, dict):
+                                chunks.append({"chunk": c.get("target_chunk") or c.get("root_form", ""), "carrier": c.get("carrier_sentence", "")})
                 except Exception:
                     pass
                 self._json({
                     "ok": True, "word_id": word_id, "word": word,
                     "chunks_linked": linked,
-                    "chunks": [{"chunk": c.get("target_chunk") or c.get("root_form"), "carrier": c.get("carrier_sentence")} for c in chunks],
+                    "chunks": chunks,
                 })
             except Exception as e:
                 self._json({"error": str(e)}, status=500)
