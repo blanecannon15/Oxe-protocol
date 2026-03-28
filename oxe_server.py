@@ -6155,10 +6155,9 @@ body{
     const overlay = document.getElementById('revealOverlay');
     const cid = currentChunk ? currentChunk.chunk_id : null;
     const streak = cid ? (againStreak[cid] || 0) : 0;
-    // Show single target word (not chunk) in reveal
+    // Target word in large letters, chunk underneath
     document.getElementById('revealChunk').textContent = currentChunk.word || currentChunk.target_chunk;
-    // Show full carrier sentence in reveal (target is the learning goal)
-    document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
+    document.getElementById('revealSentence').textContent = currentChunk.target_chunk || '';
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
     rEl.className = 'reveal-rating r' + ratingVal;
