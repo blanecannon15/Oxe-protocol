@@ -5703,6 +5703,12 @@ body{
 .reveal-rating.r3{background:rgba(34,197,94,0.2);color:#22c55e}
 .reveal-rating.r4{background:rgba(59,130,246,0.2);color:#3B82F6}
 .reveal-bio{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px}
+.target-hint{
+  font-size:11px;color:rgba(255,255,255,0.35);text-align:center;
+  text-transform:uppercase;letter-spacing:1.5px;font-weight:600;
+  margin-top:4px;transition:opacity 0.3s;
+}
+.target-hint .tw{color:rgba(96,165,250,0.6);font-weight:700;text-transform:none;letter-spacing:0;font-size:13px}
 .due-footer{text-align:center;padding:8px;font-size:12px;color:rgba(255,255,255,0.3)}
 .empty-state{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -5811,16 +5817,25 @@ body{
     if (!currentChunk) return;
     const word = currentChunk.target_chunk || currentChunk.word;
     if (!word) return;
-    fetch('/api/drill/explain?word=' + encodeURIComponent(word))
-      .then(r => r.json())
-      .then(exp => {
-        if (exp && exp.audio_file) {
-          if (explainAudio) { explainAudio.pause(); }
-          explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
-          explainAudio.play().catch(() => {});
-        }
-      })
-      .catch(() => {});
+    // Wait for main audio to finish before playing explanation
+    const playExplain = () => {
+      fetch('/api/drill/explain?word=' + encodeURIComponent(word))
+        .then(r => r.json())
+        .then(exp => {
+          if (exp && exp.audio_file) {
+            if (explainAudio) { explainAudio.pause(); }
+            explainAudio = new Audio('/audio/' + exp.audio_file.split('/').pop());
+            explainAudio.play().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
+    // If main audio is still playing, wait for it to end
+    if (audio && !audio.ended && !audio.paused) {
+      audio.addEventListener('ended', playExplain, { once: true });
+    } else {
+      playExplain();
+    }
   }
 
   function stopTimer() {
@@ -5839,12 +5854,11 @@ body{
   }
 
   function playAudioThenStartTimer() {
+    killAllAudio();
     if (!currentChunk || !currentChunk.audio_file) {
-      // No audio available — start timer immediately
       startTimer();
       return;
     }
-    if (audio) { audio.pause(); audio = null; }
     audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
     audio.onended = () => { startTimer(); };
     audio.onerror = () => { startTimer(); };
@@ -5963,7 +5977,14 @@ body{
     }, 300);
   }
 
+  function killAllAudio() {
+    if (audio) { audio.pause(); audio.onended = null; audio.onerror = null; audio = null; }
+    if (explainAudio) { explainAudio.pause(); explainAudio = null; }
+    clearInterval(timerInterval);
+  }
+
   function renderDrill(data) {
+    killAllAudio();
     currentChunk = data;
     currentMode = data.mode || 'audio_meaning_recognition';
     currentModeConfig = data.mode_config || {};
@@ -6001,9 +6022,12 @@ body{
         '</div>';
     }
 
+    // Target hint — subtle label so user knows what to listen for
+    const targetWord = data.target_chunk || data.word || '';
+    html += '<div class="target-hint">alvo: <span class="tw">' + targetWord + '</span></div>';
+
     // Text toggle — hidden by default, shown on tap
     const sentence = data.carrier_sentence || data.carrier || '';
-    const targetWord = data.target_chunk || data.word || '';
     html += '<div class="text-toggle-row">' +
       '<button class="text-toggle-btn" onclick="window._srsToggleText()">' +
       '<svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:middle;margin-right:4px"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
@@ -6095,14 +6119,10 @@ body{
     const overlay = document.getElementById('revealOverlay');
     const cid = currentChunk ? currentChunk.chunk_id : null;
     const streak = cid ? (againStreak[cid] || 0) : 0;
-    // Zero-Reading Mode: only show text in reveal if 3+ consecutive Again
-    if (streak >= 3) {
-      document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
-      document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
-    } else {
-      document.getElementById('revealChunk').textContent = '';
-      document.getElementById('revealSentence').textContent = '';
-    }
+    // Always show the target chunk in the reveal so user knows what they were learning
+    document.getElementById('revealChunk').textContent = currentChunk.target_chunk || currentChunk.word;
+    // Show full carrier sentence in reveal (target is the learning goal)
+    document.getElementById('revealSentence').textContent = currentChunk.carrier_sentence || '';
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
     rEl.className = 'reveal-rating r' + ratingVal;

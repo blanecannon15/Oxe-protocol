@@ -969,6 +969,8 @@ async function fetchNext() {
 }
 
 function applyChunkData(data) {
+    // Stop any playing audio before loading new chunk
+    player.pause(); player.onended = null; player.onerror = null;
     currentChunk = data;
     currentPass = data.current_pass || 1;
     masteryReps = 0;
