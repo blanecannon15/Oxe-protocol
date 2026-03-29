@@ -183,8 +183,13 @@ def _baiano_tts_text(text):
     return text
 
 
-def generate_tts(text):
-    """Generate TTS, return filename. Returns None on any failure (quota, network, etc)."""
+def generate_tts(text, raw=False):
+    """Generate TTS, return filename. Returns None on any failure (quota, network, etc).
+
+    Args:
+        text: Text to speak.
+        raw: If True, speak the text exactly as-is (no Baiano interjection prefix).
+    """
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     if not api_key:
         print("[TTS] WARNING: ELEVENLABS_API_KEY not set — no audio will be generated")
@@ -194,8 +199,9 @@ def generate_tts(text):
         from elevenlabs import ElevenLabs
         client = ElevenLabs(api_key=api_key)
 
+        tts_text = text if raw else _baiano_tts_text(text)
         audio_iter = client.text_to_speech.convert(
-            text=_baiano_tts_text(text),
+            text=tts_text,
             voice_id="ELBrtmIkk40wCZ5YnlwM",  # Thiago — native Brazilian male, warm and inviting
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",

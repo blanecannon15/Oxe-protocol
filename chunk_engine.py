@@ -521,3 +521,186 @@ def get_chunks_for_word(word_id, db_path=DB_PATH):
     ).fetchall()
     conn.close()
     return [{"family_id": r[0], "root_form": r[1], "composite_rank": r[2]} for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Word-to-chunk auto-linking: generate multiple chunks per target word
+# ---------------------------------------------------------------------------
+
+def generate_chunks_for_word(word, word_id=None, count=4, db_path=DB_PATH):
+    """Generate 2-5 high-frequency chunks containing the target word via GPT-4o-mini.
+
+    Returns list of dicts: [{chunk, carrier_sentence, rank}, ...]
+    Also upserts into chunk_families + chunk_family_words.
+    """
+    client = openai.OpenAI()
+    prompt = (
+        f"Gere {count} chunks (colocações naturais de 2 a 6 palavras) em português brasileiro "
+        f"contendo a palavra '{word}'. Os chunks devem ser:\n"
+        f"- Frequentes no falar cotidiano brasileiro\n"
+        f"- Naturais e conversacionais (não literários)\n"
+        f"- Úteis para automaticidade lexical\n"
+        f"- Preferência: uso paulista > carioca > baiano\n\n"
+        f"Para CADA chunk, gere também UMA frase-contexto curta e natural usando o chunk.\n\n"
+        f"Responda APENAS com JSON válido:\n"
+        f'[{{"chunk": "fazer barulho", "carrier": "Menino, para de fazer barulho!", "rank": 1}}, ...]'
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": (
+                    "Tu é um linguista computacional especialista em aquisição de português brasileiro. "
+                    "Retorne APENAS JSON válido, sem markdown, sem explicações."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=600,
+            temperature=0.4,
+        )
+        raw = resp.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        chunks = json.loads(raw)
+    except Exception as e:
+        print(f"[chunk_engine] Error generating chunks for '{word}': {e}")
+        return []
+
+    if not isinstance(chunks, list):
+        return []
+
+    # Upsert each chunk into chunk_families + chunk_family_words
+    conn = get_connection(db_path)
+    results = []
+    for i, c in enumerate(chunks[:count]):
+        chunk_text = c.get("chunk", "").strip()
+        carrier = c.get("carrier", "").strip()
+        if not chunk_text:
+            continue
+
+        # Upsert chunk family
+        root_form = chunk_text.lower().strip()
+        word_count = len(root_form.split())
+        try:
+            conn.execute(
+                """INSERT OR IGNORE INTO chunk_families
+                   (root_form, word_count, frequency_score, naturalness_score, bahia_relevance, composite_rank)
+                   VALUES (?, ?, ?, 80.0, 50.0, 0.5)""",
+                (root_form, word_count, max(0, 100 - i * 20)),
+            )
+            fam_row = conn.execute(
+                "SELECT id FROM chunk_families WHERE root_form = ?", (root_form,)
+            ).fetchone()
+            if fam_row and word_id:
+                family_id = fam_row[0]
+                conn.execute(
+                    "INSERT OR IGNORE INTO chunk_family_words (family_id, word_id) VALUES (?, ?)",
+                    (family_id, word_id),
+                )
+                conn.execute(
+                    """INSERT INTO chunk_variants (family_id, variant_form, source, occurrence_count)
+                       VALUES (?, ?, 'llm', 1)
+                       ON CONFLICT(family_id, variant_form)
+                       DO UPDATE SET occurrence_count = occurrence_count + 1""",
+                    (family_id, chunk_text),
+                )
+        except Exception as e:
+            print(f"[chunk_engine] Family upsert error for '{chunk_text}': {e}")
+
+        results.append({
+            "chunk": chunk_text,
+            "carrier_sentence": carrier,
+            "rank": c.get("rank", i + 1),
+        })
+
+    conn.commit()
+    conn.close()
+    return results
+
+
+def auto_link_word_to_chunks(word_id, word, count=4, db_path=DB_PATH):
+    """Generate chunks for a word and add them all to chunk_queue.
+
+    The first chunk becomes 'primary', the rest become 'support'.
+    All are linked via support_links.
+
+    Returns: dict with primary_chunk_id and support_chunk_ids.
+    """
+    from drill_server import build_carrier
+
+    # Check if word already has chunks in queue
+    conn = get_connection(db_path)
+    existing = conn.execute(
+        "SELECT id, target_chunk FROM chunk_queue WHERE word_id = ?", (word_id,)
+    ).fetchall()
+    conn.close()
+
+    if len(existing) >= count:
+        # Already has enough chunks
+        return {"primary_chunk_id": existing[0]["id"], "support_chunk_ids": [r["id"] for r in existing[1:]]}
+
+    # Generate new chunks via GPT
+    chunks = generate_chunks_for_word(word, word_id=word_id, count=count, db_path=db_path)
+    if not chunks:
+        # Fallback: just ensure at least 1 chunk exists
+        if not existing:
+            carrier = build_carrier(word)
+            cid = add_chunk(word_id, word, carrier, "manual", db_path=db_path)
+            return {"primary_chunk_id": cid, "support_chunk_ids": []}
+        return {"primary_chunk_id": existing[0]["id"], "support_chunk_ids": []}
+
+    # Insert chunks into chunk_queue
+    primary_id = None
+    support_ids = []
+
+    for i, c in enumerate(chunks):
+        chunk_text = c["chunk"]
+        carrier = c.get("carrier_sentence") or build_carrier(word)
+        role = "primary" if i == 0 else "support"
+
+        cid = add_chunk(word_id, chunk_text, carrier, "manual", db_path=db_path)
+        if cid is None:
+            # Duplicate — find existing
+            conn = get_connection(db_path)
+            row = conn.execute(
+                "SELECT id FROM chunk_queue WHERE word_id = ? AND target_chunk = ?",
+                (word_id, chunk_text),
+            ).fetchone()
+            conn.close()
+            cid = row["id"] if row else None
+
+        if cid:
+            # Set role
+            conn = get_connection(db_path)
+            conn.execute("UPDATE chunk_queue SET item_role = ? WHERE id = ?", (role, cid))
+            conn.commit()
+            conn.close()
+
+            if i == 0:
+                primary_id = cid
+            else:
+                support_ids.append(cid)
+
+    # Also add any pre-existing chunks as support if not already primary
+    for ex in existing:
+        if ex["id"] != primary_id and ex["id"] not in support_ids:
+            support_ids.append(ex["id"])
+
+    # Create support_links
+    if primary_id and support_ids:
+        conn = get_connection(db_path)
+        for order, sid in enumerate(support_ids):
+            try:
+                conn.execute(
+                    """INSERT OR IGNORE INTO support_links
+                       (primary_chunk_id, support_chunk_id, link_type, display_order)
+                       VALUES (?, ?, 'chunk_support', ?)""",
+                    (primary_id, sid, order),
+                )
+            except Exception:
+                pass
+        conn.commit()
+        conn.close()
+
+    return {"primary_chunk_id": primary_id, "support_chunk_ids": support_ids}

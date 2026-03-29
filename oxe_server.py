@@ -46,7 +46,7 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
-from srs_engine import migrate_v2, migrate_v3, migrate_v4
+from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5
 from srs_engine import (
     clock_start_session, clock_end_session, clock_get_today,
     clock_get_sessions, clock_get_weekly_summary,
@@ -6037,57 +6037,39 @@ body{
     const area = document.getElementById('drillArea');
     const cid = data.chunk_id;
     const mc = currentModeConfig;
-    const modeShowImage = mc.show_image !== false;
-    const modeShowText = mc.show_text === true;
     const modeBiometric = mc.measures_biometric === true;
     const modeLabel = mc.label || '';
 
-    // Gap 1 fix: Zero-Reading Mode — text ONLY after 3 consecutive Again OR mode says show_text
-    const showText = modeShowText || (againStreak[cid] || 0) >= 3;
     const imgSrc = data.image_file ? '/image/' + data.image_file.split('/').pop() : null;
+    // Primary audio = target chunk (short), fallback to carrier sentence
+    const primaryAudioSrc = data.target_audio
+      ? '/audio/' + data.target_audio.split('/').pop()
+      : (data.audio_file ? '/audio/' + data.audio_file.split('/').pop() : null);
+    // Context audio = full carrier sentence
+    const contextAudioSrc = data.audio_file
+      ? '/audio/' + data.audio_file.split('/').pop() : null;
 
-    // Mode banner
+    // ── Screen 1: Audio-first target recognition ──
     let html = '';
-    if (modeLabel) {
-      const cls = MODE_CLASSES[currentMode] || '';
-      html += '<div class="mode-banner ' + cls + '"><span class="mode-dot"></span>' + modeLabel;
-      if (data.current_state) html += ' <span class="state-badge">' + data.current_state.replace(/_/g,' ') + '</span>';
-      html += '</div>';
-    }
 
-    // Image card — audio-first with DALL-E image
+    // Target label — makes it clear what is being tested
+    html += '<div style="text-align:center;padding:8px 0 4px;color:rgba(255,255,255,0.4);font-size:12px;text-transform:uppercase;letter-spacing:1px">' +
+      (data.target_chunk && data.target_chunk !== data.word ? 'Chunk' : 'Palavra') + '</div>';
+
+    // Image card
     if (imgSrc) {
-      html += '<div class="image-card">' +
-        '<img src="' + imgSrc + '" alt="">' +
-        '</div>';
+      html += '<div class="image-card"><img src="' + imgSrc + '" alt=""></div>';
     } else {
       html += '<div class="image-card">' +
         '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>' +
         '</div>';
     }
 
-    const targetWord = data.target_chunk || data.word || '';
-
-    // Text toggle — hidden by default, shown on tap
-    const sentence = data.carrier_sentence || data.carrier || '';
-    html += '<div class="text-toggle-row">' +
-      '<button class="text-toggle-btn" onclick="window._srsToggleText()">' +
-      '<svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:middle;margin-right:4px"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>' +
-      'Mostrar texto</button></div>';
-    html += '<div class="srs-text-panel" id="srsTextPanel" style="display:none">';
-    if (sentence && targetWord) {
-      const re = new RegExp('(' + targetWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-      html += '<div class="srs-carrier">' + sentence.replace(re, '<span style="background:#5E6AD2;color:#fff;padding:2px 6px;border-radius:4px">$1</span>') + '</div>';
-    }
-    html += '<div class="srs-simple" id="srsSimple" style="color:#9ca3af;font-size:0.85em;margin-top:6px"></div>';
-    html += '</div>';
-
     html += '<div class="timer" id="timerEl">0.0s</div>';
     html += '<div class="action-row">';
     html += '<div class="replay-btn" onclick="window._srsReplay()">' +
       '<svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>' +
       'Ouvir</div>';
-    // Show record button only when mode measures biometric
     if (modeBiometric) {
       html += '<div class="record-btn" id="recBtn" onclick="window._srsToggleRec()">' +
         '<svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' +
@@ -6095,7 +6077,6 @@ body{
     }
     html += '</div>';
 
-    // Biometric score display (hidden until scored)
     html += '<div class="bio-score" id="bioResult" style="display:none"></div>';
 
     html += '<div class="rating-row" id="ratingRow">' +
@@ -6108,16 +6089,34 @@ body{
     area.innerHTML = html;
     document.getElementById('dueFooter').textContent = data.due_count + ' restantes';
 
-    // Wait for image to load before playing audio
+    // Store audio sources for playback
+    currentChunk._primaryAudioSrc = primaryAudioSrc;
+    currentChunk._contextAudioSrc = contextAudioSrc;
+
+    // Play TARGET CHUNK audio (short), not full carrier sentence
+    function playTargetAudio() {
+      killAllAudio();
+      _audioKilled = false;
+      const gen = _audioGen;
+      if (!primaryAudioSrc) { startTimer(); return; }
+      audio = new Audio(primaryAudioSrc);
+      audio.onended = function() { if (_audioGen === gen) startTimer(); };
+      audio.onerror = function() { if (_audioGen === gen) startTimer(); };
+      audio.play().catch(function() { if (_audioGen === gen) startTimer(); });
+    }
+
+    // Wait for image then play target audio
     const drillImg = area.querySelector('.image-card img');
     if (drillImg && !drillImg.complete) {
-      drillImg.onload = function() { playAudioThenStartTimer(); };
-      drillImg.onerror = function() { playAudioThenStartTimer(); };
-      // Safety timeout in case image hangs
-      setTimeout(function() { if (!audio) playAudioThenStartTimer(); }, 8000);
-    } else if (!imgSrc && data.word) {
-      // No image yet — poll for it in the background while playing audio
-      playAudioThenStartTimer();
+      drillImg.onload = function() { playTargetAudio(); };
+      drillImg.onerror = function() { playTargetAudio(); };
+      setTimeout(function() { if (!audio) playTargetAudio(); }, 8000);
+    } else {
+      playTargetAudio();
+    }
+
+    // Poll for late images
+    if (!imgSrc && data.word) {
       let imgPolls = 0;
       const imgPollId = setInterval(function() {
         imgPolls++;
@@ -6133,10 +6132,8 @@ body{
         };
         testImg.src = '/image/img_' + wordSlug + '.png?t=' + Date.now();
       }, 2000);
-    } else {
-      playAudioThenStartTimer();
     }
-    // Prefetch next batch while user reviews this one
+
     setTimeout(prefetchBatch, 500);
   }
 
@@ -6189,16 +6186,53 @@ body{
     const overlay = document.getElementById('revealOverlay');
     const cid = currentChunk ? currentChunk.chunk_id : null;
     const streak = cid ? (againStreak[cid] || 0) : 0;
-    // Target word in large letters, full carrier sentence underneath with word highlighted
+    // ── Screen 2: Target Reveal ──
+    // Word in large letters
     const revealWord = currentChunk.word || currentChunk.target_chunk;
     document.getElementById('revealChunk').textContent = revealWord;
-    const sentence = currentChunk.carrier_sentence || currentChunk.target_chunk || '';
-    if (sentence && revealWord) {
-      const re = new RegExp('(' + revealWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-      document.getElementById('revealSentence').innerHTML = sentence.replace(re, '<span style="color:#fff;font-weight:600">$1</span>');
-    } else {
-      document.getElementById('revealSentence').textContent = sentence;
+
+    // Chunk underneath (if different from word)
+    const chunk = currentChunk.target_chunk || '';
+    const sentence = currentChunk.carrier_sentence || '';
+
+    // Build reveal content: chunk + carrier sentence + support chunks
+    let revealHtml = '';
+
+    // Target chunk
+    if (chunk && chunk !== revealWord) {
+      revealHtml += '<div style="font-size:18px;color:rgba(255,255,255,0.85);margin-bottom:8px;font-weight:600">' + chunk + '</div>';
     }
+
+    // Carrier sentence with word highlighted
+    if (sentence) {
+      const re = new RegExp('(' + revealWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      revealHtml += '<div style="font-size:15px;color:rgba(255,255,255,0.55);font-style:italic;margin-bottom:10px;max-width:90%;line-height:1.5">' +
+        sentence.replace(re, '<span style="color:#fff;font-weight:600">$1</span>') + '</div>';
+    }
+
+    // Context audio button — play full carrier sentence
+    if (currentChunk._contextAudioSrc) {
+      revealHtml += '<div style="display:flex;gap:8px;justify-content:center;margin:8px 0">' +
+        '<button onclick="window._playContext()" style="background:rgba(94,106,210,0.2);color:#8b95e0;border:1px solid rgba(94,106,210,0.3);padding:6px 14px;border-radius:16px;font-size:13px;cursor:pointer">' +
+        '&#9654; Ouvir contexto</button></div>';
+    }
+
+    // ── Screen 3: Support chunks ──
+    const supports = currentChunk.support_chunks || [];
+    if (supports.length > 0) {
+      revealHtml += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">' +
+        '<div style="font-size:11px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Chunks relacionados</div>';
+      for (var si = 0; si < supports.length; si++) {
+        var sc = supports[si];
+        revealHtml += '<div onclick="window._playSupport(' + sc.chunk_id + ',\'' + (sc.carrier || '').replace(/'/g, "\\'") + '\')" ' +
+          'style="padding:6px 10px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;font-size:14px;color:rgba(255,255,255,0.7)">' +
+          '&#9654; ' + sc.chunk + '</div>';
+      }
+      revealHtml += '</div>';
+    }
+
+    document.getElementById('revealSentence').innerHTML = revealHtml;
+
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
     rEl.className = 'reveal-rating r' + ratingVal;
@@ -6206,20 +6240,46 @@ body{
     bEl.textContent = bioScore !== null ? Math.round(bioScore) + '/100' : '';
     overlay.classList.add('visible');
 
-    // On Again — replay audio so user hears it while seeing the target
-    if (ratingVal === 1 && currentChunk && currentChunk.audio_file) {
+    // On Again — replay target chunk audio
+    if (ratingVal === 1 && currentChunk && currentChunk._primaryAudioSrc) {
       _audioKilled = false;
-      _audioGen++;  // new generation so old explain callbacks stay dead
-      audio = new Audio('/audio/' + currentChunk.audio_file.split('/').pop());
-      audio.play().catch(() => {});
+      _audioGen++;
+      audio = new Audio(currentChunk._primaryAudioSrc);
+      audio.play().catch(function() {});
     }
 
-    // Force redrill: auto-advance after 2s to re-present same chunk
     if (forceRedrill) {
-      setTimeout(() => { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2000);
+      setTimeout(function() { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2000);
     }
-    // All other cases: wait for user to tap "Próximo"
   }
+
+  // Play full carrier sentence (context support)
+  window._playContext = function() {
+    killAllAudio();
+    _audioKilled = false;
+    _audioGen++;
+    if (!currentChunk || !currentChunk._contextAudioSrc) return;
+    audio = new Audio(currentChunk._contextAudioSrc);
+    audio.play().catch(function() {});
+  };
+
+  // Play support chunk audio (generate on-the-fly)
+  window._playSupport = function(chunkId, carrier) {
+    killAllAudio();
+    _audioKilled = false;
+    _audioGen++;
+    if (!carrier) return;
+    // Fetch TTS for the support chunk carrier
+    fetch('/api/drill/tts?text=' + encodeURIComponent(carrier))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d && d.audio_file) {
+          audio = new Audio('/audio/' + d.audio_file.split('/').pop());
+          audio.play().catch(function() {});
+        }
+      })
+      .catch(function() {});
+  };
 
   window._srsRate = function(ratingVal) {
     if (!currentChunk) return;
@@ -6282,7 +6342,17 @@ body{
     .catch(() => { revealAnswer(finalRating, ratingNames[finalRating], lastBioScore); });
   };
 
-  window._srsReplay = function() { playAudio(); };
+  window._srsReplay = function() {
+    // Play target chunk audio (short), not full carrier sentence
+    killAllAudio();
+    _audioKilled = false;
+    _audioGen++;
+    if (!currentChunk) return;
+    const src = currentChunk._primaryAudioSrc;
+    if (!src) return;
+    audio = new Audio(src);
+    audio.play().catch(function() {});
+  };
 
   window._revealNext = function() {
     killAllAudio();
@@ -6850,6 +6920,13 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 self._json({"explanation": explanation, "audio_file": audio_fname})
             else:
                 self._json({"error": "palavra obrigatória"}, status=400)
+        elif path == "/api/drill/tts":
+            text = query.get("text", [""])[0]
+            if text:
+                fname = generate_tts(text)
+                self._json({"audio_file": fname})
+            else:
+                self._json({"error": "text required"}, status=400)
 
         # ── Shadowing (5-pass cycle from drill_server.py) ──
         elif path == "/shadowing":
@@ -8236,6 +8313,17 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             link_word(word_id)
         except Exception:
             pass
+        # Auto-generate support chunks in background
+        import threading
+        def _bg_auto_link():
+            try:
+                from chunk_engine import auto_link_word_to_chunks
+                word = self._resolve_word(word_id)
+                if word:
+                    auto_link_word_to_chunks(word_id, word, count=4)
+            except Exception as e:
+                print(f"[AUTO-LINK] Error for word_id={word_id}: {e}")
+        threading.Thread(target=_bg_auto_link, daemon=True).start()
         self._json({"chunk_id": chunk_id, "status": "adicionado" if chunk_id else "ja existe"})
 
     def _dict_history(self):
@@ -8403,18 +8491,44 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "Nenhum chunk disponivel"}, status=404)
             return
 
-        # Generate audio + image (graceful fallback if APIs are down/quota exceeded)
+        # Generate target chunk audio (short, just the chunk — primary review audio)
+        target_audio = None
+        try:
+            target_audio = generate_tts(chunk["target_chunk"], raw=True)
+        except Exception:
+            pass
+        # Generate carrier sentence audio (context support)
         audio_file = None
         try:
             audio_file = generate_tts(chunk["carrier_sentence"])
         except Exception:
             pass
+        # Generate image from carrier sentence context
         image_file = None
         try:
             carrier = chunk["carrier_sentence"] if "carrier_sentence" in chunk.keys() else None
             image_file = generate_image(chunk["word"], carrier)
         except Exception as e:
             print(f"[IMAGE] Error generating image for '{chunk['word']}': {e}")
+
+        # Fetch support chunks for this word
+        support_chunks = []
+        try:
+            sc_conn = get_conn()
+            # Get other chunks for the same word
+            sc_rows = sc_conn.execute(
+                """SELECT id, target_chunk, carrier_sentence
+                   FROM chunk_queue
+                   WHERE word_id = ? AND id != ?
+                   ORDER BY CASE WHEN item_role = 'support' THEN 0 ELSE 1 END, id
+                   LIMIT 4""",
+                (chunk["word_id"], chunk["id"]),
+            ).fetchall()
+            sc_conn.close()
+            support_chunks = [{"chunk_id": r["id"], "chunk": r["target_chunk"],
+                               "carrier": r["carrier_sentence"]} for r in sc_rows]
+        except Exception:
+            pass
 
         # Fast due count via COUNT(*) instead of fetching all rows
         due_count = 0
@@ -8461,6 +8575,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "target_chunk": chunk["target_chunk"],
             "carrier_sentence": chunk["carrier_sentence"],
             "current_pass": chunk["current_pass"],
+            "target_audio": target_audio,
             "audio_file": audio_file,
             "image_file": image_file,
             "tier": chunk["difficulty_tier"],
@@ -8469,6 +8584,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "current_state": chunk_state,
             "mode": mode,
             "mode_config": mode_config,
+            "support_chunks": support_chunks,
         })
 
     def _drill_prefetch(self, limit=5):
@@ -9910,6 +10026,10 @@ def main():
         migrate_v4()
     except Exception as e:
         print(f"  WARNING: migrate_v4() failed: {e}")
+    try:
+        migrate_v5()
+    except Exception as e:
+        print(f"  WARNING: migrate_v5() failed: {e}")
     try:
         build_full_index()
         print("  Search index built.")

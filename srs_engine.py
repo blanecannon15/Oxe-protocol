@@ -853,6 +853,39 @@ def migrate_v4(db_path=DB_PATH):
 
 # ── SRS Clock Service ���───────────────────────────────────────────────
 
+def migrate_v5(db_path=DB_PATH):
+    """V5 schema: targeted lexical training — multi-chunk per word, target audio, support links."""
+    conn = get_connection(db_path)
+
+    # 1. Add target_audio_path to chunk_queue (short TTS of just the chunk)
+    for col, coltype, default in [
+        ("target_audio_path", "TEXT", "NULL"),
+        ("item_role", "TEXT", "'primary'"),  # primary | support | context
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE chunk_queue ADD COLUMN {col} {coltype} DEFAULT {default}")
+        except Exception:
+            pass
+
+    # 2. Support chunks linking table — connects primary review item to support chunks
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS support_links (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            primary_chunk_id INTEGER NOT NULL REFERENCES chunk_queue(id),
+            support_chunk_id INTEGER NOT NULL REFERENCES chunk_queue(id),
+            link_type        TEXT NOT NULL DEFAULT 'chunk_support'
+                CHECK(link_type IN ('chunk_support', 'sentence_context')),
+            display_order    INTEGER NOT NULL DEFAULT 0,
+            created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+            UNIQUE(primary_chunk_id, support_chunk_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_primary ON support_links(primary_chunk_id);
+    """)
+
+    conn.commit()
+    conn.close()
+
+
 def clock_start_session(session_type="drill", db_path=DB_PATH):
     """Start a new SRS clock session. Returns session id."""
     now = datetime.now(timezone.utc)
