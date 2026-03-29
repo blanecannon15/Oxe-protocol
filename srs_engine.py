@@ -886,6 +886,74 @@ def migrate_v5(db_path=DB_PATH):
     conn.close()
 
 
+def migrate_v6(db_path=DB_PATH):
+    """V6: backfill legacy items — link multi-chunk words, fix item_roles, flag unhighlightable items."""
+    conn = get_connection(db_path)
+
+    # 1. For words with multiple chunks but no support_links, create links
+    # Find words with >1 chunk where the first chunk has no outgoing support_links
+    multi = conn.execute("""
+        SELECT word_id, MIN(id) as primary_id, GROUP_CONCAT(id) as all_ids, COUNT(*) as cnt
+        FROM chunk_queue
+        WHERE word_id IS NOT NULL
+        GROUP BY word_id
+        HAVING cnt > 1
+    """).fetchall()
+
+    linked = 0
+    for row in multi:
+        primary_id = row["primary_id"]
+        all_ids = [int(x) for x in row["all_ids"].split(",")]
+        support_ids = [x for x in all_ids if x != primary_id]
+
+        # Check if links already exist
+        existing = conn.execute(
+            "SELECT COUNT(*) as c FROM support_links WHERE primary_chunk_id = ?",
+            (primary_id,)
+        ).fetchone()["c"]
+        if existing > 0:
+            continue
+
+        # Set roles
+        conn.execute("UPDATE chunk_queue SET item_role = 'primary' WHERE id = ?", (primary_id,))
+        for sid in support_ids:
+            conn.execute("UPDATE chunk_queue SET item_role = 'support' WHERE id = ?", (sid,))
+
+        # Create links
+        for order, sid in enumerate(support_ids):
+            try:
+                conn.execute(
+                    """INSERT OR IGNORE INTO support_links
+                       (primary_chunk_id, support_chunk_id, link_type, display_order)
+                       VALUES (?, ?, 'chunk_support', ?)""",
+                    (primary_id, sid, order),
+                )
+                linked += 1
+            except Exception:
+                pass
+
+    # 2. Flag chunks where target_chunk not found in carrier_sentence (unhighlightable)
+    # Tag them so backfill script can regenerate carriers
+    unhighlightable = conn.execute("""
+        SELECT id, target_chunk, carrier_sentence
+        FROM chunk_queue
+        WHERE carrier_sentence NOT LIKE '%' || target_chunk || '%'
+          AND target_chunk != carrier_sentence
+    """).fetchall()
+
+    flagged = 0
+    for row in unhighlightable:
+        conn.execute(
+            "UPDATE chunk_queue SET tag = 'needs_carrier_fix' WHERE id = ? AND (tag IS NULL OR tag = '')",
+            (row["id"],),
+        )
+        flagged += 1
+
+    conn.commit()
+    conn.close()
+    print(f"[migrate_v6] Linked {linked} support_links, flagged {flagged} unhighlightable items")
+
+
 def clock_start_session(session_type="drill", db_path=DB_PATH):
     """Start a new SRS clock session. Returns session id."""
     now = datetime.now(timezone.utc)

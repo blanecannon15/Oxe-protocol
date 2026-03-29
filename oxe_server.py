@@ -46,7 +46,7 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
-from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5
+from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5, migrate_v6
 from srs_engine import (
     clock_start_session, clock_end_session, clock_get_today,
     clock_get_sessions, clock_get_weekly_summary,
@@ -6205,11 +6205,22 @@ body{
       revealHtml += '<div style="font-size:18px;color:rgba(255,255,255,0.85);margin-bottom:8px;font-weight:600">' + chunk + '</div>';
     }
 
-    // Carrier sentence with word highlighted
+    // Carrier sentence with TARGET CHUNK highlighted (chunk = primary unit, not word)
     if (sentence) {
-      const re = new RegExp('(' + revealWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      var highlighted = sentence;
+      // First try highlighting the chunk span (primary review unit)
+      if (chunk) {
+        var chunkRe = new RegExp('(' + chunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+        if (chunkRe.test(sentence)) {
+          highlighted = sentence.replace(chunkRe, '<span style="color:#8b95e0;font-weight:700;text-decoration:underline;text-underline-offset:3px">$1</span>');
+        } else {
+          // Fallback: highlight word as anchor
+          var wordRe = new RegExp('(' + revealWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+          highlighted = sentence.replace(wordRe, '<span style="color:#fff;font-weight:600">$1</span>');
+        }
+      }
       revealHtml += '<div style="font-size:15px;color:rgba(255,255,255,0.55);font-style:italic;margin-bottom:10px;max-width:90%;line-height:1.5">' +
-        sentence.replace(re, '<span style="color:#fff;font-weight:600">$1</span>') + '</div>';
+        highlighted + '</div>';
     }
 
     // Context audio button — play full carrier sentence
@@ -6219,16 +6230,28 @@ body{
         '&#9654; Ouvir contexto</button></div>';
     }
 
-    // ── Screen 3: Support chunks ──
+    // ── Screen 3: Support chunks with reinforce action ──
     const supports = currentChunk.support_chunks || [];
     if (supports.length > 0) {
       revealHtml += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">' +
         '<div style="font-size:11px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Chunks relacionados</div>';
       for (var si = 0; si < supports.length; si++) {
         var sc = supports[si];
-        revealHtml += '<div onclick="window._playSupport(' + sc.chunk_id + ',\'' + (sc.carrier || '').replace(/'/g, "\\'") + '\')" ' +
-          'style="padding:6px 10px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;font-size:14px;color:rgba(255,255,255,0.7)">' +
-          '&#9654; ' + sc.chunk + '</div>';
+        // Highlight chunk span inside support carrier sentence
+        var supCarrier = sc.carrier || '';
+        if (supCarrier && sc.chunk) {
+          var scRe = new RegExp('(' + sc.chunk.replace(/[.*+?^$\{\}()|[\]\\]/g, '\\$&') + ')', 'gi');
+          supCarrier = supCarrier.replace(scRe, '<b style="color:#8b95e0">$1</b>');
+        }
+        revealHtml += '<div style="padding:8px 10px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:8px;display:flex;align-items:center;gap:8px">' +
+          '<div style="flex:1;cursor:pointer" onclick="window._playSupport(' + sc.chunk_id + ',\'' + (sc.carrier || '').replace(/'/g, "\\'") + '\')">' +
+          '<div style="font-size:14px;color:rgba(255,255,255,0.8)">&#9654; ' + sc.chunk + '</div>' +
+          (supCarrier ? '<div style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:2px;font-style:italic">' + supCarrier + '</div>' : '') +
+          '</div>' +
+          '<button id="reinforce_' + sc.chunk_id + '" onclick="event.stopPropagation();window._reinforceChunk(' + sc.chunk_id + ',this)" ' +
+          'style="flex-shrink:0;padding:4px 8px;border-radius:8px;border:1px solid rgba(94,106,210,0.3);background:rgba(94,106,210,0.15);color:#8b95e0;font-size:11px;cursor:pointer;white-space:nowrap">' +
+          '+ Reforçar</button>' +
+          '</div>';
       }
       revealHtml += '</div>';
     }
@@ -6320,6 +6343,26 @@ body{
     audio.play().catch(function() {});
   };
 
+  // Promote a support chunk to active SRS reinforcement
+  window._reinforceChunk = function(chunkId, btn) {
+    fetch('/api/drill/reinforce', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ chunk_id: chunkId })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.status === 'promoted' || d.status === 'already_active') {
+        btn.textContent = d.status === 'promoted' ? '✓ Ativado' : '✓ Já ativo';
+        btn.style.background = 'rgba(76,175,80,0.2)';
+        btn.style.color = '#81c784';
+        btn.style.borderColor = 'rgba(76,175,80,0.3)';
+        btn.disabled = true;
+      }
+    })
+    .catch(function() {});
+  };
+
   // Play support chunk audio (generate on-the-fly)
   window._playSupport = function(chunkId, carrier) {
     killAllAudio();
@@ -6347,20 +6390,46 @@ body{
     let finalRating = ratingVal;
     let latencyOverride = false;
     const maxLatency = (currentModeConfig.max_response_time_ms || LATENCY_THRESHOLD);
-    // Latency-based auto-rating: >2s forces Hard, <500ms boosts to Easy
-    if (latency > 2000 && ratingVal > 2) {
+    const itemState = currentChunk.current_state || 'UNKNOWN';
+
+    // ── State-aware scoring refinements ──
+    // Thresholds tighten as automaticity increases
+    var stateLatencyCeil = 2000;   // ms — above this, forced Hard
+    var stateLatencyBoost = 500;   // ms — below this, Good→Easy
+    var stateBioThreshold = BIO_THRESHOLD; // 85 default
+
+    if (itemState === 'CONTEXT_KNOWN') {
+      // Lenient: learner is building context recognition, not speed yet
+      stateLatencyCeil = 3000;
+      stateLatencyBoost = 800;
+    } else if (itemState === 'EFFORTFUL_AUDIO') {
+      // Strict latency: must build speed to graduate to AUTOMATIC
+      stateLatencyCeil = 1500;
+      stateLatencyBoost = 600;
+    } else if (itemState === 'AUTOMATIC_CLEAN') {
+      // Very strict: consistency + speed expected
+      stateLatencyCeil = 1200;
+      stateLatencyBoost = 400;
+    } else if (itemState === 'AUTOMATIC_NATIVE') {
+      // Speed matters, biometric weight increases
+      stateLatencyCeil = 1000;
+      stateLatencyBoost = 400;
+      stateBioThreshold = 70; // stricter biometric gate
+    }
+
+    // Apply state-aware latency gates
+    if (latency > stateLatencyCeil && ratingVal > 2) {
       finalRating = 2;
       latencyOverride = true;
     } else if (latency > maxLatency && ratingVal > 2) {
       finalRating = 2;
       latencyOverride = true;
-    } else if (latency < 500 && ratingVal === 3) {
-      // Sub-500ms recall on Good → upgrade to Easy (instant automaticity)
+    } else if (latency < stateLatencyBoost && ratingVal === 3) {
       finalRating = 4;
     }
 
-    // Spec: biometric < 85 → auto-mark Hard (only when mode measures biometric)
-    if (currentModeConfig.measures_biometric && lastBioScore !== null && lastBioScore < BIO_THRESHOLD && finalRating > 2) {
+    // State-aware biometric gate
+    if (currentModeConfig.measures_biometric && lastBioScore !== null && lastBioScore < stateBioThreshold && finalRating > 2) {
       finalRating = 2;
     }
 
@@ -7266,6 +7335,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             return
         elif path == "/api/drill/complete":
             self._drill_complete(body)
+            return
+        elif path == "/api/drill/reinforce":
+            self._drill_reinforce(body)
             return
 
         # ── Conversa ──
@@ -8824,6 +8896,28 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "biometric_score": biometric,
         })
 
+    def _drill_reinforce(self, body):
+        """Promote a support chunk to active SRS reinforcement (item_role → primary)."""
+        chunk_id = body.get("chunk_id")
+        if not chunk_id:
+            self._json({"error": "chunk_id obrigatorio"}, status=400)
+            return
+        conn = get_conn()
+        row = conn.execute("SELECT id, item_role FROM chunk_queue WHERE id = ?", (chunk_id,)).fetchone()
+        if not row:
+            conn.close()
+            self._json({"error": "chunk não encontrado"}, status=404)
+            return
+        if row["item_role"] == "primary":
+            conn.close()
+            self._json({"status": "already_active", "chunk_id": chunk_id})
+            return
+        # Promote to primary — enters active SRS rotation
+        conn.execute("UPDATE chunk_queue SET item_role = 'primary' WHERE id = ?", (chunk_id,))
+        conn.commit()
+        conn.close()
+        self._json({"status": "promoted", "chunk_id": chunk_id})
+
     def _review_feed(self):
         chunks = get_review_feed()
         self._json({
@@ -10104,6 +10198,10 @@ def main():
         migrate_v5()
     except Exception as e:
         print(f"  WARNING: migrate_v5() failed: {e}")
+    try:
+        migrate_v6()
+    except Exception as e:
+        print(f"  WARNING: migrate_v6() failed: {e}")
     try:
         build_full_index()
         print("  Search index built.")

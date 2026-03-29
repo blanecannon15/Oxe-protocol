@@ -93,27 +93,40 @@ def get_or_create_state(item_type, item_id, db_path=DB_PATH):
 # ---------------------------------------------------------------------------
 
 def compute_confidence(state_row):
-    """Compute a 0.0-1.0 confidence score from the state row fields.
+    """Compute a 0.0-1.0 confidence score with state-aware weighting.
 
-    Weights:
-        30% correct_streak (capped at 5)
-        25% exposure_count (capped at 15)
-        20% latency (lower is better, capped at 2000ms)
-        15% clean_audio_success rate
-        10% native_audio_success rate
+    Base weights shift depending on the current state to emphasize what
+    matters most at each acquisition stage:
+        CONTEXT_KNOWN:    heavy streak + exposure (building recognition)
+        EFFORTFUL_AUDIO:  heavy latency + clean audio (building speed)
+        AUTOMATIC_CLEAN:  heavy latency + consistency (must be fast + reliable)
+        AUTOMATIC_NATIVE: heavy native audio + biometric (prosody matters)
     """
     correct_streak = state_row.get('correct_streak', 0)
     exposure_count = state_row.get('exposure_count', 0)
     avg_latency_ms = state_row.get('avg_latency_ms') or 2000
     clean_audio_success = state_row.get('clean_audio_success', 0.0)
     native_audio_success = state_row.get('native_audio_success', 0.0)
+    current_state = state_row.get('state', 'UNKNOWN')
+
+    # State-aware weight profiles: (streak, exposure, latency, clean, native)
+    weight_profiles = {
+        'UNKNOWN':          (0.30, 0.30, 0.15, 0.15, 0.10),
+        'RECOGNIZED':       (0.30, 0.25, 0.20, 0.15, 0.10),
+        'CONTEXT_KNOWN':    (0.35, 0.30, 0.10, 0.15, 0.10),
+        'EFFORTFUL_AUDIO':  (0.20, 0.15, 0.30, 0.25, 0.10),
+        'AUTOMATIC_CLEAN':  (0.15, 0.10, 0.35, 0.25, 0.15),
+        'AUTOMATIC_NATIVE': (0.10, 0.10, 0.20, 0.20, 0.40),
+        'AVAILABLE_OUTPUT': (0.10, 0.10, 0.20, 0.20, 0.40),
+    }
+    w = weight_profiles.get(current_state, (0.30, 0.25, 0.20, 0.15, 0.10))
 
     confidence = (
-        0.30 * min(correct_streak / 5, 1.0)
-        + 0.25 * min(exposure_count / 15, 1.0)
-        + 0.20 * max(0, 1.0 - avg_latency_ms / 2000)
-        + 0.15 * clean_audio_success
-        + 0.10 * native_audio_success
+        w[0] * min(correct_streak / 5, 1.0)
+        + w[1] * min(exposure_count / 15, 1.0)
+        + w[2] * max(0, 1.0 - avg_latency_ms / 2000)
+        + w[3] * clean_audio_success
+        + w[4] * native_audio_success
     )
     return confidence
 
