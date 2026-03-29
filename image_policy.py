@@ -83,7 +83,11 @@ _SLANG = {
 
 def _heuristic_classify(text):
     """Fast local classification without API call. Returns lexical_type or None if unsure."""
+    if not text or not isinstance(text, str):
+        return 'abstract_word'
     text_lower = text.lower().strip()
+    if not text_lower:
+        return 'abstract_word'
     words = text_lower.split()
 
     # Multi-word = chunk or sentence

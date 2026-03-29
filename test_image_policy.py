@@ -57,6 +57,21 @@ class TestHeuristicClassification(unittest.TestCase):
         result = _heuristic_classify('cachorro')
         self.assertIsNone(result, "Novel nouns should return None for GPT fallback")
 
+    def test_none_input_safe(self):
+        """None input should not crash."""
+        result = _heuristic_classify(None)
+        self.assertEqual(result, 'abstract_word')
+
+    def test_empty_string_safe(self):
+        """Empty string should not crash."""
+        result = _heuristic_classify('')
+        self.assertEqual(result, 'abstract_word')
+
+    def test_whitespace_only_safe(self):
+        """Whitespace-only input should not crash."""
+        result = _heuristic_classify('   ')
+        self.assertEqual(result, 'abstract_word')
+
 
 class TestImagePolicy(unittest.TestCase):
     """Tests the should_generate_image decision layer."""

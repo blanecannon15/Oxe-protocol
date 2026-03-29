@@ -166,7 +166,7 @@ def compute_latency_trend(latency_history):
 
 def update_state_after_review(item_type, item_id, rating, latency_ms,
                               audio_type, biometric_score=None, accent='baiano',
-                              db_path=DB_PATH):
+                              retries=0, db_path=DB_PATH):
     """Update automaticity state after a review. This is the CORE function.
 
     Args:
@@ -176,6 +176,7 @@ def update_state_after_review(item_type, item_id, rating, latency_ms,
         latency_ms: response time in milliseconds
         audio_type: 'clean', 'native', 'output', or 'text'
         biometric_score: optional 0-100 nativeness score
+        retries: number of audio replays before answering (0 = first listen)
         db_path: path to the SQLite database
 
     Returns:
@@ -242,8 +243,20 @@ def update_state_after_review(item_type, item_id, rating, latency_ms,
     if biometric_score is not None:
         state_row['last_biometric'] = biometric_score
 
+    # 8b. Replay penalty: high retries = comprehension difficulty
+    if retries >= 2:
+        # Dampen confidence proportional to replays (2→0.9, 3→0.8, 4+→0.7)
+        replay_penalty = max(0.7, 1.0 - retries * 0.1)
+        state_row['correct_streak'] = max(0, state_row['correct_streak'] - 1)
+
     # 9. Recompute confidence
     state_row['confidence'] = compute_confidence(state_row)
+    if retries >= 2:
+        state_row['confidence'] *= replay_penalty
+
+    # 9b. Flag fragile items on high replay count
+    if retries >= 3:
+        check_replay_reinforcement(item_type, item_id, retries, db_path)
 
     # 10. Check PROMOTION rules (in order, only first match)
     new_state = old_state

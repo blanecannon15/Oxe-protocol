@@ -132,7 +132,7 @@ CLOZE_PROBABILITY = 0.30
 from drill_server import (
     DRILL_HTML, build_carrier, generate_tts, generate_image, generate_explanation,
     prefetch_images, log_drill, TRAP_SENTENCES, TRAP_REACTIONS, IMAGE_DIR,
-    build_cloze, score_pronunciation,
+    build_cloze, score_pronunciation, get_cached_image,
 )
 
 # ── Imports from dictionary_engine ────────────────────────────
@@ -7759,8 +7759,10 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             audio_file = generate_tts(chunk["carrier_sentence"])
             image_file = None
             try:
+                from image_policy import should_generate_image
                 carrier = chunk["carrier_sentence"] if "carrier_sentence" in chunk.keys() else None
-                image_file = generate_image(chunk["word"], carrier)
+                if should_generate_image(chunk.get("target_chunk") or chunk["word"]):
+                    image_file = generate_image(chunk["word"], carrier)
             except Exception as e:
                 print(f"[IMAGE] Error: {e}")
 
@@ -7977,15 +7979,16 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             rating_val = r.get("rating", 3)
             latency_ms = r.get("latency_ms")
             biometric = r.get("biometric_score")
+            retries_val = r.get("retries", 0)
             if not chunk_id:
                 results.append({"chunk_id": chunk_id, "ok": False, "error": "chunk_id ausente"})
                 continue
             try:
                 rating_map = {1: Rating.Again, 2: Rating.Hard, 3: Rating.Good, 4: Rating.Easy}
                 rating = rating_map.get(rating_val, Rating.Good)
-                record_chunk_review(chunk_id, rating, latency_ms, biometric)
+                record_chunk_review(chunk_id, rating, latency_ms, biometric, retries=retries_val)
                 try:
-                    update_state_after_review('chunk', chunk_id, rating, latency_ms or 0, 'clean', biometric)
+                    update_state_after_review('chunk', chunk_id, rating, latency_ms or 0, 'clean', biometric, retries=retries_val)
                 except Exception:
                     pass
                 results.append({"chunk_id": chunk_id, "ok": True})
@@ -8824,9 +8827,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 cached_image = get_cached_image(chunk["word"], chunk["carrier_sentence"])
             except Exception:
                 pass
-            # Kick off background generation for images
+            # Kick off background generation for images (only if policy allows)
             try:
-                generate_image(chunk["word"], chunk["carrier_sentence"])
+                from image_policy import should_generate_image
+                if should_generate_image(chunk.get("target_chunk") or chunk["word"]):
+                    generate_image(chunk["word"], chunk["carrier_sentence"])
             except Exception:
                 pass
             try:
@@ -8885,7 +8890,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             rating = Rating.Good
 
         new_card, mastery, downgraded = record_chunk_review(
-            chunk_id, rating, latency_ms, biometric
+            chunk_id, rating, latency_ms, biometric, retries=retries,
         )
 
         # Update automaticity state with mode-aware audio_type
@@ -8895,15 +8900,20 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             if chunk_row:
                 trans = update_state_after_review(
                     'chunk', chunk_id, rating, latency_ms or 0,
-                    audio_type, biometric,
+                    audio_type, biometric, retries=retries,
                 )
                 if trans:
                     state_transition = trans
                 if chunk_row['word_id']:
-                    update_state_after_review(
+                    word_trans = update_state_after_review(
                         'word', chunk_row['word_id'], rating, latency_ms or 0,
-                        audio_type, biometric,
+                        audio_type, biometric, retries=retries,
                     )
+                    if word_trans and state_transition:
+                        state_transition['word_transition'] = {
+                            'old_state': word_trans.get('old_state'),
+                            'new_state': word_trans.get('new_state'),
+                        }
         except Exception:
             pass  # never crash drill for state tracking
 
@@ -9047,7 +9057,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             if not fname:
                 self._json({"error": "Falha ao gerar áudio"})
                 return
-            img_fname = generate_image(word["word"])
+            from image_policy import should_generate_image
+            img_fname = generate_image(word["word"]) if should_generate_image(word["word"]) else None
             due_words = list(get_due_words())
             upcoming = [w["word"] for w in due_words[:5] if w["word"] != word["word"]]
             if upcoming:
@@ -9073,8 +9084,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._json({"error": "Falha ao gerar áudio"})
             return
 
-        # Generate DALL-E image (waits if not cached)
-        img_fname = generate_image(word["word"])
+        # Generate DALL-E image only if policy allows
+        from image_policy import should_generate_image
+        img_fname = generate_image(word["word"]) if should_generate_image(word["word"]) else None
 
         # Pre-fetch images for next 5 due words in background
         due_words = list(get_due_words())

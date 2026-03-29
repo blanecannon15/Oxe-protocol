@@ -967,6 +967,14 @@ def migrate_v7(db_path=DB_PATH):
             pass
     conn.commit()
     conn.close()
+    # Backfill: classify unclassified chunks (heuristic only — no GPT at startup)
+    try:
+        from image_policy import classify_chunk_queue
+        result = classify_chunk_queue(db_path=db_path, use_gpt=False)
+        if result['classified'] > 0:
+            print(f"[MIGRATE_V7] Classified {result['classified']} chunks (heuristic)")
+    except Exception as e:
+        print(f"[MIGRATE_V7] Chunk classification warning: {e}")
 
 
 def clock_start_session(session_type="drill", db_path=DB_PATH):
@@ -1239,7 +1247,7 @@ def update_chunk_pass(chunk_id, new_pass, db_path=DB_PATH):
     conn.close()
 
 
-def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None, db_path=DB_PATH):
+def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None, retries=0, db_path=DB_PATH):
     """Record a completed review (pass 5 done). Updates FSRS and propagates mastery to word_bank."""
     conn = get_connection(db_path)
     row = conn.execute("SELECT * FROM chunk_queue WHERE id = ?", (chunk_id,)).fetchone()
@@ -1296,7 +1304,8 @@ def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None,
     try:
         from acquisition_engine import update_state_after_review
         state_result = update_state_after_review(
-            'chunk', chunk_id, rating, latency_ms, 'clean', biometric_score
+            'chunk', chunk_id, rating, latency_ms, 'clean', biometric_score,
+            retries=retries,
         )
         conn2 = get_connection(db_path)
         conn2.execute(
