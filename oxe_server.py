@@ -6084,7 +6084,6 @@ body{
     let html = '';
 
     // Zero-Reading: text only after 3 consecutive Again ratings
-    var cid = data.chunk_id;
     var streak = cid ? (againStreak[cid] || 0) : 0;
     var textRevealed = streak >= 3;
 
