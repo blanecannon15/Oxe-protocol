@@ -509,6 +509,12 @@ HOME_HTML = r"""<!DOCTYPE html>
     <span class="due-count" id="due-count">0 pendentes</span>
   </a>
 
+  <!-- Driving mode button -->
+  <a href="/driving" class="train-btn" style="background:linear-gradient(135deg,#1e293b,#334155);margin-bottom:20px;animation:fadeIn 0.3s ease-out 0.12s both">
+    <span style="display:flex;align-items:center;gap:8px">&#x1f697; Modo Dirigir</span>
+    <span class="due-count" style="background:rgba(255,255,255,0.1)">SRS + Sombra</span>
+  </a>
+
   <!-- Navigation -->
   <div class="nav-list">
     <a href="/library" class="nav-link">
@@ -6608,6 +6614,33 @@ body{
 .mode-toggle .lbl{font-size:14px;font-weight:600;color:#fff}
 .mode-toggle.shadow .dot{background:#f87171}
 
+/* Mode picker */
+.mode-picker{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:20px;padding:40px 20px;
+}
+.mode-picker-title{font-size:14px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;font-weight:600}
+.mode-card{
+  width:100%;max-width:400px;padding:32px 24px;border-radius:24px;
+  display:flex;align-items:center;gap:20px;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;transition:transform 0.15s;
+}
+.mode-card:active{transform:scale(0.96)}
+.mode-card.srs{
+  background:linear-gradient(135deg,rgba(59,130,246,0.12),rgba(124,92,252,0.12));
+  border:2px solid rgba(59,130,246,0.25);
+}
+.mode-card.shadow{
+  background:linear-gradient(135deg,rgba(248,113,113,0.12),rgba(251,146,60,0.12));
+  border:2px solid rgba(248,113,113,0.25);
+}
+.mode-card .mc-icon{font-size:40px;flex-shrink:0}
+.mode-card .mc-info{flex:1}
+.mode-card .mc-title{font-size:22px;font-weight:800}
+.mode-card.srs .mc-title{color:#60a5fa}
+.mode-card.shadow .mc-title{color:#f87171}
+.mode-card .mc-desc{font-size:13px;color:rgba(255,255,255,0.45);margin-top:4px;line-height:1.4}
+
 /* Main tap area */
 .drv-main{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -6693,11 +6726,35 @@ body{
 </style></head><body>
 <div class="safe-top"></div>
 
+<!-- Mode picker -->
+<div id="pickerUI" style="display:flex;flex-direction:column;flex:1">
+  <div class="drv-header">
+    <a href="/" style="color:#fff;text-decoration:none;font-size:20px;font-weight:700;display:flex;align-items:center;gap:8px">&#x2190; Modo Dirigir</a>
+  </div>
+  <div class="mode-picker">
+    <div class="mode-picker-title">Escolha o modo</div>
+    <div class="mode-card srs" onclick="startMode('srs')">
+      <div class="mc-icon">&#x1f4a1;</div>
+      <div class="mc-info">
+        <div class="mc-title">SRS</div>
+        <div class="mc-desc">Ou&#231;a, avalie e reforce chunks com repeti&#231;&#227;o espa&#231;ada</div>
+      </div>
+    </div>
+    <div class="mode-card shadow" onclick="startMode('shadow')">
+      <div class="mc-icon">&#x1f5e3;&#xfe0f;</div>
+      <div class="mc-info">
+        <div class="mc-title">Sombra</div>
+        <div class="mc-desc">Ou&#231;a, grave e receba nota de pron&#250;ncia em tempo real</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Active session UI -->
-<div id="sessionUI">
+<div id="sessionUI" style="display:none">
   <div class="drv-header">
     <div class="drv-counter"><span id="doneCount">0</span><span> revisados</span></div>
-    <div class="mode-toggle" id="modeToggle" onclick="toggleMode()">
+    <div class="mode-toggle" id="modeToggle" onclick="backToPicker()">
       <div class="dot"></div>
       <div class="lbl" id="modeLbl">SRS</div>
     </div>
@@ -6793,8 +6850,12 @@ body{
     document.getElementById('stopBtn').style.display = done > 0 ? 'block' : 'none';
   }
 
-  function toggleMode() {
-    mode = mode === 'srs' ? 'shadow' : 'srs';
+  function startMode(m) {
+    mode = m;
+    document.getElementById('pickerUI').style.display = 'none';
+    document.getElementById('sessionUI').style.display = 'flex';
+    document.getElementById('sessionUI').style.flexDirection = 'column';
+    document.getElementById('sessionUI').style.flex = '1';
     var tog = document.getElementById('modeToggle');
     var lbl = document.getElementById('modeLbl');
     if (mode === 'shadow') {
@@ -6808,8 +6869,23 @@ body{
       document.getElementById('ratingsEl').style.display = 'grid';
       document.getElementById('shadowControls').style.display = 'none';
     }
+    fetchNext();
   }
-  window.toggleMode = toggleMode;
+  window.startMode = startMode;
+
+  function backToPicker() {
+    stopped = true;
+    if (audio) { audio.pause(); audio = null; }
+    document.getElementById('sessionUI').style.display = 'none';
+    document.getElementById('pickerUI').style.display = 'flex';
+    document.getElementById('pickerUI').style.flexDirection = 'column';
+    document.getElementById('pickerUI').style.flex = '1';
+    // Reset state
+    stopped = false;
+    done = 0;
+    updateCount();
+  }
+  window.backToPicker = backToPicker;
 
   function toggleReveal() {
     var el = document.getElementById('revealEl');
@@ -7046,11 +7122,10 @@ body{
   }
   window.endSession = endSession;
 
-  // Init
+  // Init — show picker, don't auto-fetch
   updateCount();
   showStopBtn();
   setRatingsEnabled(false);
-  fetchNext();
 })();
 </script>
 </body></html>"""
