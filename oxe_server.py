@@ -700,7 +700,7 @@ requestAnimationFrame(function(){
       'continue': 'Continue treinando',
       'switch_mode': 'Troca pra escuta passiva',
       'take_break': 'Hora de uma pausa',
-      'end_session': 'Melhor parar por hoje'
+      'end_session': 'Bom trabalho! Continue quando quiser'
     };
     if(rec && REC_MSGS[rec]){
       banner.innerHTML = '<b>Agora:</b> ' + REC_MSGS[rec];
@@ -5796,16 +5796,15 @@ body{
 .btn-good:active{background:rgba(34,197,94,0.3)}
 .btn-easy:active{background:rgba(59,130,246,0.3)}
 .reveal-overlay{
-  position:fixed;top:0;left:0;right:0;bottom:0;
+  position:fixed;top:0;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom,0px));
   background:rgba(10,10,11,0.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   display:flex;flex-direction:column;
-  z-index:9999;opacity:0;pointer-events:none;
+  z-index:99;opacity:0;pointer-events:none;
   transition:opacity 0.3s;
 }
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
-.reveal-overlay.visible ~ .tab-bar{display:none !important}
 .reveal-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:10px;padding:max(env(safe-area-inset-top,20px),24px) 20px 12px}
-.reveal-bottom{flex-shrink:0;padding:10px 20px;padding-bottom:max(24px,calc(env(safe-area-inset-bottom) + 16px));text-align:center;background:rgba(10,10,11,0.97)}
+.reveal-bottom{flex-shrink:0;padding:10px 20px 16px;text-align:center;background:rgba(10,10,11,0.97)}
 .reveal-chunk{
   font-size:28px;font-weight:800;text-align:center;letter-spacing:-0.5px;
   background:linear-gradient(135deg,#5E6AD2,#7c85e0,#5E6AD2);

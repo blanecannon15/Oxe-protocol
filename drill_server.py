@@ -1554,40 +1554,21 @@ async function checkFatigueStatus() {
     modal.classList.remove('visible');
     if (fatigueTimerInterval) { clearInterval(fatigueTimerInterval); fatigueTimerInterval = null; }
 
+    // All fatigue recommendations are now just dismissible banners — never block training
     if (data.recommendation === 'switch_mode') {
       banner.innerHTML = '\uD83D\uDCA4 Cansou? Troca pra escuta passiva ' +
         '<button class="fatigue-action" onclick="window.location.href=\'/library\'">Biblioteca</button>' +
         '<button class="fatigue-dismiss" onclick="this.parentElement.classList.remove(\'visible\')">\u2715</button>';
       banner.classList.add('visible');
     } else if (data.recommendation === 'take_break') {
-      $('modal-icon').textContent = '\u2615';
-      $('modal-text').textContent = 'Pausa de 5 minutos';
-      $('modal-sub').textContent = 'Descansa os olhos e volta com tudo';
-      $('modal-btn').style.display = 'none';
-      modal.classList.add('visible');
-      let remaining = 300;
-      $('modal-timer').textContent = '5:00';
-      fatigueTimerInterval = setInterval(() => {
-        remaining--;
-        if (remaining <= 0) {
-          clearInterval(fatigueTimerInterval);
-          fatigueTimerInterval = null;
-          modal.classList.remove('visible');
-          return;
-        }
-        const m = Math.floor(remaining / 60);
-        const s = remaining % 60;
-        $('modal-timer').textContent = m + ':' + (s < 10 ? '0' : '') + s;
-      }, 1000);
+      banner.innerHTML = '\u2615 Pausa recomendada ' +
+        '<button class="fatigue-dismiss" onclick="this.parentElement.classList.remove(\'visible\')">\u2715</button>';
+      banner.classList.add('visible');
     } else if (data.recommendation === 'end_session') {
-      $('modal-icon').textContent = '\uD83C\uDF19';
-      $('modal-text').textContent = 'Melhor parar por hoje';
-      $('modal-sub').textContent = (data.minutes_active || 0) + ' minutos de treino';
-      $('modal-timer').textContent = '';
-      $('modal-btn').textContent = 'Voltar pro in\u00EDcio';
-      $('modal-btn').style.display = 'block';
-      $('modal-btn').onclick = () => { window.location.href = '/'; };
-      modal.classList.add('visible');
+      banner.innerHTML = '\uD83C\uDF19 ' + (data.minutes_active || 0) + ' min de treino. Pausa? ' +
+        '<button class="fatigue-action" onclick="window.location.href=\'/\'">Inicio</button>' +
+        '<button class="fatigue-dismiss" onclick="this.parentElement.classList.remove(\'visible\')">\u2715</button>';
+      banner.classList.add('visible');
     }
     // 'continue' => do nothing, UI already cleared
   } catch (e) {}
