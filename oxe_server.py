@@ -5745,12 +5745,14 @@ body{
 .btn-easy:active{background:rgba(59,130,246,0.3)}
 .reveal-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
-  background:rgba(10,10,11,0.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:16px;z-index:100;opacity:0;pointer-events:none;
-  transition:opacity 0.3s;padding:40px 20px;
+  background:rgba(10,10,11,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  display:flex;flex-direction:column;
+  z-index:100;opacity:0;pointer-events:none;
+  transition:opacity 0.3s;overflow-y:auto;-webkit-overflow-scrolling:touch;
 }
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
+.reveal-scroll{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:40px 20px 20px}
+.reveal-sticky{position:sticky;bottom:0;padding:16px 20px;padding-bottom:max(16px,env(safe-area-inset-bottom));background:rgba(10,10,11,0.95);text-align:center;flex-shrink:0}
 .reveal-chunk{
   font-size:36px;font-weight:800;text-align:center;letter-spacing:-0.5px;
   background:linear-gradient(135deg,#5E6AD2,#7c85e0,#5E6AD2);
@@ -5819,11 +5821,15 @@ body{
 </div>
 <div id="drillArea" class="drill-content"><div class="loading"><div class="spinner"></div></div></div>
 <div class="reveal-overlay" id="revealOverlay">
-  <div class="reveal-chunk" id="revealChunk"></div>
-  <div class="reveal-sentence" id="revealSentence"></div>
-  <div class="reveal-rating" id="revealRating"></div>
-  <div class="reveal-bio" id="revealBio"></div>
-  <button class="reveal-next-btn" id="revealNextBtn" onclick="window._revealNext()">Próximo →</button>
+  <div class="reveal-scroll">
+    <div class="reveal-chunk" id="revealChunk"></div>
+    <div class="reveal-sentence" id="revealSentence"></div>
+    <div class="reveal-rating" id="revealRating"></div>
+    <div class="reveal-bio" id="revealBio"></div>
+  </div>
+  <div class="reveal-sticky">
+    <button class="reveal-next-btn" id="revealNextBtn" onclick="window._revealNext()">Próximo →</button>
+  </div>
 </div>
 <div class="due-footer" id="dueFooter"></div>
 <div class="tab-spacer"></div>
@@ -6193,6 +6199,20 @@ body{
     }
 
     setTimeout(prefetchBatch, 500);
+
+    // Prefetch explanation so it's ready at reveal
+    var explainWord = data.target_chunk || data.word;
+    if (explainWord) {
+      fetch('/api/drill/explain?word=' + encodeURIComponent(explainWord))
+        .then(function(r) { return r.json(); })
+        .then(function(exp) {
+          if (exp && currentChunk && currentChunk.chunk_id === cid) {
+            currentChunk._explanation = exp.explanation || null;
+            currentChunk._explainAudioSrc = exp.audio_file ? '/audio/' + exp.audio_file.split('/').pop() : null;
+          }
+        })
+        .catch(function() {});
+    }
   }
 
   function renderEmpty() {
@@ -6362,31 +6382,48 @@ body{
       revealHtml += '</div>';
     }
 
-    // Explanation placeholder — will be filled async
-    revealHtml += '<div id="explainBlock" style="margin-top:12px;padding:12px 16px;border-radius:12px;background:rgba(250,204,21,0.06);border:1px solid rgba(250,204,21,0.12);display:none">' +
-      '<div style="font-size:10px;color:rgba(250,204,21,0.6);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:600">Explicação</div>' +
-      '<div id="explainText" style="font-size:14px;color:rgba(255,255,255,0.7);line-height:1.5"></div>' +
-      '<button id="explainPlayBtn" onclick="window._playExplainAudio()" style="display:none;margin-top:8px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.25);color:#facc15;padding:6px 14px;border-radius:12px;font-size:12px;cursor:pointer">&#9654; Ouvir</button>' +
-      '</div>';
+    // Explanation — use prefetched data, fallback to async fetch
+    var prefetchedExplain = currentChunk._explanation;
+    if (prefetchedExplain) {
+      revealHtml += '<div style="margin-top:12px;padding:12px 16px;border-radius:12px;background:rgba(250,204,21,0.06);border:1px solid rgba(250,204,21,0.12)">' +
+        '<div style="font-size:10px;color:rgba(250,204,21,0.6);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:600">Explicação</div>' +
+        '<div style="font-size:14px;color:rgba(255,255,255,0.7);line-height:1.5">' + prefetchedExplain + '</div>' +
+        (currentChunk._explainAudioSrc ? '<button onclick="window._playExplainAudio()" style="margin-top:8px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.25);color:#facc15;padding:6px 14px;border-radius:12px;font-size:12px;cursor:pointer">&#9654; Ouvir</button>' : '') +
+        '</div>';
+    } else {
+      // Not yet prefetched — add placeholder and fetch
+      revealHtml += '<div id="explainBlock" style="margin-top:12px;padding:12px 16px;border-radius:12px;background:rgba(250,204,21,0.06);border:1px solid rgba(250,204,21,0.12);display:none">' +
+        '<div style="font-size:10px;color:rgba(250,204,21,0.6);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:600">Explicação</div>' +
+        '<div id="explainText" style="font-size:14px;color:rgba(255,255,255,0.7);line-height:1.5"></div>' +
+        '<button id="explainPlayBtn" onclick="window._playExplainAudio()" style="display:none;margin-top:8px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.25);color:#facc15;padding:6px 14px;border-radius:12px;font-size:12px;cursor:pointer">&#9654; Ouvir</button>' +
+        '</div>';
+    }
 
     document.getElementById('revealSentence').innerHTML = revealHtml;
 
-    // Fetch explanation
-    var explainWord = currentChunk.target_chunk || currentChunk.word;
-    if (explainWord) {
-      fetch('/api/drill/explain?word=' + encodeURIComponent(explainWord))
-        .then(function(r) { return r.json(); })
-        .then(function(exp) {
-          if (exp && exp.explanation) {
-            document.getElementById('explainText').textContent = exp.explanation;
-            document.getElementById('explainBlock').style.display = 'block';
-            if (exp.audio_file) {
-              currentChunk._explainAudioSrc = '/audio/' + exp.audio_file.split('/').pop();
-              document.getElementById('explainPlayBtn').style.display = 'inline-block';
+    // Fallback fetch if not prefetched
+    if (!prefetchedExplain) {
+      var ew = currentChunk.target_chunk || currentChunk.word;
+      if (ew) {
+        fetch('/api/drill/explain?word=' + encodeURIComponent(ew))
+          .then(function(r) { return r.json(); })
+          .then(function(exp) {
+            if (exp && exp.explanation) {
+              var blk = document.getElementById('explainBlock');
+              var txt = document.getElementById('explainText');
+              if (blk && txt) {
+                txt.textContent = exp.explanation;
+                blk.style.display = 'block';
+              }
+              if (exp.audio_file) {
+                currentChunk._explainAudioSrc = '/audio/' + exp.audio_file.split('/').pop();
+                var pb = document.getElementById('explainPlayBtn');
+                if (pb) pb.style.display = 'inline-block';
+              }
             }
-          }
-        })
-        .catch(function() {});
+          })
+          .catch(function() {});
+      }
     }
 
     const rEl = document.getElementById('revealRating');
