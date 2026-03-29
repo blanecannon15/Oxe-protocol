@@ -348,8 +348,14 @@ def generate_image(word, carrier_sentence=None):
 
 
 def prefetch_images(words, carriers=None):
-    """Pre-generate images for a list of words in background threads."""
+    """Pre-generate images for a list of words in background threads (with policy check)."""
+    try:
+        from image_policy import should_generate_image
+    except ImportError:
+        should_generate_image = lambda _: True
     for i, w in enumerate(words):
+        if not should_generate_image(w):
+            continue
         carrier = carriers[i] if carriers and i < len(carriers) else None
         if get_cached_image(w, carrier):
             continue

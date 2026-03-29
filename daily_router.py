@@ -150,10 +150,15 @@ def _select_mode_for_block(items, block_type, is_fragile=False):
 
     # Use acquisition engine's mode selector on the first item
     try:
-        mode = select_mode_for_item(items[0])
-        return mode
+        first = items[0]
+        item_type = 'chunk' if first.get('target_chunk') else 'word'
+        item_id = first.get('id')
+        if item_id:
+            mode = select_mode_for_item(item_type, item_id)
+            return mode
     except Exception:
-        return "standard_drill"
+        pass
+    return "standard_drill"
 
 
 # ---------------------------------------------------------------------------

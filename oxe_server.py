@@ -6741,6 +6741,7 @@ body{
   var shadowCount = 0;
   var wakeLock = null;
   var stopped = false;
+  var storyReplayCount = 0;
 
   // Wake Lock
   async function requestWakeLock() {
@@ -6856,10 +6857,11 @@ body{
       body: JSON.stringify({
         chunk_id: chunk.chunk_id,
         latency_ms: 0,
-        retries: 0,
+        retries: storyReplayCount,
         rating: 3
       })
     }).catch(function(){});
+    storyReplayCount = 0;
     done++;
     updateCount();
     showStopBtn();
@@ -6868,6 +6870,7 @@ body{
 
   function replayAudio() {
     if (!chunk) return;
+    storyReplayCount++;
     if (audio) { audio.pause(); audio = null; }
     playAudio();
   }
@@ -6883,10 +6886,11 @@ body{
       body: JSON.stringify({
         chunk_id: chunk.chunk_id,
         latency_ms: Math.round(latency),
-        retries: 0,
+        retries: storyReplayCount,
         rating: val
       })
     }).catch(function(){});
+    storyReplayCount = 0;
     done++;
     updateCount();
     showStopBtn();
