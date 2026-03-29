@@ -6362,7 +6362,32 @@ body{
       revealHtml += '</div>';
     }
 
+    // Explanation placeholder — will be filled async
+    revealHtml += '<div id="explainBlock" style="margin-top:12px;padding:12px 16px;border-radius:12px;background:rgba(250,204,21,0.06);border:1px solid rgba(250,204,21,0.12);display:none">' +
+      '<div style="font-size:10px;color:rgba(250,204,21,0.6);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:600">Explicação</div>' +
+      '<div id="explainText" style="font-size:14px;color:rgba(255,255,255,0.7);line-height:1.5"></div>' +
+      '<button id="explainPlayBtn" onclick="window._playExplainAudio()" style="display:none;margin-top:8px;background:rgba(250,204,21,0.15);border:1px solid rgba(250,204,21,0.25);color:#facc15;padding:6px 14px;border-radius:12px;font-size:12px;cursor:pointer">&#9654; Ouvir</button>' +
+      '</div>';
+
     document.getElementById('revealSentence').innerHTML = revealHtml;
+
+    // Fetch explanation
+    var explainWord = currentChunk.target_chunk || currentChunk.word;
+    if (explainWord) {
+      fetch('/api/drill/explain?word=' + encodeURIComponent(explainWord))
+        .then(function(r) { return r.json(); })
+        .then(function(exp) {
+          if (exp && exp.explanation) {
+            document.getElementById('explainText').textContent = exp.explanation;
+            document.getElementById('explainBlock').style.display = 'block';
+            if (exp.audio_file) {
+              currentChunk._explainAudioSrc = '/audio/' + exp.audio_file.split('/').pop();
+              document.getElementById('explainPlayBtn').style.display = 'inline-block';
+            }
+          }
+        })
+        .catch(function() {});
+    }
 
     const rEl = document.getElementById('revealRating');
     rEl.textContent = ratingName;
@@ -6383,6 +6408,16 @@ body{
       // User must tap "Próximo" to continue — full stop at reveal
     }
   }
+
+  // Play explanation audio
+  window._playExplainAudio = function() {
+    killAllAudio();
+    _audioKilled = false;
+    _audioGen++;
+    if (!currentChunk || !currentChunk._explainAudioSrc) return;
+    audio = new Audio(currentChunk._explainAudioSrc);
+    audio.play().catch(function() {});
+  };
 
   // Play full carrier sentence (context support)
   window._playContext = function() {
