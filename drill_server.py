@@ -386,6 +386,8 @@ def generate_explanation(word):
                     "Tu é um parceiro baiano de Salvador. Explica o significado da palavra "
                     "usando só as 1000 palavras mais comuns do português. "
                     "Máximo 2 frases curtas. Fala natural, tipo conversa de rua. "
+                    "Usa elisões e contrações reais: tá, tô, tava, cê, né, pro, pra, num, "
+                    "peraí, belê. NUNCA escreva 'está', 'você', 'para o'. "
                     "Sem inglês. Sem markdown."
                 ),
             }, {

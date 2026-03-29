@@ -393,7 +393,11 @@ def _generate_carrier_sentences(chunks, batch_size=20):
                         "usando cada chunk dado. As frases devem soar como conversa real "
                         "de rua em Salvador — usa gírias, interjeições (oxe, eita, vixe, "
                         "meu rei, véi), locais de Salvador. Cada frase 8-15 palavras. "
-                        "NUNCA usa inglês."
+                        "OBRIGATÓRIO usar elisões e contrações nativas da fala real: "
+                        "tá, tô, tava, tão, cê, né, pro, pra, num, dum, num tá, "
+                        "ce ligou, to ligado, ta ligado, cadê, peraí, belê. "
+                        "NUNCA escreva 'está', 'estou', 'estava', 'você', 'para o', 'para a' — "
+                        "sempre a forma falada. NUNCA usa inglês."
                     )},
                     {"role": "user", "content": (
                         f"Gera UMA frase natural pra cada chunk. O chunk DEVE aparecer "
@@ -540,10 +544,13 @@ def generate_chunks_for_word(word, word_id=None, count=4, db_path=DB_PATH):
         f"- Frequentes no falar cotidiano brasileiro\n"
         f"- Naturais e conversacionais (não literários)\n"
         f"- Úteis para automaticidade lexical\n"
-        f"- Preferência: uso paulista > carioca > baiano\n\n"
-        f"Para CADA chunk, gere também UMA frase-contexto curta e natural usando o chunk.\n\n"
+        f"- Preferência: uso baiano > carioca > paulista\n"
+        f"- OBRIGATÓRIO usar elisões nativas: tá, tô, tava, tão, cê, né, pro, pra, "
+        f"num, peraí, belê, cadê. NUNCA 'está', 'estou', 'você', 'para o'.\n\n"
+        f"Para CADA chunk, gere também UMA frase-contexto curta e natural usando o chunk. "
+        f"A frase DEVE usar contrações faladas (tá, cê, pra, etc).\n\n"
         f"Responda APENAS com JSON válido:\n"
-        f'[{{"chunk": "fazer barulho", "carrier": "Menino, para de fazer barulho!", "rank": 1}}, ...]'
+        f'[{{"chunk": "tá ligado", "carrier": "Cê tá ligado no que tô falando, véi?", "rank": 1}}, ...]'
     )
 
     try:

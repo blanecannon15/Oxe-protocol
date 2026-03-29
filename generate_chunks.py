@@ -64,6 +64,10 @@ def generate_chunks_for_words(words, existing_roots, batch_size=20):
                         "Tu é um linguista baiano especialista em colocações e chunks "
                         "do português brasileiro. Gera chunks de alta frequência que "
                         "um aprendiz PRECISA saber como unidades inseparáveis. "
+                        "OBRIGATÓRIO usar elisões e contrações nativas da fala real: "
+                        "tá, tô, tava, tão, cê, né, pro, pra, num, peraí, belê, cadê, "
+                        "to ligado, ta ligado, ce ligou. NUNCA escreva formas completas "
+                        "como 'está', 'estou', 'você', 'para o'. Sempre a forma falada. "
                         "NUNCA usa inglês."
                     )},
                     {"role": "user", "content": (

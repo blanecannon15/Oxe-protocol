@@ -5747,19 +5747,19 @@ body{
   position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(10,10,11,0.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   display:flex;flex-direction:column;
-  z-index:100;opacity:0;pointer-events:none;
+  z-index:200;opacity:0;pointer-events:none;
   transition:opacity 0.3s;
 }
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
-.reveal-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:12px;padding:max(env(safe-area-inset-top,20px),40px) 20px 16px}
-.reveal-bottom{flex-shrink:0;padding:12px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom));text-align:center;border-top:1px solid rgba(255,255,255,0.06);background:rgba(10,10,11,0.97)}
+.reveal-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:10px;padding:max(env(safe-area-inset-top,20px),24px) 20px 12px}
+.reveal-bottom{flex-shrink:0;padding:10px 20px;padding-bottom:max(16px,env(safe-area-inset-bottom));text-align:center;background:rgba(10,10,11,0.97)}
 .reveal-chunk{
-  font-size:36px;font-weight:800;text-align:center;letter-spacing:-0.5px;
+  font-size:28px;font-weight:800;text-align:center;letter-spacing:-0.5px;
   background:linear-gradient(135deg,#5E6AD2,#7c85e0,#5E6AD2);
   background-size:200% 200%;
   animation:revealGlow 3s ease infinite;
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  margin-bottom:4px;
+  margin-bottom:2px;
 }
 @keyframes revealGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
 .reveal-sentence{font-size:16px;color:rgba(255,255,255,0.75);text-align:center;max-width:90%;line-height:1.6;font-style:italic;padding:0 16px;word-wrap:break-word}
@@ -5770,9 +5770,9 @@ body{
 .reveal-rating.r4{background:rgba(59,130,246,0.2);color:#3B82F6}
 .reveal-bio{font-size:14px;color:rgba(255,255,255,0.4);margin-top:4px}
 .reveal-next-btn{
-  margin-top:20px;padding:12px 32px;border:none;border-radius:12px;
+  width:100%;padding:16px 32px;border:none;border-radius:14px;
   background:linear-gradient(135deg,#5E6AD2,#3B82F6);color:#fff;
-  font-size:16px;font-weight:700;cursor:pointer;letter-spacing:0.5px;
+  font-size:18px;font-weight:700;cursor:pointer;letter-spacing:0.5px;
   transition:transform 0.15s,opacity 0.15s;
 }
 .reveal-next-btn:active{transform:scale(0.95);opacity:0.8}
