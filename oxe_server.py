@@ -5745,14 +5745,14 @@ body{
 .btn-easy:active{background:rgba(59,130,246,0.3)}
 .reveal-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
-  background:rgba(10,10,11,0.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  background:rgba(10,10,11,0.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   display:flex;flex-direction:column;
   z-index:100;opacity:0;pointer-events:none;
-  transition:opacity 0.3s;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  transition:opacity 0.3s;
 }
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
-.reveal-scroll{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:40px 20px 20px}
-.reveal-sticky{position:sticky;bottom:0;padding:16px 20px;padding-bottom:max(16px,env(safe-area-inset-bottom));background:rgba(10,10,11,0.95);text-align:center;flex-shrink:0}
+.reveal-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:12px;padding:max(env(safe-area-inset-top,20px),40px) 20px 16px}
+.reveal-bottom{flex-shrink:0;padding:12px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom));text-align:center;border-top:1px solid rgba(255,255,255,0.06);background:rgba(10,10,11,0.97)}
 .reveal-chunk{
   font-size:36px;font-weight:800;text-align:center;letter-spacing:-0.5px;
   background:linear-gradient(135deg,#5E6AD2,#7c85e0,#5E6AD2);
@@ -5827,7 +5827,7 @@ body{
     <div class="reveal-rating" id="revealRating"></div>
     <div class="reveal-bio" id="revealBio"></div>
   </div>
-  <div class="reveal-sticky">
+  <div class="reveal-bottom">
     <button class="reveal-next-btn" id="revealNextBtn" onclick="window._revealNext()">Próximo →</button>
   </div>
 </div>
@@ -6299,12 +6299,17 @@ body{
         highlighted + '</div>';
     }
 
-    // Context audio button — play full carrier sentence
-    if (currentChunk._contextAudioSrc) {
-      revealHtml += '<div style="display:flex;gap:8px;justify-content:center;margin:8px 0">' +
-        '<button onclick="window._playContext()" style="background:rgba(94,106,210,0.2);color:#8b95e0;border:1px solid rgba(94,106,210,0.3);padding:6px 14px;border-radius:16px;font-size:13px;cursor:pointer">' +
-        '&#9654; Ouvir contexto</button></div>';
+    // Audio buttons: replay chunk + replay full sentence
+    revealHtml += '<div style="display:flex;gap:8px;justify-content:center;margin:8px 0;flex-wrap:wrap">';
+    if (currentChunk._primaryAudioSrc) {
+      revealHtml += '<button onclick="window._replayChunk()" style="background:rgba(94,106,210,0.2);color:#8b95e0;border:1px solid rgba(94,106,210,0.3);padding:6px 14px;border-radius:16px;font-size:13px;cursor:pointer">' +
+        '&#9654; Chunk</button>';
     }
+    if (currentChunk._contextAudioSrc) {
+      revealHtml += '<button onclick="window._playContext()" style="background:rgba(94,106,210,0.2);color:#8b95e0;border:1px solid rgba(94,106,210,0.3);padding:6px 14px;border-radius:16px;font-size:13px;cursor:pointer">' +
+        '&#9654; Frase</button>';
+    }
+    revealHtml += '</div>';
 
     // ── Screen 3: Support chunks with reinforce action ──
     const supports = currentChunk.support_chunks || [];
@@ -6434,17 +6439,24 @@ body{
     overlay.classList.add('visible');
     lastRatingVal = ratingVal;
 
-    // On Again — replay target chunk audio so user hears it during reveal
-    if (ratingVal === 1 && currentChunk) {
-      if (currentChunk._primaryAudioSrc) {
-        _audioKilled = false;
-        _audioGen++;
-        audio = new Audio(currentChunk._primaryAudioSrc);
-        audio.play().catch(function() {});
-      }
-      // User must tap "Próximo" to continue — full stop at reveal
+    // Auto-play full carrier sentence at reveal
+    if (currentChunk && currentChunk._contextAudioSrc) {
+      _audioKilled = false;
+      _audioGen++;
+      audio = new Audio(currentChunk._contextAudioSrc);
+      audio.play().catch(function() {});
     }
   }
+
+  // Replay just the chunk audio
+  window._replayChunk = function() {
+    killAllAudio();
+    _audioKilled = false;
+    _audioGen++;
+    if (!currentChunk || !currentChunk._primaryAudioSrc) return;
+    audio = new Audio(currentChunk._primaryAudioSrc);
+    audio.play().catch(function() {});
+  };
 
   // Play explanation audio
   window._playExplainAudio = function() {
