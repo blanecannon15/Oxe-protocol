@@ -1,4 +1,4 @@
-const CACHE_NAME = 'oxe-v10';
+const CACHE_NAME = 'oxe-v11';
 const DB_NAME = 'oxe-offline';
 const DB_VERSION = 2;
 

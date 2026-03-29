@@ -5838,6 +5838,7 @@ body{
   let recordedBlob = null;
   let lastBioScore = null;
   let forceRedrill = false;
+  let lastRatingVal = 0;
   let latencyExplainFired = false;
   const LATENCY_THRESHOLD = 1000;
   const BIO_THRESHOLD = 85;
@@ -6363,8 +6364,9 @@ body{
     const bEl = document.getElementById('revealBio');
     bEl.textContent = bioScore !== null ? Math.round(bioScore) + '/100' : '';
     overlay.classList.add('visible');
+    lastRatingVal = ratingVal;
 
-    // On Again — replay target chunk audio and auto-loop back to drill
+    // On Again — replay target chunk audio so user hears it during reveal
     if (ratingVal === 1 && currentChunk) {
       if (currentChunk._primaryAudioSrc) {
         _audioKilled = false;
@@ -6372,13 +6374,7 @@ body{
         audio = new Audio(currentChunk._primaryAudioSrc);
         audio.play().catch(function() {});
       }
-      // Always re-render drill on De Novo — user must hear it again
-      setTimeout(function() { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2500);
-      return;
-    }
-
-    if (forceRedrill) {
-      setTimeout(function() { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2000);
+      // User must tap "Próximo" to continue — full stop at reveal
     }
   }
 
@@ -6532,7 +6528,12 @@ body{
     killAllAudio();
     const overlay = document.getElementById('revealOverlay');
     overlay.classList.remove('visible');
-    fetchNext();
+    // De Novo or biometric fail: re-drill same item
+    if ((lastRatingVal === 1 || forceRedrill) && currentChunk) {
+      renderDrill(currentChunk);
+    } else {
+      fetchNext();
+    }
   };
 
   window._srsToggleRec = function() {
@@ -6708,12 +6709,26 @@ body{
     <button class="mostrar-btn" id="mostrarBtn" onclick="event.stopPropagation();toggleReveal()">Mostrar</button>
   </div>
 
+  <div class="drv-score" id="shadowScore" style="display:none;text-align:center;padding:8px 16px">
+    <div style="font-size:48px;font-weight:800;line-height:1" id="scoreVal">--</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:4px">PRONÚNCIA</div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.4);margin-top:4px" id="scoreDetail"></div>
+  </div>
+
   <div class="drv-bottom">
     <div class="drv-ratings" id="ratingsEl">
       <button class="drv-rate again" onclick="rate(1)">De Novo</button>
       <button class="drv-rate hard" onclick="rate(2)">Difícil</button>
       <button class="drv-rate good" onclick="rate(3)">Bom</button>
       <button class="drv-rate easy" onclick="rate(4)">Fácil</button>
+    </div>
+    <div id="shadowControls" style="display:none;flex-direction:column;gap:12px;width:100%;max-width:480px;padding:0 16px 12px">
+      <button class="drv-rate good" id="shadowRecBtn" onclick="shadowToggleRec()" style="height:88px;font-size:20px">
+        Gravar
+      </button>
+      <button class="drv-rate easy" id="shadowNextBtn" onclick="shadowNext()" style="height:88px;font-size:20px;display:none">
+        Próximo
+      </button>
     </div>
     <button class="drv-stop" id="stopBtn" onclick="endSession()">Parar</button>
   </div>
@@ -6741,6 +6756,9 @@ body{
   var wakeLock = null;
   var stopped = false;
   var storyReplayCount = 0;
+  var shadowMediaRec = null;
+  var shadowRecBlob = null;
+  var shadowPassIndex = 0; // 0=listen, 1=shadow+record, 2=score shown
 
   // Wake Lock
   async function requestWakeLock() {
@@ -6783,10 +6801,12 @@ body{
       tog.classList.add('shadow');
       lbl.textContent = 'Sombra';
       document.getElementById('ratingsEl').style.display = 'none';
+      document.getElementById('shadowControls').style.display = 'flex';
     } else {
       tog.classList.remove('shadow');
       lbl.textContent = 'SRS';
       document.getElementById('ratingsEl').style.display = 'grid';
+      document.getElementById('shadowControls').style.display = 'none';
     }
   }
   window.toggleMode = toggleMode;
@@ -6835,37 +6855,111 @@ body{
       timerStart = Date.now();
       setRatingsEnabled(true);
     } else {
-      // Shadowing: replay 3 times then auto-advance
-      shadowCount++;
-      if (shadowCount < 3) {
-        setStatus('Sombra ' + (shadowCount + 1) + '/3', 'shadowing');
-        setTimeout(function() { playAudio(); }, 1000);
-      } else {
-        autoAdvanceShadow();
-      }
+      // Shadowing: audio played, now prompt to record
+      setStatus('Grave sua tentativa ↓', 'shadowing');
+      document.getElementById('shadowRecBtn').style.display = 'flex';
+      document.getElementById('shadowRecBtn').textContent = 'Gravar';
+      document.getElementById('shadowRecBtn').className = 'drv-rate good';
+      document.getElementById('shadowNextBtn').style.display = 'none';
+      document.getElementById('shadowScore').style.display = 'none';
     }
   }
 
-  function autoAdvanceShadow() {
-    // Record as rating 3 (Good) automatically
-    if (!chunk) return;
-    setStatus('Próximo...', '');
-    fetch('/api/drill/complete', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        chunk_id: chunk.chunk_id,
-        latency_ms: 0,
-        retries: storyReplayCount,
-        rating: 3
+  // ── Shadow recording + scoring ──
+  function shadowToggleRec() {
+    if (shadowMediaRec && shadowMediaRec.state === 'recording') {
+      shadowMediaRec.stop();
+      document.getElementById('shadowRecBtn').textContent = 'Analisando...';
+      document.getElementById('shadowRecBtn').disabled = true;
+      setStatus('Analisando...', 'shadowing');
+    } else {
+      shadowRecBlob = null;
+      navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream) {
+        var chunks = [];
+        shadowMediaRec = new MediaRecorder(stream, {mimeType:'audio/webm;codecs=opus'});
+        shadowMediaRec.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
+        shadowMediaRec.onstop = function() {
+          stream.getTracks().forEach(function(t){t.stop();});
+          shadowRecBlob = new Blob(chunks, {type:'audio/webm'});
+          shadowScoreIt();
+        };
+        shadowMediaRec.start();
+        document.getElementById('shadowRecBtn').textContent = 'Parar';
+        document.getElementById('shadowRecBtn').className = 'drv-rate again';
+        setStatus('Gravando...', 'shadowing');
+      }).catch(function(){
+        setStatus('Microfone indisponível', '');
+      });
+    }
+  }
+  window.shadowToggleRec = shadowToggleRec;
+
+  function shadowScoreIt() {
+    if (!shadowRecBlob || !chunk || !chunk.audio_file) {
+      shadowShowNext(0);
+      return;
+    }
+    var fd = new FormData();
+    fd.append('audio', shadowRecBlob, 'shadow.webm');
+    fd.append('word_id', String(chunk.word_id || 0));
+    fd.append('native_audio', chunk.audio_file.split('/').pop());
+    fetch('/api/shadow-score', {method:'POST', body:fd})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var score = d.score || 0;
+        var scoreEl = document.getElementById('scoreVal');
+        scoreEl.textContent = Math.round(score);
+        scoreEl.style.color = score >= 85 ? '#34d399' : score >= 60 ? '#fbbf24' : '#f87171';
+        var detail = d.details && d.details.length ? d.details.join(' | ') : '';
+        if (d.force_redrill) detail += (detail ? ' | ' : '') + 'Repita!';
+        document.getElementById('scoreDetail').textContent = detail;
+        document.getElementById('shadowScore').style.display = 'block';
+        if (d.force_redrill) {
+          // Must redo — replay audio then record again
+          setStatus('Score baixo — ouça de novo', 'shadowing');
+          document.getElementById('shadowRecBtn').textContent = 'Ouvir + Gravar';
+          document.getElementById('shadowRecBtn').disabled = false;
+          document.getElementById('shadowRecBtn').className = 'drv-rate again';
+          document.getElementById('shadowRecBtn').onclick = function() {
+            document.getElementById('shadowRecBtn').onclick = function(){shadowToggleRec();};
+            playAudio(function(){ shadowToggleRec(); });
+          };
+        } else {
+          shadowShowNext(score);
+        }
       })
-    }).catch(function(){});
+      .catch(function(){ shadowShowNext(0); });
+  }
+
+  function shadowShowNext(score) {
+    // Auto-submit as rating based on score
+    var rating = score >= 85 ? 4 : score >= 60 ? 3 : 2;
+    if (chunk) {
+      fetch('/api/drill/complete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({chunk_id:chunk.chunk_id, latency_ms:0, retries:storyReplayCount, rating:rating, biometric_score:score})
+      }).catch(function(){});
+    }
     storyReplayCount = 0;
     done++;
     updateCount();
     showStopBtn();
-    setTimeout(fetchNext, 800);
+    setStatus('Score: ' + Math.round(score) + ' — toque Próximo', 'shadowing');
+    document.getElementById('shadowRecBtn').style.display = 'none';
+    document.getElementById('shadowNextBtn').style.display = 'flex';
   }
+
+  function shadowNext() {
+    document.getElementById('shadowScore').style.display = 'none';
+    document.getElementById('shadowNextBtn').style.display = 'none';
+    document.getElementById('shadowRecBtn').style.display = 'flex';
+    document.getElementById('shadowRecBtn').disabled = false;
+    document.getElementById('shadowRecBtn').textContent = 'Gravar';
+    document.getElementById('shadowRecBtn').className = 'drv-rate good';
+    document.getElementById('shadowRecBtn').onclick = function(){shadowToggleRec();};
+    fetchNext();
+  }
+  window.shadowNext = shadowNext;
 
   function replayAudio() {
     if (!chunk) return;
