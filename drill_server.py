@@ -902,6 +902,7 @@ let sessionCount = 0;
 let sessionCorrect = 0;
 let retries = 0;
 let drillStartTime = null;
+let againStreak = {};  // track consecutive Again ratings per chunk for 3-failure text reveal
 
 // ── Text toggle for translation panel ──
 let textPanelLoaded = false;
@@ -1142,10 +1143,14 @@ function enterPass(passNum) {
   $('rating-feedback').classList.remove('visible');
   $('rep-counter').classList.remove('visible');
 
-  // Carrier text: visible in pass 3/4, OR if mode config says show_text
+  // Carrier text: zero-reading rule — only after 3 consecutive Again ratings
+  // OR if mode config explicitly says show_text
   const ct = $('carrier-text');
   const modeShowText = modeConfig && modeConfig.show_text === true;
-  if (passNum === 3 || passNum === 4 || modeShowText) {
+  const chunkKey = currentChunk ? (currentChunk.chunk_id || currentChunk.word_id) : null;
+  const failStreak = chunkKey ? (againStreak[chunkKey] || 0) : 0;
+  const textRevealed = failStreak >= 3 || modeShowText;
+  if (textRevealed) {
     ct.classList.remove('hidden');
     const sentence = currentChunk.carrier_sentence || '';
     const word = currentChunk.target_chunk || currentChunk.word || '';
@@ -1283,6 +1288,11 @@ async function completeDrill() {
     sessionCount++;
     if (data.rating >= 3) sessionCorrect++;
     updateSessionStats();
+
+    // Track consecutive Again ratings for 3-failure text reveal (zero-reading rule)
+    const chunkKey = currentChunk.chunk_id || currentChunk.word_id;
+    if (data.rating === 1) { againStreak[chunkKey] = (againStreak[chunkKey] || 0) + 1; }
+    else { againStreak[chunkKey] = 0; }
 
     const ratingNames = {1: 'De novo', 2: 'Dif\u00EDcil', 3: 'Bom', 4: 'F\u00E1cil'};
     const fb = $('rating-feedback');

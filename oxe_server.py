@@ -6083,17 +6083,25 @@ body{
     // ── Screen 1: Audio-first target recognition ──
     let html = '';
 
-    // Target label — makes it clear what is being tested
-    html += '<div style="text-align:center;padding:8px 0 4px;color:rgba(255,255,255,0.4);font-size:12px;text-transform:uppercase;letter-spacing:1px">' +
-      (data.target_chunk && data.target_chunk !== data.word ? 'Chunk' : 'Palavra') + '</div>';
+    // Zero-Reading: text only after 3 consecutive Again ratings
+    var cid = data.chunk_id;
+    var streak = cid ? (againStreak[cid] || 0) : 0;
+    var textRevealed = streak >= 3;
+
+    // Target label — only show after 3 failures
+    if (textRevealed) {
+      html += '<div style="text-align:center;padding:8px 0 4px;color:rgba(255,255,255,0.4);font-size:12px;text-transform:uppercase;letter-spacing:1px">' +
+        (data.target_chunk && data.target_chunk !== data.word ? 'Chunk' : 'Palavra') + '</div>';
+    }
 
     // Image card OR context variations (image policy decides)
+    // Zero-Reading: context variation TEXT hidden until 3 failures; image always allowed
     var imgPolicy = data.image_policy || {};
     var ctxVars = data.context_variations || [];
     if (imgSrc && imgPolicy.image_allowed !== false) {
       html += '<div class="image-card"><img src="' + imgSrc + '" alt=""></div>';
-    } else if (ctxVars.length > 0) {
-      // Context variation strip — audio-first alternative to images
+    } else if (textRevealed && ctxVars.length > 0) {
+      // Context variation strip — only after 3 failures (zero-reading rule)
       html += '<div style="margin:8px 16px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06)">';
       html += '<div style="font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Contextos</div>';
       for (var vi = 0; vi < ctxVars.length; vi++) {
@@ -6103,20 +6111,9 @@ body{
         html += '<div style="padding:4px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.4">' + cvHighlighted + '</div>';
       }
       html += '</div>';
-    } else {
-      // Fallback: support chunks as mini-strip (if available)
-      var sups = data.support_chunks || [];
-      if (sups.length > 0) {
-        html += '<div style="margin:8px 16px;padding:10px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06)">';
-        html += '<div style="font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Família</div>';
-        for (var si2 = 0; si2 < Math.min(sups.length, 3); si2++) {
-          html += '<div style="padding:2px 0;font-size:13px;color:rgba(255,255,255,0.5)">' + sups[si2].chunk + '</div>';
-        }
-        html += '</div>';
-      } else {
-        // Empty placeholder — no image, no variations, no supports
-        html += '<div style="height:40px"></div>';
-      }
+    } else if (!imgSrc || imgPolicy.image_allowed === false) {
+      // Audio-only placeholder — no text until 3 failures
+      html += '<div style="height:40px"></div>';
     }
 
     html += '<div class="timer" id="timerEl">0.0s</div>';
