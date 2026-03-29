@@ -1213,7 +1213,13 @@ function enterPass(passNum) {
     btn.onclick = advancePass;
     area.appendChild(btn);
   }
-  // Pass 5: no buttons
+  // "Já sei" skip button on every pass (1-5)
+  const btnSkip = document.createElement('button');
+  btnSkip.className = 'btn-secondary';
+  btnSkip.textContent = '\u2713 Já sei';
+  btnSkip.style.cssText = 'background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24;margin-top:8px';
+  btnSkip.onclick = markChunkDone;
+  area.appendChild(btnSkip);
 
   if (passNum <= 4) {
     playAudio();
@@ -1234,6 +1240,33 @@ function advancePass() {
     }).catch(() => {});
     enterPass(currentPass + 1);
   }
+}
+
+function markChunkDone() {
+  // Skip all remaining passes — rate as Easy and move to next chunk
+  if (!currentChunk) return;
+  player.pause();
+  $('action-area').innerHTML = '';
+  stopCountdown();
+  $('rep-counter').classList.remove('visible');
+  fetch('/api/drill/complete', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      chunk_id: currentChunk.chunk_id || currentChunk.word_id,
+      latency_ms: 500,
+      retries: 0,
+    }),
+  }).catch(() => {});
+  sessionCount++;
+  sessionCorrect++;
+  updateSessionStats();
+  blockItemsDone++;
+  const fb = $('rating-feedback');
+  fb.textContent = 'J\u00E1 sei \u2713';
+  fb.style.color = '#fbbf24';
+  fb.classList.add('visible');
+  setTimeout(fetchNext, 800);
 }
 
 // ── Mastery Loop (Pass 5) ─────────────────────────────────
