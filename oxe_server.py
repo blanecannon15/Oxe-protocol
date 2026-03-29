@@ -6017,6 +6017,7 @@ body{
 
   let _audioKilled = false;
   let _audioGen = 0;  // generation counter — increments on each new chunk/kill
+  let _replayCount = 0;  // how many times user replayed current item
   function killAllAudio() {
     _audioKilled = true;
     _audioGen++;
@@ -6034,6 +6035,7 @@ body{
     currentModeConfig = data.mode_config || {};
     lastBioScore = null;
     forceRedrill = false;
+    _replayCount = 0;
     const area = document.getElementById('drillArea');
     const cid = data.chunk_id;
     const mc = currentModeConfig;
@@ -6182,7 +6184,7 @@ body{
       .catch(() => renderEmpty());
   }
 
-  function revealAnswer(ratingVal, ratingName, bioScore) {
+  function revealAnswer(ratingVal, ratingName, bioScore, serverRes) {
     const overlay = document.getElementById('revealOverlay');
     const cid = currentChunk ? currentChunk.chunk_id : null;
     const streak = cid ? (againStreak[cid] || 0) : 0;
@@ -6228,6 +6230,56 @@ body{
           'style="padding:6px 10px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:8px;cursor:pointer;font-size:14px;color:rgba(255,255,255,0.7)">' +
           '&#9654; ' + sc.chunk + '</div>';
       }
+      revealHtml += '</div>';
+    }
+
+    // ── State transition + stats feedback ──
+    if (serverRes && serverRes.state_info) {
+      var si = serverRes.state_info;
+      var stateLabels = {
+        'UNKNOWN': 'Desconhecido', 'RECOGNIZED': 'Reconhecido',
+        'CONTEXT_KNOWN': 'Contexto', 'EFFORTFUL_AUDIO': 'Áudio Esforçado',
+        'AUTOMATIC_CLEAN': 'Automático Limpo', 'AUTOMATIC_NATIVE': 'Automático Nativo',
+        'AVAILABLE_OUTPUT': 'Produção'
+      };
+      revealHtml += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1)">';
+
+      // State transition arrow
+      if (si.promoted && si.old_state && si.new_state && si.old_state !== si.new_state) {
+        revealHtml += '<div style="text-align:center;margin-bottom:6px">' +
+          '<span style="background:rgba(76,175,80,0.2);color:#81c784;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600">' +
+          (stateLabels[si.old_state] || si.old_state) + ' &#8594; ' + (stateLabels[si.new_state] || si.new_state) +
+          '</span></div>';
+      } else if (si.demoted && si.old_state && si.new_state && si.old_state !== si.new_state) {
+        revealHtml += '<div style="text-align:center;margin-bottom:6px">' +
+          '<span style="background:rgba(244,67,54,0.2);color:#e57373;padding:4px 12px;border-radius:12px;font-size:13px;font-weight:600">' +
+          (stateLabels[si.old_state] || si.old_state) + ' &#8594; ' + (stateLabels[si.new_state] || si.new_state) +
+          '</span></div>';
+      }
+
+      // Current state + confidence bar
+      var confPct = Math.round((si.confidence || 0) * 100);
+      var stateColor = si.promoted ? '#81c784' : (si.demoted ? '#e57373' : 'rgba(255,255,255,0.5)');
+      revealHtml += '<div style="display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.45)">' +
+        '<span style="color:' + stateColor + '">' + (stateLabels[si.state] || si.state) + '</span>' +
+        '<div style="width:60px;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">' +
+        '<div style="width:' + confPct + '%;height:100%;background:' + stateColor + ';border-radius:2px"></div></div>' +
+        '<span>' + confPct + '%</span>';
+
+      // Latency trend arrow
+      if (si.latency_trend && si.latency_trend < -0.05) {
+        revealHtml += '<span style="color:#81c784" title="Latência melhorando">&#8600;</span>';
+      } else if (si.latency_trend && si.latency_trend > 0.05) {
+        revealHtml += '<span style="color:#e57373" title="Latência piorando">&#8599;</span>';
+      }
+      revealHtml += '</div>';
+
+      // Replay count if > 0
+      if (_replayCount > 0) {
+        revealHtml += '<div style="text-align:center;font-size:11px;color:rgba(255,255,255,0.35);margin-top:4px">' +
+          _replayCount + 'x ouviu de novo</div>';
+      }
+
       revealHtml += '</div>';
     }
 
@@ -6324,7 +6376,7 @@ body{
       body: JSON.stringify({
         chunk_id: cid,
         latency_ms: Math.round(latency),
-        retries: 0,
+        retries: _replayCount,
         rating: finalRating,
         biometric_score: lastBioScore,
         mode: currentMode,
@@ -6335,11 +6387,9 @@ body{
     .then(res => {
       let displayName = ratingNames[finalRating];
       if (latencyOverride) displayName += ' (lento)';
-      revealAnswer(finalRating, displayName, lastBioScore);
-
-      // Explanation audio disabled — only carrier audio plays to prevent clashes
+      revealAnswer(finalRating, displayName, lastBioScore, res);
     })
-    .catch(() => { revealAnswer(finalRating, ratingNames[finalRating], lastBioScore); });
+    .catch(() => { revealAnswer(finalRating, ratingNames[finalRating], lastBioScore, null); });
   };
 
   window._srsReplay = function() {
@@ -6347,6 +6397,7 @@ body{
     killAllAudio();
     _audioKilled = false;
     _audioGen++;
+    _replayCount++;
     if (!currentChunk) return;
     const src = currentChunk._primaryAudioSrc;
     if (!src) return;
@@ -8687,13 +8738,16 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         )
 
         # Update automaticity state with mode-aware audio_type
+        state_transition = None
         try:
             chunk_row = get_chunk_by_id(chunk_id)
             if chunk_row:
-                update_state_after_review(
+                trans = update_state_after_review(
                     'chunk', chunk_id, rating, latency_ms or 0,
                     audio_type, biometric,
                 )
+                if trans:
+                    state_transition = trans
                 if chunk_row['word_id']:
                     update_state_after_review(
                         'word', chunk_row['word_id'], rating, latency_ms or 0,
@@ -8732,6 +8786,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 "avg_latency_ms": chunk_state.get("avg_latency_ms"),
                 "latency_trend": chunk_state.get("latency_trend", 0),
             }
+            if state_transition:
+                state_info["old_state"] = state_transition.get("old_state")
+                state_info["new_state"] = state_transition.get("new_state")
+                state_info["promoted"] = state_transition.get("promoted", False)
+                state_info["demoted"] = state_transition.get("demoted", False)
         except Exception:
             pass
 
