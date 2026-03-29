@@ -6292,12 +6292,17 @@ body{
     bEl.textContent = bioScore !== null ? Math.round(bioScore) + '/100' : '';
     overlay.classList.add('visible');
 
-    // On Again — replay target chunk audio
-    if (ratingVal === 1 && currentChunk && currentChunk._primaryAudioSrc) {
-      _audioKilled = false;
-      _audioGen++;
-      audio = new Audio(currentChunk._primaryAudioSrc);
-      audio.play().catch(function() {});
+    // On Again — replay target chunk audio and auto-loop back to drill
+    if (ratingVal === 1 && currentChunk) {
+      if (currentChunk._primaryAudioSrc) {
+        _audioKilled = false;
+        _audioGen++;
+        audio = new Audio(currentChunk._primaryAudioSrc);
+        audio.play().catch(function() {});
+      }
+      // Always re-render drill on De Novo — user must hear it again
+      setTimeout(function() { overlay.classList.remove('visible'); renderDrill(currentChunk); }, 2500);
+      return;
     }
 
     if (forceRedrill) {
@@ -8578,6 +8583,16 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             sc_conn.close()
             support_chunks = [{"chunk_id": r["id"], "chunk": r["target_chunk"],
                                "carrier": r["carrier_sentence"]} for r in sc_rows]
+
+            # On-the-fly: if no supports exist, spawn background generation
+            if not support_chunks and chunk.get("word_id") and chunk.get("word"):
+                def _bg_link(wid, w):
+                    try:
+                        from chunk_engine import auto_link_word_to_chunks
+                        auto_link_word_to_chunks(wid, w, count=4)
+                    except Exception:
+                        pass
+                threading.Thread(target=_bg_link, args=(chunk["word_id"], chunk["word"]), daemon=True).start()
         except Exception:
             pass
 
