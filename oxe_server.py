@@ -3753,9 +3753,13 @@ PLAN_HTML = r"""<!DOCTYPE html>
 </div>
 
 <!-- Cumulative listening hours -->
-<div class="listening-hero glass-card">
+<div class="listening-hero glass-card" onclick="editHours()">
   <div class="listening-hours" id="listen-hours">900.0h</div>
-  <div class="listening-sub">horas de escuta acumuladas</div>
+  <div class="listening-sub">horas de escuta acumuladas <span style="color:#3B82F6;font-size:0.9em">&#9998; editar</span></div>
+  <div id="hours-editor" style="display:none;margin-top:12px">
+    <input type="number" id="hours-input" value="900" step="0.5" min="0" style="width:100px;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:1.1em;text-align:center;font-weight:700">
+    <button onclick="event.stopPropagation();saveHours()" style="margin-left:8px;padding:8px 16px;border-radius:10px;border:none;background:#3B82F6;color:#fff;font-weight:700;font-size:0.9em;cursor:pointer">Salvar</button>
+  </div>
 </div>
 
 <!-- Time spent per activity today -->
@@ -3832,7 +3836,10 @@ PLAN_HTML = r"""<!DOCTYPE html>
 </div>
 
 <!-- Block timeline -->
-<div class="section-title">Blocos do dia</div>
+<div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 10px 0">
+  <div class="section-title" style="margin:0">Blocos do dia</div>
+  <button onclick="completeAllBlocks()" style="padding:6px 14px;border-radius:10px;border:1px solid rgba(52,211,153,0.3);background:rgba(52,211,153,0.1);color:#34d399;font-size:0.75em;font-weight:600;cursor:pointer">Completar Todos &#10003;</button>
+</div>
 <div class="timeline" id="timeline"></div>
 
 <!-- Fatigue -->
@@ -3923,10 +3930,13 @@ function renderPlan(data) {
     var label = TYPE_LABELS[b.type] || b.type;
     var route = ACTIVITY_ROUTES[b.type];
     var onclick = route ? ' onclick="timerStart(\'' + b.type + '\');location.href=\'' + route + '\'"' : '';
+    var completeBtn = done ? '<span style="color:#34d399;font-size:0.75em;font-weight:600">&#10003;</span>'
+      : '<button onclick="event.stopPropagation();completeBlock(' + b.block_id + ',this)" style="padding:4px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.06);color:#7a7a8e;font-size:0.7em;cursor:pointer">&#10003;</button>';
     html += '<div class="block-card glass-card ' + status + '"' + onclick + '>'
       + '<div class="block-top"><span class="block-icon">' + icon + '</span>'
       + '<span class="block-type">' + label + '</span>'
-      + '<span class="block-duration">' + (b.duration_minutes || 0) + ' min</span></div>'
+      + '<span class="block-duration">' + (b.duration_minutes || 0) + ' min</span>'
+      + completeBtn + '</div>'
       + '</div>';
   }
   document.getElementById('timeline').innerHTML = html;
@@ -3962,6 +3972,48 @@ function adjustPlan() {
       loadAll();
     })
     .catch(function(){btn.textContent='Ajustar plano';btn.disabled=false;});
+}
+
+function editHours() {
+  var ed = document.getElementById('hours-editor');
+  if (ed.style.display === 'none') {
+    ed.style.display = 'block';
+    var inp = document.getElementById('hours-input');
+    var cur = parseFloat(document.getElementById('listen-hours').textContent) || 900;
+    inp.value = cur;
+    inp.focus();
+    inp.select();
+  } else {
+    ed.style.display = 'none';
+  }
+}
+function saveHours() {
+  var hours = parseFloat(document.getElementById('hours-input').value) || 900;
+  fetch('/api/plan/set-hours', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({hours: hours})
+  }).then(function(r){ return r.json() }).then(function() {
+    document.getElementById('listen-hours').textContent = hours.toFixed(1) + 'h';
+    document.getElementById('hours-editor').style.display = 'none';
+  }).catch(function(){});
+}
+function completeBlock(blockId, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  fetch('/api/plan/block/manual-complete', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({block_id: blockId})
+  }).then(function(r){ return r.json() }).then(function() {
+    loadAll();
+  }).catch(function(){ btn.disabled = false; btn.textContent = '\u2713'; });
+}
+function completeAllBlocks() {
+  if (!confirm('Completar todos os blocos de hoje?')) return;
+  fetch('/api/plan/block/manual-complete', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({})
+  }).then(function(r){ return r.json() }).then(function() {
+    loadAll();
+  }).catch(function(){});
 }
 
 loadAll();
@@ -5747,12 +5799,13 @@ body{
   position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(10,10,11,0.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   display:flex;flex-direction:column;
-  z-index:200;opacity:0;pointer-events:none;
+  z-index:9999;opacity:0;pointer-events:none;
   transition:opacity 0.3s;
 }
 .reveal-overlay.visible{opacity:1;pointer-events:auto}
+.reveal-overlay.visible ~ .tab-bar{display:none !important}
 .reveal-scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center;gap:10px;padding:max(env(safe-area-inset-top,20px),24px) 20px 12px}
-.reveal-bottom{flex-shrink:0;padding:10px 20px;padding-bottom:max(16px,env(safe-area-inset-bottom));text-align:center;background:rgba(10,10,11,0.97)}
+.reveal-bottom{flex-shrink:0;padding:10px 20px;padding-bottom:max(24px,calc(env(safe-area-inset-bottom) + 16px));text-align:center;background:rgba(10,10,11,0.97)}
 .reveal-chunk{
   font-size:28px;font-weight:800;text-align:center;letter-spacing:-0.5px;
   background:linear-gradient(135deg,#5E6AD2,#7c85e0,#5E6AD2);
@@ -6085,10 +6138,9 @@ body{
     const modeLabel = mc.label || '';
 
     const imgSrc = data.image_file ? '/image/' + data.image_file.split('/').pop() : null;
-    // Primary audio = target chunk (short), fallback to carrier sentence
+    // Primary audio = target chunk (short) — NO fallback to carrier
     const primaryAudioSrc = data.target_audio
-      ? '/audio/' + data.target_audio.split('/').pop()
-      : (data.audio_file ? '/audio/' + data.audio_file.split('/').pop() : null);
+      ? '/audio/' + data.target_audio.split('/').pop() : null;
     // Context audio = full carrier sentence
     const contextAudioSrc = data.audio_file
       ? '/audio/' + data.audio_file.split('/').pop() : null;
@@ -6156,13 +6208,14 @@ body{
     currentChunk._primaryAudioSrc = primaryAudioSrc;
     currentChunk._contextAudioSrc = contextAudioSrc;
 
-    // Play TARGET CHUNK audio (short), not full carrier sentence
+    // Play TARGET CHUNK audio (short), fallback to carrier for initial play
     function playTargetAudio() {
       killAllAudio();
       _audioKilled = false;
       const gen = _audioGen;
-      if (!primaryAudioSrc) { startTimer(); return; }
-      audio = new Audio(primaryAudioSrc);
+      const src = primaryAudioSrc || contextAudioSrc;
+      if (!src) { startTimer(); return; }
+      audio = new Audio(src);
       audio.onended = function() { if (_audioGen === gen) startTimer(); };
       audio.onerror = function() { if (_audioGen === gen) startTimer(); };
       audio.play().catch(function() { if (_audioGen === gen) startTimer(); });
@@ -7695,6 +7748,34 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             fatigue = body.get("fatigue_score", 50)
             plan = adjust_plan_mid_session(fatigue)
             self._json(plan)
+        elif path == "/api/plan/set-hours":
+            hours = body.get("hours", 900)
+            try:
+                conn = get_conn()
+                conn.execute("UPDATE learner_profile SET value = ? WHERE key = 'listening_hours_baseline'", (str(float(hours)),))
+                conn.commit()
+                conn.close()
+                self._json({"ok": True, "hours": float(hours)})
+            except Exception as e:
+                self._json({"error": str(e)}, status=500)
+        elif path == "/api/plan/block/manual-complete":
+            block_id = body.get("block_id")
+            if block_id is not None:
+                record_block_completion(block_id, {"manual": True})
+                self._json({"ok": True, "block_id": block_id})
+            else:
+                # Complete ALL blocks for today
+                try:
+                    plan = get_today_plan()
+                    blocks = plan.get("blocks", [])
+                    completed = 0
+                    for b in blocks:
+                        if not b.get("completed"):
+                            record_block_completion(b.get("id", completed), {"manual": True})
+                            completed += 1
+                    self._json({"ok": True, "completed": completed})
+                except Exception as e:
+                    self._json({"error": str(e)}, status=500)
         elif path == "/api/plan/timer/start":
             activity = body.get("activity", "srs_drill")
             timer_id = start_activity(activity)
@@ -8152,14 +8233,21 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         tier = get_unlocked_tier()
         due = len(list(get_due_chunks()))
         story_count = conn.execute("SELECT COUNT(*) as c FROM story_library").fetchone()["c"]
-        # Word of day
-        import random
-        today = datetime.now().strftime("%Y-%m-%d")
-        random.seed(today)
-        max_id = conn.execute("SELECT MAX(id) as m FROM word_bank WHERE difficulty_tier <= ?", (tier,)).fetchone()["m"] or 1
-        idx = random.randint(0, min(max_id, 500))
-        row = conn.execute("SELECT id, word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?", (tier, idx)).fetchone()
-        wod = {"text": row["word"], "word_id": row["id"], "sentence": ""} if row else {}
+        # Word of day — never tier 1/2, never repeat (reuse _home_stats logic)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        conn.execute("CREATE TABLE IF NOT EXISTS wod_history (date TEXT PRIMARY KEY, word_id INTEGER)")
+        existing = conn.execute("SELECT word_id FROM wod_history WHERE date = ?", (today_str,)).fetchone()
+        wod = {}
+        if existing:
+            row = conn.execute("SELECT id, word FROM word_bank WHERE id = ?", (existing["word_id"],)).fetchone()
+            if row:
+                wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
+        else:
+            row = conn.execute("SELECT id, word FROM word_bank WHERE difficulty_tier >= 3 AND id NOT IN (SELECT word_id FROM wod_history) ORDER BY RANDOM() LIMIT 1").fetchone()
+            if row:
+                wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
+                conn.execute("INSERT OR IGNORE INTO wod_history (date, word_id) VALUES (?, ?)", (today_str, row["id"]))
+                conn.commit()
         # Mastery
         total = conn.execute("SELECT COUNT(*) as c FROM word_bank").fetchone()["c"]
         mastered = conn.execute("SELECT COUNT(*) as c FROM word_bank WHERE mastery_level >= 3").fetchone()["c"]
@@ -8486,20 +8574,36 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             weak_count = len(get_weak_words())
         except Exception:
             weak_count = 0
-        # Word of the day — deterministic per date
+        # Word of the day — never tier 1/2, never repeat
         wod = None
         try:
             conn2 = get_conn()
-            day_seed = int(datetime.now().strftime("%Y%m%d"))
-            total_words = conn2.execute("SELECT COUNT(*) FROM word_bank WHERE difficulty_tier <= ?", (tier,)).fetchone()[0]
-            if total_words > 0:
-                idx = day_seed % total_words
+            # Ensure wod_history table exists
+            conn2.execute("CREATE TABLE IF NOT EXISTS wod_history (date TEXT PRIMARY KEY, word_id INTEGER)")
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            # Check if already picked today
+            existing = conn2.execute("SELECT word_id FROM wod_history WHERE date = ?", (today_str,)).fetchone()
+            if existing:
+                row = conn2.execute("SELECT id, word FROM word_bank WHERE id = ?", (existing[0],)).fetchone()
+                if row:
+                    wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
+            else:
+                # Pick from tier >= 3, exclude past WODs
+                past_ids = [r[0] for r in conn2.execute("SELECT word_id FROM wod_history").fetchall()]
+                exclude_clause = ""
+                params = [3]
+                if past_ids:
+                    placeholders = ",".join("?" * len(past_ids))
+                    exclude_clause = f" AND id NOT IN ({placeholders})"
+                    params.extend(past_ids)
                 row = conn2.execute(
-                    "SELECT id, word FROM word_bank WHERE difficulty_tier <= ? LIMIT 1 OFFSET ?",
-                    (tier, idx)
+                    f"SELECT id, word FROM word_bank WHERE difficulty_tier >= ?{exclude_clause} ORDER BY RANDOM() LIMIT 1",
+                    params
                 ).fetchone()
                 if row:
                     wod = {"text": row["word"], "word_id": row["id"], "sentence": ""}
+                    conn2.execute("INSERT OR IGNORE INTO wod_history (date, word_id) VALUES (?, ?)", (today_str, row["id"]))
+                    conn2.commit()
             conn2.close()
         except Exception:
             pass
