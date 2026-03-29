@@ -6939,6 +6939,9 @@ body{
       <button class="drv-rate good" onclick="rate(3)">Bom</button>
       <button class="drv-rate easy" onclick="rate(4)">Fácil</button>
     </div>
+    <div id="srsExtraControls" style="display:none;width:100%;max-width:480px;padding:0 16px 8px">
+      <button class="drv-rate easy" onclick="rate(4)" style="width:100%;height:64px;font-size:18px;background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24">&#10003; Já sei</button>
+    </div>
     <div id="shadowControls" style="display:none;flex-direction:column;gap:12px;width:100%;max-width:480px;padding:0 16px 12px">
       <button class="drv-rate good" id="shadowRecBtn" onclick="shadowToggleRec()" style="height:88px;font-size:20px">
         Gravar
@@ -6976,6 +6979,9 @@ body{
   var shadowMediaRec = null;
   var shadowRecBlob = null;
   var shadowPassIndex = 0; // 0=listen, 1=shadow+record, 2=score shown
+  var drvPass = 1; // 5-pass system for shadow mode
+  var drvPlayCount = 0;
+  var drvMasteryReps = 0;
 
   // Wake Lock
   async function requestWakeLock() {
@@ -7087,18 +7093,166 @@ body{
 
   function afterPlayback() {
     if (mode === 'srs') {
-      setStatus('Avalie ↓', 'waiting');
+      setStatus('Avalie \u2193', 'waiting');
       timerStart = Date.now();
       setRatingsEnabled(true);
+      document.getElementById('srsExtraControls').style.display = 'block';
     } else {
-      // Shadowing: audio played, now prompt to record
-      setStatus('Grave sua tentativa ↓', 'shadowing');
-      document.getElementById('shadowRecBtn').style.display = 'flex';
-      document.getElementById('shadowRecBtn').textContent = 'Gravar';
-      document.getElementById('shadowRecBtn').className = 'drv-rate good';
-      document.getElementById('shadowNextBtn').style.display = 'none';
-      document.getElementById('shadowScore').style.display = 'none';
+      // Shadow mode uses 5-pass system — handled by drvShadowPass
     }
+  }
+
+  // ── 5-Pass Shadow System for Driving ──
+  var DRV_PASS_LABELS = ['', 'Ouvindo 3x', 'Lendo 2x', 'Murmurando', 'Sombreando', 'Maestria'];
+
+  function drvEnterPass(p) {
+    drvPass = p;
+    drvPlayCount = 0;
+    document.getElementById('shadowScore').style.display = 'none';
+    document.getElementById('shadowRecBtn').style.display = 'none';
+    document.getElementById('shadowNextBtn').style.display = 'none';
+    var revEl = document.getElementById('revealEl');
+
+    if (p === 1) {
+      // Pass 1: 3x auto-play, no text
+      revEl.style.display = 'none';
+      revealed = false;
+      drvPass1Loop();
+    } else if (p === 2) {
+      // Pass 2: show text with chunk, 2x auto-play
+      if (chunk) {
+        var sentence = chunk.carrier_sentence || '';
+        var target = chunk.target_chunk || chunk.word || '';
+        if (target && sentence.toLowerCase().includes(target.toLowerCase())) {
+          var re = new RegExp('(' + target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+          revEl.innerHTML = sentence.replace(re, '<span style="color:#f87171;font-weight:800">$1</span>');
+        } else {
+          revEl.textContent = sentence;
+        }
+        revEl.style.display = 'block';
+        revEl.style.fontSize = '20px';
+        revealed = true;
+      }
+      drvPass2Loop();
+    } else if (p === 3 || p === 4) {
+      // Pass 3-4: hide text, play once, show record button
+      revEl.style.display = 'none';
+      revealed = false;
+      setStatus(DRV_PASS_LABELS[p] + ' \u2014 repita junto', 'shadowing');
+      playAudio(function() {
+        setStatus('Grave sua tentativa \u2193', 'shadowing');
+        document.getElementById('shadowRecBtn').style.display = 'flex';
+        document.getElementById('shadowRecBtn').textContent = 'Gravar';
+        document.getElementById('shadowRecBtn').className = 'drv-rate good';
+        document.getElementById('shadowRecBtn').disabled = false;
+        document.getElementById('shadowRecBtn').onclick = function(){shadowToggleRec();};
+      });
+    } else if (p === 5) {
+      // Pass 5: mastery — 3 reps then stop
+      revEl.style.display = 'none';
+      revealed = false;
+      drvMasteryReps = 0;
+      drvMasteryLoop();
+    }
+  }
+
+  function drvPass1Loop() {
+    drvPlayCount++;
+    setStatus('Escuta ' + drvPlayCount + '/3 \u2014 s\u00F3 ouve', 'playing');
+    playAudio(function() {
+      if (drvPlayCount < 3) {
+        setTimeout(drvPass1Loop, 1200);
+      } else {
+        // Show "Entendi" + "Já sei"
+        setStatus('Entendeu?', 'waiting');
+        var ctrls = document.getElementById('shadowControls');
+        document.getElementById('shadowRecBtn').style.display = 'flex';
+        document.getElementById('shadowRecBtn').textContent = 'Entendi \u2192';
+        document.getElementById('shadowRecBtn').className = 'drv-rate good';
+        document.getElementById('shadowRecBtn').disabled = false;
+        document.getElementById('shadowRecBtn').onclick = function(){ drvEnterPass(2); };
+        document.getElementById('shadowNextBtn').style.display = 'flex';
+        document.getElementById('shadowNextBtn').textContent = '\u2713 J\u00E1 sei';
+        document.getElementById('shadowNextBtn').className = 'drv-rate easy';
+        document.getElementById('shadowNextBtn').style.cssText = 'display:flex;height:88px;font-size:20px;background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24';
+        document.getElementById('shadowNextBtn').onclick = function(){ drvMarkDone(); };
+      }
+    });
+  }
+
+  function drvPass2Loop() {
+    drvPlayCount++;
+    setStatus('Lendo ' + drvPlayCount + '/2 \u2014 acompanha', 'playing');
+    playAudio(function() {
+      if (drvPlayCount < 2) {
+        setTimeout(drvPass2Loop, 1000);
+      } else {
+        // Hide text, show advance
+        document.getElementById('revealEl').style.display = 'none';
+        revealed = false;
+        setStatus('Pronto pra sombrar?', 'waiting');
+        document.getElementById('shadowRecBtn').style.display = 'flex';
+        document.getElementById('shadowRecBtn').textContent = 'Pronto \u2192';
+        document.getElementById('shadowRecBtn').className = 'drv-rate good';
+        document.getElementById('shadowRecBtn').disabled = false;
+        document.getElementById('shadowRecBtn').onclick = function(){ drvEnterPass(3); };
+        document.getElementById('shadowNextBtn').style.display = 'flex';
+        document.getElementById('shadowNextBtn').textContent = '\u2713 J\u00E1 sei';
+        document.getElementById('shadowNextBtn').style.cssText = 'display:flex;height:88px;font-size:20px;background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24';
+        document.getElementById('shadowNextBtn').onclick = function(){ drvMarkDone(); };
+      }
+    });
+  }
+
+  function drvMasteryLoop() {
+    drvMasteryReps++;
+    setStatus('Maestria ' + drvMasteryReps + '/3', 'shadowing');
+    playAudio(function() {
+      if (drvMasteryReps < 3) {
+        setTimeout(drvMasteryLoop, 2500);
+      } else {
+        // STOP — let user create variations
+        setStatus('Cria varia\u00E7\u00F5es na cabe\u00E7a', 'waiting');
+        document.getElementById('shadowRecBtn').style.display = 'flex';
+        document.getElementById('shadowRecBtn').textContent = 'Pr\u00F3ximo \u203A';
+        document.getElementById('shadowRecBtn').className = 'drv-rate good';
+        document.getElementById('shadowRecBtn').disabled = false;
+        document.getElementById('shadowRecBtn').onclick = function(){ drvCompleteShadow(); };
+        document.getElementById('shadowNextBtn').style.display = 'flex';
+        document.getElementById('shadowNextBtn').textContent = '\u{1F50A} Ouvir de novo';
+        document.getElementById('shadowNextBtn').className = 'drv-rate easy';
+        document.getElementById('shadowNextBtn').style.cssText = 'display:flex;height:88px;font-size:20px';
+        document.getElementById('shadowNextBtn').onclick = function(){ drvMasteryReps = 0; drvMasteryLoop(); };
+      }
+    });
+  }
+
+  function drvCompleteShadow() {
+    if (chunk) {
+      fetch('/api/drill/complete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({chunk_id:chunk.chunk_id, latency_ms:0, retries:0})
+      }).catch(function(){});
+    }
+    done++;
+    updateCount();
+    showStopBtn();
+    fetchNext();
+  }
+
+  function drvMarkDone() {
+    // Skip all passes, rate as Easy
+    if (chunk) {
+      fetch('/api/drill/complete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({chunk_id:chunk.chunk_id, latency_ms:500, retries:0, rating:4})
+      }).catch(function(){});
+    }
+    done++;
+    updateCount();
+    showStopBtn();
+    setStatus('J\u00E1 sei \u2713', '');
+    setTimeout(fetchNext, 600);
   }
 
   // ── Shadow recording + scoring ──
@@ -7168,21 +7322,32 @@ body{
   }
 
   function shadowShowNext(score) {
-    // Auto-submit as rating based on score
-    var rating = score >= 85 ? 4 : score >= 60 ? 3 : 2;
-    if (chunk) {
-      fetch('/api/drill/complete', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({chunk_id:chunk.chunk_id, latency_ms:0, retries:storyReplayCount, rating:rating, biometric_score:score})
-      }).catch(function(){});
+    // After scoring in pass 3 or 4, advance to next pass
+    setStatus('Score: ' + Math.round(score), 'shadowing');
+    document.getElementById('shadowRecBtn').style.display = 'flex';
+    if (score >= 60 && drvPass < 5) {
+      // Advance to next pass
+      document.getElementById('shadowRecBtn').textContent = 'Pr\u00F3ximo passo \u2192';
+      document.getElementById('shadowRecBtn').className = 'drv-rate good';
+      document.getElementById('shadowRecBtn').disabled = false;
+      document.getElementById('shadowRecBtn').onclick = function(){ drvEnterPass(drvPass + 1); };
+    } else if (drvPass >= 5) {
+      // Done with all passes
+      document.getElementById('shadowRecBtn').textContent = 'Pr\u00F3ximo chunk \u203A';
+      document.getElementById('shadowRecBtn').className = 'drv-rate good';
+      document.getElementById('shadowRecBtn').disabled = false;
+      document.getElementById('shadowRecBtn').onclick = function(){ drvCompleteShadow(); };
+    } else {
+      // Score too low — redo this pass
+      document.getElementById('shadowRecBtn').textContent = 'Tentar de novo';
+      document.getElementById('shadowRecBtn').className = 'drv-rate again';
+      document.getElementById('shadowRecBtn').disabled = false;
+      document.getElementById('shadowRecBtn').onclick = function(){ drvEnterPass(drvPass); };
     }
-    storyReplayCount = 0;
-    done++;
-    updateCount();
-    showStopBtn();
-    setStatus('Score: ' + Math.round(score) + ' — toque Próximo', 'shadowing');
-    document.getElementById('shadowRecBtn').style.display = 'none';
     document.getElementById('shadowNextBtn').style.display = 'flex';
+    document.getElementById('shadowNextBtn').textContent = '\u2713 J\u00E1 sei';
+    document.getElementById('shadowNextBtn').style.cssText = 'display:flex;height:88px;font-size:20px;background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24';
+    document.getElementById('shadowNextBtn').onclick = function(){ drvMarkDone(); };
   }
 
   function shadowNext() {
@@ -7223,11 +7388,12 @@ body{
     done++;
     updateCount();
     showStopBtn();
-    // Hide reveal
+    // Hide reveal + extra controls
     document.getElementById('revealEl').style.display = 'none';
     revealed = false;
     document.getElementById('mostrarBtn').textContent = 'Mostrar';
-    setStatus('Próximo...', '');
+    document.getElementById('srsExtraControls').style.display = 'none';
+    setStatus('Pr\u00F3ximo...', '');
     setTimeout(fetchNext, 600);
   }
   window.rate = rate;
@@ -7249,14 +7415,18 @@ body{
         revealed = false;
         document.getElementById('revealEl').style.display = 'none';
         document.getElementById('mostrarBtn').textContent = 'Mostrar';
+        document.getElementById('srsExtraControls').style.display = 'none';
         if (mode === 'srs') {
           setStatus('Ouvindo...', 'playing');
           setRatingsEnabled(false);
+          // Auto-play after 0.5s
+          setTimeout(function() { playAudio(); }, 500);
         } else {
-          setStatus('Sombra 1/3', 'shadowing');
+          // Shadow mode: start 5-pass system
+          drvPass = 1;
+          drvPlayCount = 0;
+          setTimeout(function() { drvEnterPass(1); }, 500);
         }
-        // Auto-play after 0.5s
-        setTimeout(function() { playAudio(); }, 500);
       })
       .catch(function() { endSession('error'); });
   }
