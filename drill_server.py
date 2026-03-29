@@ -897,15 +897,17 @@ DRILL_HTML = r"""<!DOCTYPE html>
 const $ = id => document.getElementById(id);
 const player = $('player');
 
-const PASS_NAMES = ['', 'Ouvindo', 'Murmurando', 'Lendo', 'Sombreando', 'Maestria'];
+const PASS_NAMES = ['', 'Ouvindo', 'Lendo', 'Murmurando', 'Sombreando', 'Maestria'];
 const PASS_INSTRUCTIONS = [
   '',
-  'Escuta e entende o significado',
-  'Murmura junto, acompanha o ritmo',
-  'L\u00EA em voz alta com o \u00E1udio',
+  'Escuta 3x sem texto \u2014 s\u00F3 ouve',
+  'Texto + \u00E1udio 2x \u2014 acompanha lendo',
+  'Murmura junto sem texto',
   'Sombrea \u2014 repete junto, igualzinho',
-  'Sombrea sem texto \u2014 3 repeti\u00E7\u00F5es',
+  'Sombrea sem texto \u2014 3x \u2014 depois cria varia\u00E7\u00F5es',
 ];
+let pass1PlayCount = 0;
+let pass2PlayCount = 0;
 
 let currentChunk = null;
 let currentPass = 1;
@@ -1155,24 +1157,11 @@ function enterPass(passNum) {
   $('rating-feedback').classList.remove('visible');
   $('rep-counter').classList.remove('visible');
 
-  // Carrier text: zero-reading rule — only after 3 consecutive Again ratings
-  // OR if mode config explicitly says show_text
+  // Text visibility controlled per-pass:
+  // Pass 1: hidden (3x listen), Pass 2: shown (2x read), Pass 3-5: hidden (shadow)
+  // Manual "Mostrar texto" button always available
   const ct = $('carrier-text');
-  const modeShowText = modeConfig && modeConfig.show_text === true;
-  const chunkKey = currentChunk ? (currentChunk.chunk_id || currentChunk.word_id) : null;
-  const failStreak = chunkKey ? (againStreak[chunkKey] || 0) : 0;
-  const textRevealed = failStreak >= 3 || modeShowText;
-  if (textRevealed) {
-    ct.classList.remove('hidden');
-    const sentence = currentChunk.carrier_sentence || '';
-    const word = currentChunk.target_chunk || currentChunk.word || '';
-    if (word && sentence.toLowerCase().includes(word.toLowerCase())) {
-      const re = new RegExp('(' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-      ct.innerHTML = sentence.replace(re, '<span class="highlight">$1</span>');
-    } else {
-      ct.textContent = sentence;
-    }
-  } else {
+  if (passNum !== 2) {
     ct.classList.add('hidden');
     ct.innerHTML = '';
   }
@@ -1193,39 +1182,136 @@ function enterPass(passNum) {
   const area = $('action-area');
   area.innerHTML = '';
 
+  // "Já sei" skip button on every pass
+  const btnSkip = document.createElement('button');
+  btnSkip.className = 'btn-secondary';
+  btnSkip.textContent = '\u2713 J\u00E1 sei';
+  btnSkip.style.cssText = 'background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24;margin-top:8px';
+  btnSkip.onclick = markChunkDone;
+
+  // "Mostrar texto" toggle button
+  const btnShow = document.createElement('button');
+  btnShow.className = 'btn-secondary';
+  btnShow.textContent = '\u{1F441} Mostrar texto';
+  btnShow.style.cssText = 'font-size:0.8em;margin-top:4px';
+  btnShow.onclick = () => {
+    const ct2 = $('carrier-text');
+    if (ct2.classList.contains('hidden')) {
+      showCarrierText();
+      btnShow.textContent = '\u{1F441} Esconder texto';
+    } else {
+      ct2.classList.add('hidden'); ct2.innerHTML = '';
+      btnShow.textContent = '\u{1F441} Mostrar texto';
+    }
+  };
+
   if (passNum === 1) {
-    const btnAgain = document.createElement('button');
-    btnAgain.className = 'btn-secondary';
-    btnAgain.textContent = 'De novo';
-    btnAgain.onclick = () => { retries++; playAudio(); };
-
-    const btnOk = document.createElement('button');
-    btnOk.className = 'btn-primary';
-    btnOk.textContent = 'Entendi';
-    btnOk.onclick = advancePass;
-
-    area.appendChild(btnAgain);
-    area.appendChild(btnOk);
-  } else if (passNum >= 2 && passNum <= 4) {
+    // Pass 1: auto-play 3x with NO text, then show "Entendi" button
+    pass1PlayCount = 0;
+    area.appendChild(btnSkip);
+    playPass1Loop();
+    return; // playPass1Loop handles the rest
+  } else if (passNum === 2) {
+    // Pass 2: show text with chunk highlighted, play 2x, then buttons
+    pass2PlayCount = 0;
+    showCarrierText();
+    area.appendChild(btnSkip);
+    area.appendChild(btnShow);
+    playPass2Loop();
+    return;
+  } else if (passNum >= 3 && passNum <= 4) {
+    // Pass 3-4: text hidden, shadow along
     const btn = document.createElement('button');
     btn.className = 'btn-primary';
     btn.textContent = 'Pronto';
     btn.onclick = advancePass;
     area.appendChild(btn);
-  }
-  // "Já sei" skip button on every pass (1-5)
-  const btnSkip = document.createElement('button');
-  btnSkip.className = 'btn-secondary';
-  btnSkip.textContent = '\u2713 Já sei';
-  btnSkip.style.cssText = 'background:rgba(250,204,21,0.12);border-color:rgba(250,204,21,0.25);color:#fbbf24;margin-top:8px';
-  btnSkip.onclick = markChunkDone;
-  area.appendChild(btnSkip);
-
-  if (passNum <= 4) {
+    area.appendChild(btnSkip);
+    area.appendChild(btnShow);
     playAudio();
-  } else {
+  }
+  // Pass 5 handled by startMasteryLoop
+
+  if (passNum === 5) {
+    area.appendChild(btnSkip);
+    area.appendChild(btnShow);
     startMasteryLoop();
   }
+}
+
+function showCarrierText() {
+  const ct = $('carrier-text');
+  ct.classList.remove('hidden');
+  const sentence = currentChunk.carrier_sentence || '';
+  const word = currentChunk.target_chunk || currentChunk.word || '';
+  if (word && sentence.toLowerCase().includes(word.toLowerCase())) {
+    const re = new RegExp('(' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    ct.innerHTML = sentence.replace(re, '<span class="highlight">$1</span>');
+  } else {
+    ct.textContent = sentence;
+  }
+}
+
+function playPass1Loop() {
+  // Auto-play 3x with no text, then show buttons
+  pass1PlayCount++;
+  $('pass-instruction').textContent = 'Escuta ' + pass1PlayCount + '/3 \u2014 s\u00F3 ouve';
+  const rc = $('rep-counter');
+  rc.textContent = pass1PlayCount + '/3';
+  rc.classList.add('visible');
+  player.src = '/audio/' + (currentChunk.audio_file || '');
+  player.onended = () => {
+    if (pass1PlayCount < 3) {
+      setTimeout(playPass1Loop, 1200);
+    } else {
+      // Done with 3 plays — show buttons
+      rc.classList.remove('visible');
+      $('pass-instruction').textContent = 'Entendeu? Ou ouve de novo';
+      const area = $('action-area');
+      const btnAgain = document.createElement('button');
+      btnAgain.className = 'btn-secondary';
+      btnAgain.textContent = 'De novo';
+      btnAgain.onclick = () => { retries++; pass1PlayCount = 0; playPass1Loop(); };
+      const btnOk = document.createElement('button');
+      btnOk.className = 'btn-primary';
+      btnOk.textContent = 'Entendi';
+      btnOk.onclick = advancePass;
+      // Insert before the skip button
+      area.insertBefore(btnOk, area.firstChild);
+      area.insertBefore(btnAgain, area.firstChild);
+    }
+  };
+  player.onerror = () => { if (pass1PlayCount < 3) setTimeout(playPass1Loop, 500); };
+  player.play().catch(() => { if (pass1PlayCount < 3) setTimeout(playPass1Loop, 500); });
+}
+
+function playPass2Loop() {
+  // Play 2x with text shown, then show buttons
+  pass2PlayCount++;
+  $('pass-instruction').textContent = 'Lendo ' + pass2PlayCount + '/2 \u2014 acompanha o texto';
+  const rc = $('rep-counter');
+  rc.textContent = pass2PlayCount + '/2';
+  rc.classList.add('visible');
+  player.src = '/audio/' + (currentChunk.audio_file || '');
+  player.onended = () => {
+    if (pass2PlayCount < 2) {
+      setTimeout(playPass2Loop, 1000);
+    } else {
+      rc.classList.remove('visible');
+      $('pass-instruction').textContent = 'Pronto pra murmura sem texto?';
+      // Hide text after pass 2 completes
+      $('carrier-text').classList.add('hidden');
+      $('carrier-text').innerHTML = '';
+      const area = $('action-area');
+      const btn = document.createElement('button');
+      btn.className = 'btn-primary';
+      btn.textContent = 'Pronto';
+      btn.onclick = advancePass;
+      area.insertBefore(btn, area.firstChild);
+    }
+  };
+  player.onerror = () => { if (pass2PlayCount < 2) setTimeout(playPass2Loop, 500); };
+  player.play().catch(() => { if (pass2PlayCount < 2) setTimeout(playPass2Loop, 500); });
 }
 
 function advancePass() {
@@ -1292,18 +1378,29 @@ function playMasteryRep() {
 
   player.src = '/audio/' + currentChunk.audio_file;
   player.onended = () => {
-    // Pause for user to shadow, then advance
-    setTimeout(() => {
-      if (masteryReps < 3) {
-        playMasteryRep();
-      } else {
-        completeDrill();
-      }
-    }, 2500);
+    if (masteryReps < 3) {
+      // Pause between reps for user to shadow
+      setTimeout(playMasteryRep, 2500);
+    } else {
+      // After last rep — STOP. Let user create variations in their head.
+      $('rep-counter').classList.remove('visible');
+      $('pass-instruction').textContent = 'Cria varia\u00E7\u00F5es na sua cabe\u00E7a';
+      const area = $('action-area');
+      const btnDone = document.createElement('button');
+      btnDone.className = 'btn-primary';
+      btnDone.textContent = 'Pr\u00F3ximo \u203A';
+      btnDone.onclick = completeDrill;
+      area.appendChild(btnDone);
+      const btnReplay = document.createElement('button');
+      btnReplay.className = 'btn-secondary';
+      btnReplay.textContent = '\u{1F50A} Ouvir de novo';
+      btnReplay.onclick = () => { masteryReps = 0; area.innerHTML = ''; startMasteryLoop(); };
+      area.appendChild(btnReplay);
+    }
   };
   player.onerror = () => {
     if (masteryReps < 3) playMasteryRep();
-    else completeDrill();
+    else { $('pass-instruction').textContent = 'Cria varia\u00E7\u00F5es'; }
   };
   player.play().catch(() => {
     if (masteryReps < 3) setTimeout(playMasteryRep, 1000);

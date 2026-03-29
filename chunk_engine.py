@@ -390,8 +390,10 @@ def _generate_carrier_sentences(chunks, batch_size=20):
                 messages=[
                     {"role": "system", "content": (
                         "Tu é um brasileiro que mistura gírias de Salvador, São Paulo e Rio. "
-                        "Gera frases naturais do dia a dia usando cada chunk dado. "
-                        "As frases devem soar como conversa real de rua. Cada frase 8-15 palavras. "
+                        "Gera frases LONGAS e naturais do dia a dia usando cada chunk dado. "
+                        "As frases devem soar como conversa real — alguém contando uma história, "
+                        "reclamando, dando conselho, fofocando. Cada frase 15-30 palavras "
+                        "(5-15 segundos de fala). Pode ser 2-3 frases conectadas se precisar.\n"
                         "Mistura gírias regionais:\n"
                         "BAIANO: oxe, eita, vixe, meu rei, véi, massa, arretado, é mermo, barril\n"
                         "PAULISTA: mano, véio, mó, da hora, firmeza, tá ligado, é nóis, "
@@ -411,8 +413,10 @@ def _generate_carrier_sentences(chunks, batch_size=20):
                         "sempre a forma falada. NUNCA usa inglês."
                     )},
                     {"role": "user", "content": (
-                        f"Gera UMA frase natural pra cada chunk. O chunk DEVE aparecer "
-                        f"na frase exatamente como está.\n\n"
+                        f"Gera UMA frase natural e LONGA (15-30 palavras, tipo conversa real) "
+                        f"pra cada chunk. O chunk DEVE aparecer na frase exatamente como está. "
+                        f"Pode ser duas frases conectadas tipo 'Oxe véi, [chunk] memo, "
+                        f"tava falando isso pro meu irmão ontem e ele concordou dimais.'\n\n"
                         f"Retorna JSON: {{\"sentences\": [\"frase1\", \"frase2\", ...]}}\n\n"
                         f"Chunks:\n{numbered}"
                     )},
