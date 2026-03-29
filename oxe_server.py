@@ -46,7 +46,7 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
-from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5, migrate_v6
+from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5, migrate_v6, migrate_v7
 from srs_engine import (
     clock_start_session, clock_end_session, clock_get_today,
     clock_get_sessions, clock_get_weekly_summary,
@@ -88,6 +88,7 @@ from content_router import (
     find_content_for_chunks, get_recently_drilled_chunks,
     get_reencounter_queue, log_reencounter, get_reencounter_stats,
 )
+from image_policy import should_generate_image, classify_lexical_type, get_image_policy
 from conversa_analyzer import (
     analyze_conversation, generate_correction_drills,
     get_conversation_analysis, get_analysis_history,
@@ -5107,13 +5108,41 @@ function renderChunk(data) {
   var carrier = data.carrier_sentence || data.target_chunk || data.word || '';
   var target = data.target_chunk || data.word || '';
 
-  // Highlight the target word/chunk within the carrier sentence
+  // Highlight the target chunk within the carrier sentence
   var highlighted = carrier.replace(
     new RegExp('(' + target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi'),
     '<span class="chunk-target">$1</span>'
   );
   document.getElementById('chunk-carrier').innerHTML = highlighted;
-  document.getElementById('chunk-word').textContent = data.word ? 'Palavra: ' + data.word : '';
+
+  // Chunk segmentation + support context below the carrier
+  var metaHtml = '';
+  if (data.word && data.word !== target) {
+    metaHtml += '<span style="color:rgba(255,255,255,0.3);font-size:0.72em">&#x1f517; ' + data.word + '</span>';
+  }
+  // Context variations — audio-first reinforcement
+  var ctxVars = data.context_variations || [];
+  if (ctxVars.length > 0) {
+    metaHtml += '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06)">';
+    metaHtml += '<div style="font-size:0.65em;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Variações</div>';
+    for (var i = 0; i < ctxVars.length; i++) {
+      var cvRe = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var cvH = ctxVars[i].replace(new RegExp('(' + cvRe + ')', 'gi'), '<span style="color:#f87171;font-weight:600">$1</span>');
+      metaHtml += '<div style="font-size:0.82em;color:rgba(255,255,255,0.45);padding:2px 0">' + cvH + '</div>';
+    }
+    metaHtml += '</div>';
+  }
+  // Support chunks
+  var sups = data.support_chunks || [];
+  if (sups.length > 0) {
+    metaHtml += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06)">';
+    metaHtml += '<div style="font-size:0.65em;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Família</div>';
+    for (var j = 0; j < Math.min(sups.length, 3); j++) {
+      metaHtml += '<div style="font-size:0.82em;color:rgba(255,255,255,0.4);padding:1px 0">' + sups[j].chunk + '</div>';
+    }
+    metaHtml += '</div>';
+  }
+  document.getElementById('chunk-word').innerHTML = metaHtml;
   document.getElementById('wave-status').textContent = 'Pronto — toque Ouvir';
   document.getElementById('empty-state').style.display = 'none';
 
@@ -6058,13 +6087,36 @@ body{
     html += '<div style="text-align:center;padding:8px 0 4px;color:rgba(255,255,255,0.4);font-size:12px;text-transform:uppercase;letter-spacing:1px">' +
       (data.target_chunk && data.target_chunk !== data.word ? 'Chunk' : 'Palavra') + '</div>';
 
-    // Image card
-    if (imgSrc) {
+    // Image card OR context variations (image policy decides)
+    var imgPolicy = data.image_policy || {};
+    var ctxVars = data.context_variations || [];
+    if (imgSrc && imgPolicy.image_allowed !== false) {
       html += '<div class="image-card"><img src="' + imgSrc + '" alt=""></div>';
+    } else if (ctxVars.length > 0) {
+      // Context variation strip — audio-first alternative to images
+      html += '<div style="margin:8px 16px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06)">';
+      html += '<div style="font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Contextos</div>';
+      for (var vi = 0; vi < ctxVars.length; vi++) {
+        var cv = ctxVars[vi];
+        var targetRe = (data.target_chunk || data.word || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var cvHighlighted = cv.replace(new RegExp('(' + targetRe + ')', 'gi'), '<span style="color:#8b95e0;font-weight:600">$1</span>');
+        html += '<div style="padding:4px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.4">' + cvHighlighted + '</div>';
+      }
+      html += '</div>';
     } else {
-      html += '<div class="image-card">' +
-        '<div class="image-placeholder"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>' +
-        '</div>';
+      // Fallback: support chunks as mini-strip (if available)
+      var sups = data.support_chunks || [];
+      if (sups.length > 0) {
+        html += '<div style="margin:8px 16px;padding:10px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06)">';
+        html += '<div style="font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Família</div>';
+        for (var si2 = 0; si2 < Math.min(sups.length, 3); si2++) {
+          html += '<div style="padding:2px 0;font-size:13px;color:rgba(255,255,255,0.5)">' + sups[si2].chunk + '</div>';
+        }
+        html += '</div>';
+      } else {
+        // Empty placeholder — no image, no variations, no supports
+        html += '<div style="height:40px"></div>';
+      }
     }
 
     html += '<div class="timer" id="timerEl">0.0s</div>';
@@ -6107,18 +6159,19 @@ body{
       audio.play().catch(function() { if (_audioGen === gen) startTimer(); });
     }
 
-    // Wait for image then play target audio
+    // Wait for image then play target audio (only if image is shown)
     const drillImg = area.querySelector('.image-card img');
     if (drillImg && !drillImg.complete) {
       drillImg.onload = function() { playTargetAudio(); };
       drillImg.onerror = function() { playTargetAudio(); };
       setTimeout(function() { if (!audio) playTargetAudio(); }, 8000);
     } else {
+      // No image or image already loaded or image suppressed — play immediately
       playTargetAudio();
     }
 
-    // Poll for late images
-    if (!imgSrc && data.word) {
+    // Poll for late images — only when image policy allows
+    if (!imgSrc && data.word && imgPolicy.image_allowed) {
       let imgPolls = 0;
       const imgPollId = setInterval(function() {
         imgPolls++;
@@ -8631,13 +8684,22 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             audio_file = generate_tts(chunk["carrier_sentence"])
         except Exception:
             pass
-        # Generate image from carrier sentence context
+        # Image policy: only generate for concrete/visual lexical types
         image_file = None
+        image_policy_result = None
+        context_variations = []
         try:
-            carrier = chunk["carrier_sentence"] if "carrier_sentence" in chunk.keys() else None
-            image_file = generate_image(chunk["word"], carrier)
+            target_text = chunk["target_chunk"] or chunk["word"]
+            image_policy_result = get_image_policy(target_text)
+            if image_policy_result["image_allowed"]:
+                carrier = chunk["carrier_sentence"] if "carrier_sentence" in chunk.keys() else None
+                image_file = generate_image(chunk["word"], carrier)
+            else:
+                # Generate context variations as audio-first alternative
+                from chunk_engine import generate_context_variations
+                context_variations = generate_context_variations(target_text, count=4)
         except Exception as e:
-            print(f"[IMAGE] Error generating image for '{chunk['word']}': {e}")
+            print(f"[IMAGE/POLICY] Error for '{chunk.get('word', '')}': {e}")
 
         # Fetch support chunks for this word
         support_chunks = []
@@ -8723,6 +8785,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "mode": mode,
             "mode_config": mode_config,
             "support_chunks": support_chunks,
+            "context_variations": context_variations,
+            "image_policy": image_policy_result,
         })
 
     def _drill_prefetch(self, limit=5):
@@ -10202,6 +10266,10 @@ def main():
         migrate_v6()
     except Exception as e:
         print(f"  WARNING: migrate_v6() failed: {e}")
+    try:
+        migrate_v7()
+    except Exception as e:
+        print(f"  WARNING: migrate_v7() failed: {e}")
     try:
         build_full_index()
         print("  Search index built.")

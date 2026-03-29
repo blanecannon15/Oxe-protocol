@@ -954,6 +954,21 @@ def migrate_v6(db_path=DB_PATH):
     print(f"[migrate_v6] Linked {linked} support_links, flagged {flagged} unhighlightable items")
 
 
+def migrate_v7(db_path=DB_PATH):
+    """V7: image policy — add lexical_type and image_policy columns to chunk_queue."""
+    conn = get_connection(db_path)
+    for col, coltype, default in [
+        ("lexical_type", "TEXT", "NULL"),
+        ("image_policy", "TEXT", "'suppressed'"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE chunk_queue ADD COLUMN {col} {coltype} DEFAULT {default}")
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+
 def clock_start_session(session_type="drill", db_path=DB_PATH):
     """Start a new SRS clock session. Returns session id."""
     now = datetime.now(timezone.utc)

@@ -704,3 +704,57 @@ def auto_link_word_to_chunks(word_id, word, count=4, db_path=DB_PATH):
         conn.close()
 
     return {"primary_chunk_id": primary_id, "support_chunk_ids": support_ids}
+
+
+# ---------------------------------------------------------------------------
+# Context variation generation — audio-first alternative to images
+# ---------------------------------------------------------------------------
+
+def generate_context_variations(chunk_text, count=5, db_path=DB_PATH):
+    """Generate natural context variations of a chunk for audio-first reinforcement.
+
+    Instead of an image, the learner sees/hears the chunk in multiple contexts.
+    Example: "tô de boa" → ["tô de boa hoje", "tô de boa com isso", "ele tá de boa", ...]
+
+    Args:
+        chunk_text: The target chunk.
+        count: Number of variations to generate.
+
+    Returns:
+        List of variation strings. Empty list on failure.
+    """
+    client = openai.OpenAI()
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": (
+                    "Tu é um linguista computacional brasileiro. "
+                    "Gera variações naturais de uso de um chunk/expressão. "
+                    "Cada variação deve ser uma frase curta e natural do dia a dia. "
+                    "Retorne APENAS um JSON array de strings."
+                )},
+                {"role": "user", "content": (
+                    f"Gere {count} variações naturais do chunk '{chunk_text}'. "
+                    f"Cada uma deve ser uma frase curta mostrando o chunk em contexto diferente. "
+                    f"Varie: pessoa (eu/ele/a gente), tempo verbal, situação. "
+                    f"Mantenha coloquial e brasileiro."
+                )},
+            ],
+            max_tokens=300,
+            temperature=0.6,
+        )
+        raw = resp.choices[0].message.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return [str(v).strip() for v in data[:count] if v]
+        if isinstance(data, dict):
+            for key in ("variations", "resultado", "data"):
+                if key in data and isinstance(data[key], list):
+                    return [str(v).strip() for v in data[key][:count] if v]
+        return []
+    except Exception as e:
+        print(f"[chunk_engine] Context variation error for '{chunk_text}': {e}")
+        return []
