@@ -4853,6 +4853,9 @@ body{
   </button>
 </div>
 <div class="btn-row">
+  <button class="btn btn-next" id="btn-skip" onclick="markDone()" style="background:rgba(250,204,21,0.12);border:1px solid rgba(250,204,21,0.25);color:#fbbf24">
+    &#x2713; Já sei
+  </button>
   <button class="btn btn-next" id="btn-next" onclick="nextChunk()" disabled>
     Pr&#243;ximo &#x203a;
   </button>
@@ -5215,7 +5218,28 @@ function showEmpty() {
   document.getElementById('btn-record').disabled = true;
 }
 
+function markDone() {
+  if (!currentChunk) return;
+  // Record as Easy (rating 4) to SRS so it graduates quickly
+  var fd = new FormData();
+  fd.append('chunk_id', String(currentChunk.chunk_id || currentChunk.id || 0));
+  fd.append('rating', '4');
+  fd.append('latency_ms', '500');
+  fetch('/api/drill/rate', {method:'POST', body:fd}).catch(function(){});
+  // Count it as done
+  sessionScores.push(100);
+  updateStats();
+  // Reset passes and load next
+  currentPassIndex = 0;
+  activeLayer = PASSES[0].layer;
+  renderLayers();
+  loadChunk();
+}
+
 function nextChunk() {
+  currentPassIndex = 0;
+  activeLayer = PASSES[0].layer;
+  renderLayers();
   loadChunk();
 }
 
