@@ -7835,6 +7835,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._sync_stats()
         elif path == "/api/sync/status":
             self._sync_status()
+        elif path == "/api/sync/download-db":
+            self._download_db()
 
         # ── Health (simple, can never fail) ──
         elif path == "/api/health":
@@ -8503,6 +8505,25 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             "dictionary_tabs": dict_tabs,
             "due_drills": due,
         })
+
+    def _download_db(self):
+        """Serve the raw SQLite database file for local sync."""
+        db_path = DB_PATH
+        if not os.path.exists(db_path):
+            self._json({"error": "DB not found"}, status=404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", "attachment; filename=voca_20k.db")
+        file_size = os.path.getsize(db_path)
+        self.send_header("Content-Length", str(file_size))
+        self.end_headers()
+        with open(db_path, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
 
     def _sync_upload(self, body):
         """Accept batched reviews from offline sessions."""
