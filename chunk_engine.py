@@ -350,6 +350,10 @@ def get_next_chunks_for_srs(limit=10, db_path=DB_PATH):
                    LIMIT 1) AS best_variant
            FROM chunk_families cf
            WHERE cf.root_form NOT IN (SELECT target_chunk FROM chunk_queue)
+             AND cf.id NOT IN (
+                 SELECT cv2.family_id FROM chunk_variants cv2
+                 WHERE cv2.variant_form IN (SELECT target_chunk FROM chunk_queue)
+             )
            ORDER BY cf.composite_rank DESC
            LIMIT ?""",
         (limit,),
