@@ -2619,14 +2619,10 @@ SEARCH_HTML = r"""<!DOCTYPE html>
 <div class="search-bar">
   <div class="search-wrap">
     <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-    <input type="text" id="search-input" placeholder="Buscar palavra..." autocomplete="off" autocorrect="off" spellcheck="false">
+    <input type="text" id="search-input" placeholder="Buscar palavra ou chunk..." autocomplete="off" autocorrect="off" spellcheck="false">
     <button class="search-clear" id="search-clear" onclick="clearSearch()">&times;</button>
   </div>
-  <div class="mode-toggle">
-    <button class="mode-btn active" id="mode-tudo" onclick="setSearchMode('tudo')">Tudo</button>
-    <button class="mode-btn" id="mode-palavras" onclick="setSearchMode('palavras')">Palavras</button>
-    <button class="mode-btn" id="mode-chunks" onclick="setSearchMode('chunks')">Chunks</button>
-  </div>
+  <!-- unified search — no mode toggle needed -->
   <div class="autocomplete" id="autocomplete"></div>
 </div>
 
@@ -2742,41 +2738,13 @@ let debounceTimer = null;
 let currentData = null;
 let currentWordId = null;
 let tabCache = {};  // {tabIdx: data} — cache per word selection
-let searchMode = 'tudo';  // 'tudo', 'palavras', or 'chunks'
-
-function setSearchMode(mode) {
-  searchMode = mode;
-  document.getElementById('mode-tudo').classList.toggle('active', mode === 'tudo');
-  document.getElementById('mode-palavras').classList.toggle('active', mode === 'palavras');
-  document.getElementById('mode-chunks').classList.toggle('active', mode === 'chunks');
-  searchInput.placeholder = mode === 'chunks' ? 'Buscar chunk...' : mode === 'tudo' ? 'Buscar tudo...' : 'Buscar palavra...';
-  // Hide all result panels
-  document.getElementById('result-card').classList.remove('visible');
-  document.getElementById('chunk-result-card').classList.remove('visible');
-  document.getElementById('chunk-detail-card').classList.remove('visible');
-  document.getElementById('empty-state').style.display = '';
-  acBox.classList.remove('visible');
-  // Re-search if there's text
-  var q = searchInput.value.trim();
-  if (q.length >= 2) {
-    if (mode === 'tudo') fetchUnifiedSearch(q);
-    else if (mode === 'chunks') fetchChunkSearch(q);
-    else fetchSearch(q);
-  }
-}
 
 searchInput.addEventListener('input', function() {
   clearTimeout(debounceTimer);
   const q = this.value.trim();
   clearBtn.style.display = q ? 'flex' : 'none';
   if (q.length < 2) { acBox.classList.remove('visible'); return; }
-  if (searchMode === 'tudo') {
-    debounceTimer = setTimeout(() => fetchUnifiedSearch(q), 300);
-  } else if (searchMode === 'chunks') {
-    debounceTimer = setTimeout(() => fetchChunkSearch(q), 300);
-  } else {
-    debounceTimer = setTimeout(() => fetchSearch(q), 300);
-  }
+  debounceTimer = setTimeout(() => fetchUnifiedSearch(q), 300);
 });
 
 searchInput.addEventListener('focus', function() {
@@ -2876,9 +2844,32 @@ async function fetchUnifiedSearch(q) {
     else {
       const res = await fetch('/api/search/unified?q=' + encodeURIComponent(q));
       data = await res.json();
+
+      // If no results and looks English, try English→PT translation
+      if ((!data.words || data.words.length === 0) && (!data.chunks || data.chunks.length === 0) && _isEnglish(q) && q.length >= 3) {
+        try {
+          const enRes = await fetch('/api/search/en?q=' + encodeURIComponent(q));
+          const enData = await enRes.json();
+          if (enData.translation && enData.results && enData.results.length > 0) {
+            data.words = enData.results.map(r => ({
+              item_id: r.id, term: r.word, difficulty_tier: r.tier, frequency_rank: r.rank, mastery_level: 0
+            }));
+            data._en_translation = enData.translation;
+            data._en_query = q;
+          }
+        } catch(e2) {}
+      }
+
       _cacheSet(cacheKey, data);
     }
     let html = '';
+
+    // English translation banner
+    if (data._en_translation) {
+      html += '<div style="padding:8px 12px;background:rgba(94,106,210,0.15);color:#5E6AD2;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.06)">' +
+        data._en_query + ' → <strong>' + data._en_translation + '</strong></div>';
+    }
+
     if (data.words && data.words.length > 0) {
       html += '<div style="padding:4px 12px;font-size:11px;color:#8B8BA7;text-transform:uppercase;letter-spacing:1px">Palavras</div>';
       html += data.words.slice(0, 8).map(r => {
@@ -2905,8 +2896,22 @@ async function fetchUnifiedSearch(q) {
           '<span class="ac-tier" style="color:#3B82F6">chunk</span></div>';
       }).join('');
     }
+
+    // Always offer live lookup if no exact word match
+    var hasExactWord = data.words && data.words.some(w => w.term.toLowerCase() === q.toLowerCase());
+    if (!hasExactWord && q.length >= 2) {
+      var esc = q.replace(/'/g, "\\'");
+      html += '<div style="padding:4px 12px;font-size:11px;color:#8B8BA7;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Buscar ao vivo</div>';
+      html += '<div class="ac-item" onclick="selectWord(-1,\'' + esc + '\',0,0)">' +
+        '<span class="ac-word">' + q + '</span>' +
+        '<span class="ac-tier" style="color:#3B82F6">Buscar e cachear</span></div>';
+    }
+
     if (!html) {
-      html = '<div class="ac-item" style="color:#525263">Nenhum resultado</div>';
+      var esc = q.replace(/'/g, "\\'");
+      html = '<div class="ac-item" onclick="selectWord(-1,\'' + esc + '\',0,0)">' +
+        '<span class="ac-word">' + q + '</span>' +
+        '<span class="ac-tier" style="color:#3B82F6">Buscar ao vivo</span></div>';
     }
     acBox.innerHTML = html;
     acBox.classList.add('visible');
@@ -3019,8 +3024,12 @@ async function selectWord(wordId, word, tier, rank) {
   activeTabIndex = 0;
   showTab(0);
 
-  // Pre-fetch ALL tabs in background so they're ready when tapped
+  // Pre-fetch ALL tabs in background — this also triggers server-side caching
+  // so the word is fully cached for offline/future use
   for (var t = 1; t <= 6; t++) { loadTabData(t); }
+
+  // Trigger full background cache on server (ensures audio + all tabs cached)
+  fetch('/api/search/ensure-cached?word_id=' + wordId).catch(function(){});
 
   // Pre-fetch audio so Ouvir button works on first tap (mobile autoplay policy)
   var audioBtn = document.getElementById('r-audio-btn');
@@ -3356,9 +3365,9 @@ async function searchSynonym(word) {
       const pick = exact || data.results[0];
       selectWord(pick.word_id, pick.word, pick.difficulty_tier, pick.frequency_rank);
     } else {
-      fetchSearch(word);
+      fetchUnifiedSearch(word);
     }
-  } catch(e) { fetchSearch(word); }
+  } catch(e) { fetchUnifiedSearch(word); }
 }
 
 function playWordAudio() {
@@ -3555,7 +3564,7 @@ function renderChunkDetail(d, container) {
     html += '<div class="chunk-detail-label">Palavras do Chunk</div>';
     d.component_words.forEach(function(w) {
       html += '<span class="chunk-related-pill" style="background:rgba(59,130,246,0.1);color:#60a5fa;border-color:rgba(59,130,246,0.2)" ' +
-        'onclick="setSearchMode(\'palavras\');searchInput.value=\'' + (w.word||'').replace(/'/g, "\\'") + '\';fetchSearch(\'' + (w.word||'').replace(/'/g, "\\'") + '\')">' +
+        'onclick="searchInput.value=\'' + (w.word||'').replace(/'/g, "\\'") + '\';fetchUnifiedSearch(\'' + (w.word||'').replace(/'/g, "\\'") + '\')">' +
         (w.word || '') + '</span>';
     });
     html += '</div>';
@@ -7497,6 +7506,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path.startswith("/api/chunk/") and path.endswith("/detail"):
             family_id = int(path.split("/")[3])
             self._dict_chunk_detail(family_id)
+        elif path == "/api/search/ensure-cached":
+            word_id = int(query.get("word_id", ["0"])[0])
+            self._ensure_word_cached(word_id)
 
         # ── Word detail endpoints ──
         elif path.startswith("/api/word/") and path.endswith("/definition"):
@@ -9080,6 +9092,47 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 print(f"[AUTO-LINK] Error for word_id={word_id}: {e}")
         threading.Thread(target=_bg_auto_link, daemon=True).start()
         self._json({"chunk_id": chunk_id, "status": "adicionado" if chunk_id else "ja existe"})
+
+    def _ensure_word_cached(self, word_id):
+        """Background-cache all dictionary tabs + audio for a word."""
+        if not word_id:
+            self._json({"status": "no word_id"})
+            return
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"status": "not found"})
+            return
+        def _bg_cache():
+            try:
+                from dictionary_engine import (
+                    get_definition_cached, get_examples_cached, get_pronunciation_cached,
+                    get_expressions_cached, get_conjugation_cached, get_synonyms_cached,
+                    get_word_chunks_cached, generate_tts,
+                )
+                tabs = [
+                    ('definition', get_definition_cached),
+                    ('examples', get_examples_cached),
+                    ('pronunciation', get_pronunciation_cached),
+                    ('expressions', get_expressions_cached),
+                    ('conjugation', get_conjugation_cached),
+                    ('synonyms', get_synonyms_cached),
+                    ('chunks', get_word_chunks_cached),
+                ]
+                for name, fn in tabs:
+                    try:
+                        fn(word_id, word)
+                    except Exception as e:
+                        print(f"[CACHE] {name} for {word}: {e}")
+                # Ensure audio
+                try:
+                    generate_tts(word)
+                except:
+                    pass
+            except Exception as e:
+                print(f"[CACHE] Background cache error for {word}: {e}")
+        import threading
+        threading.Thread(target=_bg_cache, daemon=True).start()
+        self._json({"status": "caching", "word": word})
 
     def _dict_history(self):
         conn = get_conn()
