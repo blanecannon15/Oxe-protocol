@@ -10934,6 +10934,13 @@ def main():
     _audio_thread = threading.Thread(target=_audio_scan_loop, daemon=True)
     _audio_thread.start()
 
+    # Daily auto-seeder: adds 30 new words/chunks per day by frequency rank
+    try:
+        from daily_seeder import start_daily_seeder
+        start_daily_seeder()
+    except Exception as e:
+        print(f"  WARNING: daily_seeder failed to start: {e}")
+
     ip = get_local_ip()
     server = http.server.ThreadingHTTPServer(("0.0.0.0", port), OxeHandler)
 
