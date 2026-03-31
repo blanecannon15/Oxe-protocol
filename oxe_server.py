@@ -8284,6 +8284,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Offline Sync Upload ──
         elif path == "/api/sync/upload":
             self._sync_upload(body)
+        elif path == "/api/sync/upload-db":
+            self._upload_db()
 
         else:
             self.send_error(404)
@@ -8536,6 +8538,45 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 self.wfile.write(chunk)
+
+    def _upload_db(self):
+        """Replace the production DB with an uploaded SQLite file."""
+        length = int(self.headers.get("Content-Length", 0))
+        if length < 1000:
+            self._json({"error": "DB too small"}, status=400)
+            return
+        # Read the uploaded DB to a temp file first
+        import tempfile, shutil
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        remaining = length
+        while remaining > 0:
+            chunk_size = min(65536, remaining)
+            data = self.rfile.read(chunk_size)
+            if not data:
+                break
+            tmp.write(data)
+            remaining -= len(data)
+        tmp.close()
+        # Verify it's a valid SQLite file
+        try:
+            import sqlite3 as _sq
+            test_conn = _sq.connect(tmp.name)
+            test_conn.execute("SELECT COUNT(*) FROM word_bank")
+            count = test_conn.execute("SELECT COUNT(*) FROM chunk_queue").fetchone()[0]
+            test_conn.close()
+        except Exception as e:
+            os.unlink(tmp.name)
+            self._json({"error": f"Invalid DB: {e}"}, status=400)
+            return
+        # Backup current DB, then replace
+        backup_path = str(DB_PATH) + ".bak"
+        try:
+            shutil.copy2(str(DB_PATH), backup_path)
+        except:
+            pass
+        shutil.move(tmp.name, str(DB_PATH))
+        new_size = os.path.getsize(DB_PATH)
+        self._json({"status": "ok", "size": new_size, "chunk_queue": count})
 
     def _sync_upload(self, body):
         """Accept batched reviews from offline sessions."""
