@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Resolve LFS pointer for the database (Railway build context doesn't resolve LFS)
+# Resolve LFS pointer for the seed database
 RUN if [ "$(wc -c < voca_20k.db)" -lt 1000 ]; then \
       echo "DB is LFS pointer ($(wc -c < voca_20k.db) bytes), downloading..." && \
       for i in 1 2 3; do \
@@ -20,6 +20,11 @@ RUN if [ "$(wc -c < voca_20k.db)" -lt 1000 ]; then \
       done; \
     fi && \
     python3 -c "import os; s=os.path.getsize('voca_20k.db'); print(f'DB size: {s/1024/1024:.0f} MB'); assert s > 1000, f'DB is only {s} bytes — LFS not resolved'"
+
+# Volume mount for persistent DB (set RAILWAY_VOLUME_MOUNT_PATH=/data in Railway)
+# On first deploy: repo DB seeds to /data/voca_20k.db
+# On subsequent deploys: /data/voca_20k.db is preserved (training progress kept)
+VOLUME ["/data"]
 
 EXPOSE 7777
 

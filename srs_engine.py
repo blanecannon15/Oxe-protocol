@@ -16,6 +16,7 @@ Usage:
     python3 srs_engine.py next                    Get next due word for The Loop
 """
 
+import os
 import sqlite3
 import json
 import math
@@ -106,7 +107,20 @@ def _make_fsrs():
     return FSRS6()
 
 
-DB_PATH = Path(__file__).parent / "voca_20k.db"
+_REPO_DB = Path(__file__).parent / "voca_20k.db"
+_VOLUME_MOUNT = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "")
+if _VOLUME_MOUNT:
+    DB_PATH = Path(_VOLUME_MOUNT) / "voca_20k.db"
+    # On first deploy, seed from repo; on subsequent deploys, keep existing
+    if not DB_PATH.exists() and _REPO_DB.exists():
+        import shutil
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_REPO_DB, DB_PATH)
+        print(f"  Seeded volume DB from repo: {DB_PATH} ({DB_PATH.stat().st_size / 1024 / 1024:.0f} MB)")
+    elif DB_PATH.exists():
+        print(f"  Using existing volume DB: {DB_PATH} ({DB_PATH.stat().st_size / 1024 / 1024:.0f} MB)")
+else:
+    DB_PATH = _REPO_DB
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS word_bank (
