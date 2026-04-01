@@ -29,8 +29,13 @@ SEED_INTERVAL = 86400  # 24 hours
 
 
 def get_unseeded_words(limit=30, db_path=DB_PATH):
-    """Find words by frequency rank that have NO chunks in chunk_queue."""
+    """Find words by frequency rank that have NO chunks in chunk_queue.
+
+    Fetches extra candidates and filters out conjugated forms of words
+    already in the queue (e.g., skip "falou" if "falar" is already seeded).
+    """
     conn = get_connection(db_path)
+    # Fetch 3x the limit to allow for conjugation filtering
     rows = conn.execute(
         """SELECT wb.id, wb.word, wb.frequency_rank, wb.difficulty_tier
            FROM word_bank wb
@@ -39,10 +44,72 @@ def get_unseeded_words(limit=30, db_path=DB_PATH):
            )
            ORDER BY wb.frequency_rank ASC
            LIMIT ?""",
-        (limit,),
+        (limit * 3,),
+    ).fetchall()
+
+    # Get already-seeded words for conjugation checking
+    seeded = conn.execute(
+        """SELECT DISTINCT wb.word FROM word_bank wb
+           JOIN chunk_queue cq ON cq.word_id = wb.id
+           WHERE cq.word_id IS NOT NULL"""
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+
+    seeded_words = {r["word"].lower() for r in seeded}
+    candidates = [dict(r) for r in rows]
+
+    if not candidates:
+        return []
+
+    # Filter conjugated forms using common Portuguese verb endings
+    filtered = []
+    for w in candidates:
+        if len(filtered) >= limit:
+            break
+        word = w["word"].lower()
+        # Skip if this looks like a conjugation of an already-seeded verb
+        if _is_conjugation_of_seeded(word, seeded_words):
+            continue
+        filtered.append(w)
+
+    return filtered
+
+
+# Common Portuguese verb suffixes (conjugated forms)
+_VERB_SUFFIXES = [
+    "ar", "er", "ir",  # infinitives
+    "o", "a", "e", "i",  # present
+    "as", "es", "is",  # tu forms
+    "amos", "emos", "imos",  # nós
+    "am", "em",  # eles
+    "ou", "eu", "iu",  # preterite
+    "ava", "ia",  # imperfect
+    "ei", "ará", "erá", "irá",  # future
+    "ando", "endo", "indo",  # gerund
+    "ado", "ido",  # participle
+    "aria", "eria", "iria",  # conditional
+]
+
+
+def _get_verb_stem(word):
+    """Try to extract a verb stem from a word."""
+    for suffix in sorted(_VERB_SUFFIXES, key=len, reverse=True):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 2:
+            return word[: len(word) - len(suffix)]
+    return None
+
+
+def _is_conjugation_of_seeded(word, seeded_words):
+    """Check if word is likely a conjugation of an already-seeded word."""
+    stem = _get_verb_stem(word)
+    if not stem:
+        return False
+    # Check if any common infinitive form of this stem is already seeded
+    for inf_end in ["ar", "er", "ir"]:
+        infinitive = stem + inf_end
+        if infinitive in seeded_words and infinitive != word:
+            return True
+    return False
 
 
 def generate_chunks_for_words(words):

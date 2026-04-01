@@ -2355,6 +2355,9 @@ SEARCH_HTML = r"""<!DOCTYPE html>
     font-size: 0.9em;
   }
   .ex-audio:active { transform: scale(0.95); }
+  .ex-audio.audio-loading { opacity: 0.5; animation: pulse 1s infinite; }
+  .chunk-play-btn.audio-loading { opacity: 0.5; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
   .ex-text { font-size: 0.95em; line-height: 1.6; color: #e0e0e5; }
   .ex-chunk { color: #60a5fa; font-weight: 600; }
 
@@ -2367,11 +2370,14 @@ SEARCH_HTML = r"""<!DOCTYPE html>
   /* ── Expressions ── */
   .expr-item {
     background: rgba(255,255,255,0.03); border-radius: 14px; padding: 16px;
-    margin-bottom: 10px;
+    margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start;
     box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 2px 8px rgba(0,0,0,0.2);
   }
+  .expr-item .ex-audio { flex-shrink: 0; }
+  .expr-content { flex: 1; min-width: 0; }
   .expr-phrase { font-size: 1em; font-weight: 600; color: #fafafa; margin-bottom: 4px; }
   .expr-meaning { font-size: 0.85em; color: #7a7a8e; line-height: 1.5; }
+  .expr-example { font-size: 0.82em; color: #9ca3af; font-style: italic; margin-top: 6px; line-height: 1.4; }
 
   /* ── Add to SRS button ── */
   .add-srs-btn {
@@ -3241,8 +3247,10 @@ function renderExpressions(data) {
     if (!expr.expressao) return;
     const div = document.createElement('div');
     div.className = 'expr-item';
-    div.innerHTML = '<div class="expr-phrase">' + (expr.expressao || '') + '</div>' +
-      '<div class="expr-meaning">' + (expr.significado || '') + '</div>';
+    div.innerHTML = '<button class="ex-audio" onclick="playExprAudio(this)">&#x1F50A;</button>' +
+      '<div class="expr-content"><div class="expr-phrase">' + (expr.expressao || '') + '</div>' +
+      '<div class="expr-meaning">' + (expr.significado || '') + '</div>' +
+      (expr.exemplo ? '<div class="expr-example">' + expr.exemplo + '</div>' : '') + '</div>';
     exprList.appendChild(div);
   });
   if (expressions.length === 0) {
@@ -3365,7 +3373,7 @@ function buildChunkCard(ch, fromDb) {
   html += '<div class="chunk-actions">';
   const chunkText = (ch.text || ch.chunk || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
   html += '<button class="chunk-add-btn" onclick="addChunkToSRS(this,\'' + chunkText + '\')">Adicionar ao SRS</button>';
-  if (ch.audio) html += '<button class="chunk-play-btn" onclick="playChunkAudio(\'' + ch.audio + '\')">&#x1F50A;</button>';
+  html += '<button class="chunk-play-btn" onclick="playTextAudio(this,\'' + chunkText + '\')">&#x1F50A;</button>';
   html += '</div></div>';
   return html;
 }
@@ -3412,7 +3420,49 @@ function playWordAudio() {
 }
 
 function playExAudio(btn) {
-  playWordAudio();
+  var text = btn.closest('.example-item').querySelector('.ex-text').textContent;
+  if (!text) { playWordAudio(); return; }
+  btn.classList.add('audio-loading');
+  fetch('/api/drill/tts?text=' + encodeURIComponent(text))
+    .then(r => r.json())
+    .then(d => {
+      btn.classList.remove('audio-loading');
+      if (d.audio_file) {
+        player.src = '/audio/' + d.audio_file;
+        player.play().catch(()=>{});
+      }
+    }).catch(() => { btn.classList.remove('audio-loading'); });
+}
+
+function playExprAudio(btn) {
+  var exemplo = btn.closest('.expr-item').querySelector('.expr-example');
+  var phrase = btn.closest('.expr-item').querySelector('.expr-phrase');
+  var text = (exemplo && exemplo.textContent) || (phrase && phrase.textContent) || '';
+  if (!text) return;
+  btn.classList.add('audio-loading');
+  fetch('/api/drill/tts?text=' + encodeURIComponent(text))
+    .then(r => r.json())
+    .then(d => {
+      btn.classList.remove('audio-loading');
+      if (d.audio_file) {
+        player.src = '/audio/' + d.audio_file;
+        player.play().catch(()=>{});
+      }
+    }).catch(() => { btn.classList.remove('audio-loading'); });
+}
+
+function playTextAudio(btn, text) {
+  if (!text) return;
+  btn.classList.add('audio-loading');
+  fetch('/api/drill/tts?text=' + encodeURIComponent(text))
+    .then(r => r.json())
+    .then(d => {
+      btn.classList.remove('audio-loading');
+      if (d.audio_file) {
+        player.src = '/audio/' + d.audio_file;
+        player.play().catch(()=>{});
+      }
+    }).catch(() => { btn.classList.remove('audio-loading'); });
 }
 
 function playChunkAudio(filename) {
@@ -7526,6 +7576,9 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/search/ensure-cached":
             word_id = int(query.get("word_id", ["0"])[0])
             self._ensure_word_cached(word_id)
+        elif path == "/api/search/refresh-cache":
+            word_id = int(query.get("word_id", ["0"])[0])
+            self._refresh_word_cache(word_id)
 
         # ── Word detail endpoints ──
         elif path.startswith("/api/word/") and path.endswith("/definition"):
@@ -9218,6 +9271,26 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         import threading
         threading.Thread(target=_bg_cache, daemon=True).start()
         self._json({"status": "caching", "word": word})
+
+    def _refresh_word_cache(self, word_id):
+        """Force-refresh all cached dictionary tabs for a word (deletes old cache first)."""
+        if not word_id:
+            self._json({"status": "no word_id"})
+            return
+        word = self._resolve_word(word_id)
+        if not word:
+            self._json({"status": "not found"})
+            return
+        def _bg_refresh():
+            try:
+                from dictionary_engine import refresh_word_cache
+                refresh_word_cache(word_id, word)
+                print(f"[REFRESH] Refreshed all tabs for {word}")
+            except Exception as e:
+                print(f"[REFRESH] Error for {word}: {e}")
+        import threading
+        threading.Thread(target=_bg_refresh, daemon=True).start()
+        self._json({"status": "refreshing", "word": word})
 
     def _dict_history(self):
         conn = get_conn()

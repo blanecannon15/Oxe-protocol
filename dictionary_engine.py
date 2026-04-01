@@ -37,7 +37,14 @@ SYSTEM_PROMPT = (
     "- Se a palavra tem uso especial na Bahia, menciona isso.\n"
     "- Gírias, interjeições e palavrões: SEMPRE define com riqueza. "
     "Oxe, massa, arretado, vixe, lá ele — tudo tem definição. "
-    "NUNCA retorna campos vazios. Se a palavra é gíria, explica como gíria."
+    "NUNCA retorna campos vazios. Se a palavra é gíria, explica como gíria.\n"
+    "- GÍRIAS E COLOQUIALISMOS são PRIORIDADE: saca (entendeu?), bagulho (coisa/parada), "
+    "véi/vei (amigo/mano), trampo (trabalho), mano, parada, da hora, suave, "
+    "zoar, zueira, firmeza, é nóis — SEMPRE inclui o significado gírio PRIMEIRO, "
+    "depois o sentido formal se tiver.\n"
+    "- Se a palavra tem MÚLTIPLOS sentidos (formal + gíria), lista TODOS. "
+    "Exemplo: 'saca' = 1) gíria: 'entende?/sabe?' 2) saco grande de material.\n"
+    "- Expressões baianas SEMPRE têm exemplos reais de uso na rua."
 )
 
 # ── OpenAI Client ───────────────────────────────────────────────────
@@ -190,6 +197,47 @@ def _cached_call(word_id, tab_name, generate_fn, db_path=DB_PATH):
         pass
 
     return result
+
+
+def refresh_word_cache(word_id, word, tabs=None, db_path=DB_PATH):
+    """Delete cached entries and regenerate them with the current prompt.
+
+    Args:
+        word_id: word_bank ID
+        word: the word string
+        tabs: list of tab names to refresh, or None for all 7
+    """
+    all_tabs = ['definition', 'examples', 'pronunciation', 'expressions',
+                'conjugation', 'synonyms', 'chunks']
+    to_refresh = tabs or all_tabs
+
+    conn = get_connection(db_path)
+    for tab in to_refresh:
+        conn.execute(
+            "DELETE FROM dictionary_cache WHERE word_id = ? AND tab_name = ?",
+            (word_id, tab),
+        )
+    conn.commit()
+    conn.close()
+
+    # Regenerate using the cached wrappers (they'll miss cache and call GPT)
+    tab_fns = {
+        'definition': lambda: get_definition_cached(word_id, word, db_path),
+        'examples': lambda: get_examples_cached(word_id, word, db_path),
+        'pronunciation': lambda: get_pronunciation_cached(word_id, word, db_path),
+        'expressions': lambda: get_expressions_cached(word_id, word, db_path),
+        'conjugation': lambda: get_conjugation_cached(word_id, word, db_path),
+        'synonyms': lambda: get_synonyms_cached(word_id, word, db_path),
+        'chunks': lambda: get_word_chunks_cached(word_id, word, db_path),
+    }
+    results = {}
+    for tab in to_refresh:
+        if tab in tab_fns:
+            try:
+                results[tab] = tab_fns[tab]()
+            except Exception as e:
+                print(f"[REFRESH] {tab} for {word}: {e}")
+    return results
 
 
 # ── 1. search_word ──────────────────────────────────────────────────
