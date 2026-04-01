@@ -262,7 +262,7 @@ def get_next_word(db_path=DB_PATH):
 
 
 def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
-    """Record a review. If latency > 1s, auto-downgrade rating to Hard."""
+    """Record a review. Uses the learner's honest self-rating directly."""
     conn = get_connection(db_path)
     row = conn.execute(
         "SELECT * FROM word_bank WHERE id = ?", (word_id,)
@@ -272,10 +272,6 @@ def record_review(word_id, rating, latency_ms=None, db_path=DB_PATH):
         raise ValueError(f"Word {word_id} not found")
 
     latency_downgraded = False
-    if latency_ms is not None and latency_ms > LATENCY_THRESHOLD_MS:
-        if rating.value > Rating.Hard.value:
-            rating = Rating.Hard
-            latency_downgraded = True
 
     old_mastery = dict(row)["mastery_level"]
 
@@ -1270,10 +1266,6 @@ def record_chunk_review(chunk_id, rating, latency_ms=None, biometric_score=None,
         raise ValueError(f"Chunk {chunk_id} not found")
 
     latency_downgraded = False
-    if latency_ms is not None and latency_ms > LATENCY_THRESHOLD_MS:
-        if rating.value > Rating.Hard.value:
-            rating = Rating.Hard
-            latency_downgraded = True
 
     old_mastery = row["mastery_level"]
     card = _deserialize_card(row["srs_state"])

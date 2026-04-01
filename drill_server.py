@@ -1380,15 +1380,13 @@ function playMasteryRep() {
     } else {
       // After last rep — STOP. Let user create variations in their head.
       $('rep-counter').classList.remove('visible');
-      $('pass-instruction').textContent = 'Cria varia\u00E7\u00F5es na sua cabe\u00E7a';
+      $('pass-instruction').textContent = 'Como foi?';
+      showRatingButtons();
+      // Add replay button below ratings
       const area = $('action-area');
-      const btnDone = document.createElement('button');
-      btnDone.className = 'btn-primary';
-      btnDone.textContent = 'Pr\u00F3ximo \u203A';
-      btnDone.onclick = completeDrill;
-      area.appendChild(btnDone);
       const btnReplay = document.createElement('button');
       btnReplay.className = 'btn-secondary';
+      btnReplay.style.cssText = 'margin-top:8px;width:100%;';
       btnReplay.textContent = '\u{1F50A} Ouvir de novo';
       btnReplay.onclick = () => { masteryReps = 0; area.innerHTML = ''; startMasteryLoop(); };
       area.appendChild(btnReplay);
@@ -1405,7 +1403,24 @@ function playMasteryRep() {
 }
 
 // ── Complete Drill ────────────────────────────────────────
-async function completeDrill() {
+function showRatingButtons() {
+  // Show self-rating buttons instead of auto-rating
+  const area = $('action-area');
+  area.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 16px;';
+  [{r:1,label:'De novo',color:'#ef4444'},{r:2,label:'Difícil',color:'#f59e0b'},
+   {r:3,label:'Bom',color:'#34d399'},{r:4,label:'Fácil',color:'#60a5fa'}].forEach(b => {
+    const btn = document.createElement('button');
+    btn.textContent = b.label;
+    btn.style.cssText = 'padding:14px;border-radius:10px;border:1px solid '+b.color+';background:rgba(0,0,0,0.3);color:'+b.color+';font-size:16px;font-weight:600;cursor:pointer;';
+    btn.onclick = () => submitRating(b.r);
+    grid.appendChild(btn);
+  });
+  area.appendChild(grid);
+}
+
+async function submitRating(rating) {
   const latencyMs = drillStartTime ? Math.round(performance.now() - drillStartTime) : 0;
   $('rep-counter').classList.remove('visible');
   $('action-area').innerHTML = '';
@@ -1419,6 +1434,7 @@ async function completeDrill() {
         chunk_id: currentChunk.chunk_id || currentChunk.word_id,
         latency_ms: latencyMs,
         retries: retries,
+        rating: rating,
       }),
     });
     const data = await res.json();
@@ -1999,16 +2015,14 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
 
         word_id = body["word_id"]
         latency_ms = body["latency_ms"]
+        user_rating = body.get("rating")  # 1=Again, 2=Hard, 3=Good, 4=Easy
 
-        # Determine rating
-        if latency_ms <= 600:
-            rating = Rating.Easy
-        elif latency_ms <= LATENCY_THRESHOLD_MS:
-            rating = Rating.Good
-        elif latency_ms <= 2000:
-            rating = Rating.Hard
+        # Trust the learner's self-rating if provided
+        if user_rating:
+            rating_map = {1: Rating.Again, 2: Rating.Hard, 3: Rating.Good, 4: Rating.Easy}
+            rating = rating_map.get(user_rating, Rating.Good)
         else:
-            rating = Rating.Again
+            rating = Rating.Good
 
         # Laranjada penalty override
         penalty_active = False
@@ -2164,20 +2178,18 @@ class DrillHandler(http.server.BaseHTTPRequestHandler):
         latency_ms = body.get("latency_ms")
         retries = body.get("retries", 0)
         biometric = body.get("biometric_score")
+        user_rating = body.get("rating")  # 1=Again, 2=Hard, 3=Good, 4=Easy
 
         if not chunk_id:
             self._json({"error": "chunk_id obrigatorio"})
             return
 
-        if retries >= 3:
-            rating = Rating.Again
-        elif latency_ms and latency_ms > LATENCY_THRESHOLD_MS:
-            rating = Rating.Hard
-        elif biometric and biometric < 85:
-            rating = Rating.Hard
-        elif latency_ms and latency_ms <= 600 and retries == 0:
-            rating = Rating.Easy
+        # Trust the learner's self-rating if provided
+        if user_rating:
+            rating_map = {1: Rating.Again, 2: Rating.Hard, 3: Rating.Good, 4: Rating.Easy}
+            rating = rating_map.get(user_rating, Rating.Good)
         else:
+            # Fallback: simple default if no rating sent
             rating = Rating.Good
 
         new_card, mastery, downgraded = record_chunk_review(
