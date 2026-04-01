@@ -646,22 +646,7 @@ DRILL_HTML = r"""<!DOCTYPE html>
   }
   .mode-banner.hidden { opacity: 0; min-height: 0; padding: 0; overflow: hidden; }
 
-  /* ── Countdown Timer ── */
-  .countdown-bar {
-    width: 100%; max-width: 340px; height: 4px; border-radius: 2px;
-    background: rgba(255,255,255,0.06); overflow: hidden; display: none;
-  }
-  .countdown-bar.visible { display: block; }
-  .countdown-fill {
-    height: 100%; background: linear-gradient(90deg, #5E6AD2, #3B82F6);
-    border-radius: 2px; transition: width 0.1s linear;
-    width: 100%;
-  }
-  .countdown-label {
-    font-size: 0.7em; color: #6b7280; text-align: center;
-    min-height: 1em; display: none;
-  }
-  .countdown-label.visible { display: block; }
+  /* countdown timer removed */
 
   /* ── Biometric Score ── */
   .biometric-score {
@@ -871,8 +856,10 @@ DRILL_HTML = r"""<!DOCTYPE html>
   <div class="pass-instruction" id="pass-instruction"></div>
   <div class="rep-counter" id="rep-counter"></div>
   <div class="rating-feedback" id="rating-feedback"></div>
-  <div class="countdown-bar" id="countdown-bar"><div class="countdown-fill" id="countdown-fill"></div></div>
-  <div class="countdown-label" id="countdown-label"></div>
+  <!-- countdown timer removed -->
+  <div id="countdown-bar" style="display:none"></div>
+  <div id="countdown-fill" style="display:none"></div>
+  <div id="countdown-label" style="display:none"></div>
   <div class="biometric-score" id="biometric-score"></div>
   <div class="prosody-pills" id="prosody-pills"></div>
   <div class="latency-trend" id="latency-trend">
@@ -980,7 +967,7 @@ let modeConfig = null;       // current drill config from /api/modes/config
 let currentBlockId = null;   // block_id from daily plan
 let blockItemsDone = 0;      // items completed in current block
 let blockItemsTotal = 0;     // total items in current block
-let countdownTimer = null;   // interval ID for countdown
+// countdownTimer removed — no timer pressure
 
 // ── Fetch current block info ──────────────────────────────
 async function fetchBlockInfo() {
@@ -1077,6 +1064,16 @@ function applyChunkData(data) {
       img.classList.remove('visible');
     }
     enterPass(currentPass);
+    // Auto-play audio immediately when chunk loads (first rep)
+    if (currentChunk && currentChunk.audio_file && currentPass === 1) {
+      // enterPass(1) calls playPass1Loop which plays, but as a safety net
+      // ensure player.play() fires even if the loop hasn't started yet
+      setTimeout(() => {
+        if (player.paused && player.src) {
+          player.play().catch(() => {});
+        }
+      }, 100);
+    }
     // Prefetch next batch while user works on this chunk
     setTimeout(prefetchBatch, 500);
 }
@@ -1095,47 +1092,9 @@ function applyModeUI() {
   $('biometric-score').classList.remove('visible');
 }
 
-function startCountdown(maxMs) {
-  stopCountdown();
-  const bar = $('countdown-bar');
-  const fill = $('countdown-fill');
-  const label = $('countdown-label');
-  bar.classList.add('visible');
-  label.classList.add('visible');
-  fill.style.width = '100%';
-
-  const startTime = performance.now();
-  countdownTimer = setInterval(() => {
-    const elapsed = performance.now() - startTime;
-    const remaining = Math.max(0, maxMs - elapsed);
-    const pct = (remaining / maxMs) * 100;
-    fill.style.width = pct + '%';
-    label.textContent = (remaining / 1000).toFixed(1) + 's';
-
-    if (pct <= 25) {
-      fill.style.background = 'linear-gradient(90deg, #ef4444, #f59e0b)';
-    } else if (pct <= 50) {
-      fill.style.background = 'linear-gradient(90deg, #f59e0b, #5E6AD2)';
-    } else {
-      fill.style.background = 'linear-gradient(90deg, #5E6AD2, #3B82F6)';
-    }
-
-    if (remaining <= 0) {
-      stopCountdown();
-    }
-  }, 100);
-}
-
-function stopCountdown() {
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
-  $('countdown-bar').classList.remove('visible');
-  $('countdown-label').classList.remove('visible');
-  $('countdown-fill').style.width = '100%';
-  $('countdown-fill').style.background = 'linear-gradient(90deg, #5E6AD2, #3B82F6)';
-}
+// Countdown timer removed — no timer pressure
+function startCountdown(maxMs) { /* no-op */ }
+function stopCountdown() { /* no-op */ }
 
 function showBiometricScore(score) {
   const el = $('biometric-score');
@@ -1172,11 +1131,7 @@ function enterPass(passNum) {
     img.classList.remove('visible');
   }
 
-  // Countdown timer: start if mode has max_response_time_ms
-  stopCountdown();
-  if (modeConfig && modeConfig.max_response_time_ms && passNum >= 2 && passNum <= 4) {
-    startCountdown(modeConfig.max_response_time_ms);
-  }
+  // Countdown timer removed — no timer pressure
 
   // Buttons per pass
   const area = $('action-area');

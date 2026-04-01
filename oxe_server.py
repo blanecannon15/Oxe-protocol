@@ -9115,7 +9115,7 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         if not word_id or not chunk:
             self._json({"error": "word_id e chunk obrigatorios"}, status=400)
             return
-        chunk_id = add_chunk(word_id, chunk, carrier, "dictionary")
+        chunk_id = add_chunk(word_id, chunk, carrier, "manual")
         # Auto-link word to all matching chunks
         try:
             link_word(word_id)
