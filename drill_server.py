@@ -1293,6 +1293,7 @@ function markChunkDone() {
       chunk_id: currentChunk.chunk_id || currentChunk.word_id,
       latency_ms: 500,
       retries: 0,
+      rating: 4,  // Easy — user explicitly skipped
     }),
   }).catch(() => {});
   sessionCount++;
@@ -1358,6 +1359,11 @@ function playMasteryRep() {
 }
 
 // ── Complete Drill ────────────────────────────────────────
+function completeDrill() {
+  // Show rating buttons — learner decides how it went
+  showRatingButtons();
+}
+
 function showRatingButtons() {
   // Show self-rating buttons instead of auto-rating
   const area = $('action-area');
@@ -1462,6 +1468,11 @@ async function submitRating(rating) {
   fatigueCheckCounter++;
   if (fatigueCheckCounter % 5 === 0) {
     checkFatigueStatus();
+  }
+
+  // Auto-advance listening layer on success
+  if (typeof isListeningMode === 'function' && isListeningMode() && rating >= 3) {
+    if (typeof advanceListeningLayer === 'function') advanceListeningLayer(true);
   }
 
   setTimeout(fetchNext, 1800);
@@ -1805,16 +1816,7 @@ fetchNext = async function() {
   }
 };
 
-// Patch into completeDrill: auto-advance listening layer on success
-var _origCompleteDrill = completeDrill;
-completeDrill = async function() {
-  var wasListeningMode = isListeningMode();
-  await _origCompleteDrill();
-  if (wasListeningMode) {
-    // Assume success if rating >= 3 (Good or Easy)
-    advanceListeningLayer(true);
-  }
-};
+// Listening layer advancement is handled inside submitRating()
 
 function updateTime() {
   $('time-label').textContent = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});

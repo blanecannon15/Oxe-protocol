@@ -2747,6 +2747,23 @@ searchInput.addEventListener('input', function() {
   debounceTimer = setTimeout(() => fetchUnifiedSearch(q), 300);
 });
 
+// Enter key: select first result or trigger live lookup
+searchInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const q = this.value.trim();
+    if (q.length < 2) return;
+    // If autocomplete has results, select the first word
+    const firstItem = acBox.querySelector('.ac-word');
+    if (firstItem) {
+      firstItem.click();
+    } else {
+      // No results — trigger live lookup directly
+      selectWord(-1, q, 0, 0);
+    }
+  }
+});
+
 searchInput.addEventListener('focus', function() {
   if (this.value.trim().length >= 2) acBox.classList.add('visible');
 });
