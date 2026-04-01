@@ -8303,6 +8303,8 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
             self._sync_upload(body)
         elif path == "/api/sync/upload-db":
             self._upload_db()
+        elif path == "/api/sync/carriers":
+            self._sync_carriers(body)
 
         else:
             self.send_error(404)
@@ -8594,6 +8596,31 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         shutil.move(tmp.name, str(DB_PATH))
         new_size = os.path.getsize(DB_PATH)
         self._json({"status": "ok", "size": new_size, "chunk_queue": count})
+
+    def _sync_carriers(self, body):
+        """Bulk-update carrier sentences from local DB."""
+        carriers = body.get("carriers", [])
+        if not carriers:
+            self._json({"error": "no carriers"}, status=400)
+            return
+        conn = get_conn()
+        updated = 0
+        for c in carriers:
+            target = c.get("target_chunk")
+            sentence = c.get("carrier_sentence")
+            if not target or not sentence:
+                continue
+            try:
+                cur = conn.execute(
+                    "UPDATE chunk_queue SET carrier_sentence = ? WHERE target_chunk = ?",
+                    (sentence, target)
+                )
+                updated += cur.rowcount
+            except Exception:
+                pass
+        conn.commit()
+        conn.close()
+        self._json({"status": "ok", "updated": updated, "received": len(carriers)})
 
     def _sync_upload(self, body):
         """Accept batched reviews from offline sessions."""
