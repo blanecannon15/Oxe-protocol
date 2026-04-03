@@ -46,7 +46,7 @@ from srs_engine import (
 from story_gen import LEVELS, init_story_db, generate_story, generate_story_audio
 from podcast_gen import generate_podcast, save_podcast, get_podcast, list_podcasts
 from prosody_transplant import ensure_clone_exists, register_clone, get_or_generate_golden
-from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5, migrate_v6, migrate_v7
+from srs_engine import migrate_v2, migrate_v3, migrate_v4, migrate_v5, migrate_v6, migrate_v7, migrate_v8
 from srs_engine import (
     clock_start_session, clock_end_session, clock_get_today,
     clock_get_sessions, clock_get_weekly_summary,
@@ -123,7 +123,7 @@ PWA_DIR = Path(__file__).parent / "pwa"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-LATENCY_THRESHOLD_MS = 1000
+LATENCY_THRESHOLD_MS = 1500
 TRAP_PROBABILITY = 0.15
 TRAP_LATENCY_MS = 800
 CLOZE_PROBABILITY = 0.30
@@ -6004,7 +6004,7 @@ body{
   let forceRedrill = false;
   let lastRatingVal = 0;
   let latencyExplainFired = false;
-  const LATENCY_THRESHOLD = 1000;
+  const LATENCY_THRESHOLD = 1500;
   const BIO_THRESHOLD = 85;
   const MODE_CLASSES = {
     fragile_rescue_drill:'fragile', known_but_slow_drill:'fragile',
@@ -9895,11 +9895,11 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         word_id = body["word_id"]
         latency_ms = body["latency_ms"]
 
-        if latency_ms <= 600:
+        if latency_ms <= 800:
             rating = Rating.Easy
         elif latency_ms <= LATENCY_THRESHOLD_MS:
             rating = Rating.Good
-        elif latency_ms <= 2000:
+        elif latency_ms <= 3000:
             rating = Rating.Hard
         else:
             rating = Rating.Again
@@ -11064,6 +11064,10 @@ def main():
         migrate_v7()
     except Exception as e:
         print(f"  WARNING: migrate_v7() failed: {e}")
+    try:
+        migrate_v8()
+    except Exception as e:
+        print(f"  WARNING: migrate_v8() failed: {e}")
     try:
         build_full_index()
         print("  Search index built.")

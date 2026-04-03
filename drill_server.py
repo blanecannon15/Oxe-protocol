@@ -51,7 +51,7 @@ AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-LATENCY_THRESHOLD_MS = 1000
+LATENCY_THRESHOLD_MS = 1500
 TRAP_PROBABILITY = 0.15
 TRAP_LATENCY_MS = 800
 

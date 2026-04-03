@@ -157,7 +157,7 @@ TIER_RANGES = {
 }
 
 UNLOCK_THRESHOLD = 0.80  # 80% of tier must reach mastery >= 3
-LATENCY_THRESHOLD_MS = 1000  # 1-second automaticity rule
+LATENCY_THRESHOLD_MS = 1500  # 1.5-second automaticity rule
 
 
 def _serialize_card(card):
@@ -987,6 +987,19 @@ def migrate_v7(db_path=DB_PATH):
         print(f"[MIGRATE_V7] Chunk classification warning: {e}")
 
 
+def migrate_v8(db_path=DB_PATH):
+    """V8: Promote all manual support chunks to primary so targeted words appear in SRS."""
+    conn = get_connection(db_path)
+    cur = conn.execute(
+        "UPDATE chunk_queue SET item_role = 'primary' WHERE source = 'manual' AND item_role = 'support'"
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    if changed > 0:
+        print(f"[MIGRATE_V8] Promoted {changed} manual support chunks to primary")
+
+
 def clock_start_session(session_type="drill", db_path=DB_PATH):
     """Start a new SRS clock session. Returns session id."""
     now = datetime.now(timezone.utc)
@@ -1239,7 +1252,9 @@ def get_due_chunks(db_path=DB_PATH):
            JOIN word_bank wb ON cq.word_id = wb.id
            WHERE wb.difficulty_tier <= ?
              AND json_extract(cq.srs_state, '$.due') <= ?
-           ORDER BY json_extract(cq.srs_state, '$.due') ASC""",
+           ORDER BY
+             CASE WHEN cq.source = 'manual' THEN 0 ELSE 1 END,
+             json_extract(cq.srs_state, '$.due') ASC""",
         (max_tier, now),
     ).fetchall()
     conn.close()

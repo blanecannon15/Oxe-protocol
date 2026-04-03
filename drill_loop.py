@@ -46,7 +46,7 @@ IMAGE_DIR = Path(__file__).parent / "voca_vault" / "images"
 LOG_DIR = Path(__file__).parent / "voca_vault" / "logs"
 
 NATIVENESS_THRESHOLD = 85
-LATENCY_THRESHOLD_MS = 1000
+LATENCY_THRESHOLD_MS = 1500
 TRAP_LATENCY_MS = 800       # Must react to trap within 800ms
 TRAP_PROBABILITY = 0.15     # 15% chance of a trap during a session cycle
 LARANJADA_PENALTY_COUNT = 5 # Number of next chunks to make harder after a laranjada
@@ -297,11 +297,11 @@ def determine_rating(latency_ms, nativeness_score=None):
     if nativeness_score is not None and nativeness_score < NATIVENESS_THRESHOLD:
         return Rating.Again
 
-    if latency_ms <= 600:
+    if latency_ms <= 800:
         return Rating.Easy
     elif latency_ms <= LATENCY_THRESHOLD_MS:
         return Rating.Good
-    elif latency_ms <= 2000:
+    elif latency_ms <= 3000:
         return Rating.Hard
     else:
         return Rating.Again
