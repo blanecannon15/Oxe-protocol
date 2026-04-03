@@ -992,16 +992,37 @@ def migrate_v7(db_path=DB_PATH):
 
 
 def migrate_v8(db_path=DB_PATH):
-    """V8: Promote manual support→primary + repair corrupt srs_state (empty last_review)."""
+    """V8: Ensure 1 primary chunk per manual word + repair corrupt srs_state."""
     conn = get_connection(db_path)
 
-    # 1) Promote manual support chunks to primary
-    cur = conn.execute(
-        "UPDATE chunk_queue SET item_role = 'primary' WHERE source = 'manual' AND item_role = 'support'"
-    )
-    promoted = cur.rowcount
-    if promoted > 0:
-        print(f"[MIGRATE_V8] Promoted {promoted} manual support chunks to primary")
+    # 1) For each manual word, keep only the first chunk as primary, rest support
+    #    This ensures targeted words = 1 chunk per word, not 4+
+    words_with_multi = conn.execute("""
+        SELECT word_id, MIN(id) as keep_id
+        FROM chunk_queue
+        WHERE source = 'manual' AND item_role = 'primary'
+        GROUP BY word_id
+        HAVING COUNT(*) > 1
+    """).fetchall()
+    demoted = 0
+    for w in words_with_multi:
+        cur = conn.execute(
+            "UPDATE chunk_queue SET item_role = 'support' WHERE source = 'manual' AND word_id = ? AND id != ?",
+            (w["word_id"], w["keep_id"])
+        )
+        demoted += cur.rowcount
+    # Also ensure every manual word has at least 1 primary
+    conn.execute("""
+        UPDATE chunk_queue SET item_role = 'primary'
+        WHERE source = 'manual' AND id IN (
+            SELECT MIN(id) FROM chunk_queue
+            WHERE source = 'manual'
+            GROUP BY word_id
+            HAVING SUM(CASE WHEN item_role = 'primary' THEN 1 ELSE 0 END) = 0
+        )
+    """)
+    if demoted > 0:
+        print(f"[MIGRATE_V8] Demoted {demoted} excess manual chunks to support (1 primary per word)")
 
     # 2) Repair corrupt srs_state — empty last_review crashes FSRS deserializer
     corrupt = conn.execute(
@@ -1244,6 +1265,7 @@ def get_next_chunk(db_path=DB_PATH):
            JOIN word_bank wb ON cq.word_id = wb.id
            WHERE wb.difficulty_tier <= ?
              AND json_extract(cq.srs_state, '$.due') <= ?
+             AND cq.item_role = 'primary'
            ORDER BY
              CASE WHEN json_extract(cq.srs_state, '$.reps') > 0 THEN 0 ELSE 1 END DESC,
              CASE WHEN json_extract(cq.srs_state, '$.reps') > 0
@@ -1275,6 +1297,7 @@ def get_due_chunks(db_path=DB_PATH):
            JOIN word_bank wb ON cq.word_id = wb.id
            WHERE wb.difficulty_tier <= ?
              AND json_extract(cq.srs_state, '$.due') <= ?
+             AND cq.item_role = 'primary'
            ORDER BY
              CASE WHEN cq.source = 'manual' THEN 0
                   WHEN wb.frequency_rank <= 5000 THEN 1

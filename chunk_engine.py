@@ -696,7 +696,7 @@ def auto_link_word_to_chunks(word_id, word, count=4, db_path=DB_PATH):
     for i, c in enumerate(chunks):
         chunk_text = c["chunk"]
         carrier = c.get("carrier_sentence") or build_carrier(word)
-        role = "primary"
+        role = "primary" if i == 0 else "support"
 
         cid = add_chunk(word_id, chunk_text, carrier, "manual", db_path=db_path)
         if cid is None:
