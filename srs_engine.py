@@ -165,7 +165,11 @@ def _serialize_card(card):
 
 
 def _deserialize_card(json_str):
-    return Card.from_dict(json.loads(json_str))
+    data = json.loads(json_str)
+    # Guard against corrupt state: empty last_review or abbreviated keys
+    if data.get("last_review") == "":
+        data.pop("last_review", None)
+    return Card.from_dict(data)
 
 
 def get_tier(rank):
@@ -988,16 +992,32 @@ def migrate_v7(db_path=DB_PATH):
 
 
 def migrate_v8(db_path=DB_PATH):
-    """V8: Promote all manual support chunks to primary so targeted words appear in SRS."""
+    """V8: Promote manual support→primary + repair corrupt srs_state (empty last_review)."""
     conn = get_connection(db_path)
+
+    # 1) Promote manual support chunks to primary
     cur = conn.execute(
         "UPDATE chunk_queue SET item_role = 'primary' WHERE source = 'manual' AND item_role = 'support'"
     )
-    changed = cur.rowcount
+    promoted = cur.rowcount
+    if promoted > 0:
+        print(f"[MIGRATE_V8] Promoted {promoted} manual support chunks to primary")
+
+    # 2) Repair corrupt srs_state — empty last_review crashes FSRS deserializer
+    corrupt = conn.execute(
+        "SELECT id FROM chunk_queue WHERE json_extract(srs_state, '$.last_review') = ''"
+    ).fetchall()
+    if corrupt:
+        now = datetime.now(timezone.utc)
+        card = Card()
+        card.due = now
+        fresh_state = _serialize_card(card)
+        for row in corrupt:
+            conn.execute("UPDATE chunk_queue SET srs_state = ? WHERE id = ?", (fresh_state, row["id"]))
+        print(f"[MIGRATE_V8] Repaired {len(corrupt)} corrupt srs_state records")
+
     conn.commit()
     conn.close()
-    if changed > 0:
-        print(f"[MIGRATE_V8] Promoted {changed} manual support chunks to primary")
 
 
 def clock_start_session(session_type="drill", db_path=DB_PATH):
