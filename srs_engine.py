@@ -1228,10 +1228,11 @@ def get_next_chunk(db_path=DB_PATH):
     """Return the next due chunk from chunk_queue, respecting tier unlocks.
 
     Priority order:
-    1. Manual/priority words first (source='manual')
-    2. Then by frequency rank (most common words first)
-    3. Randomized among items with similar priority (batch of 10)
-    Already-reviewed items (reps > 0) ordered by due date as normal.
+    1. Due reviews (reps > 0) — spaced repetition commitments first
+    2. Manual/targeted words (new, unreviewed)
+    3. Top-5000 frequency words (1+T approach, by rank)
+    4. Everything else by frequency rank
+    Randomized among top 10 candidates in each priority band.
     """
     max_tier = get_unlocked_tier(db_path)
     now = datetime.now(timezone.utc).isoformat()
@@ -1248,7 +1249,9 @@ def get_next_chunk(db_path=DB_PATH):
              CASE WHEN json_extract(cq.srs_state, '$.reps') > 0
                   THEN json_extract(cq.srs_state, '$.due')
                   ELSE NULL END ASC,
-             CASE WHEN cq.source = 'manual' THEN 0 ELSE 1 END,
+             CASE WHEN cq.source = 'manual' THEN 0
+                  WHEN wb.frequency_rank <= 5000 THEN 1
+                  ELSE 2 END,
              wb.frequency_rank ASC
            LIMIT 10""",
         (max_tier, now),
@@ -1273,7 +1276,10 @@ def get_due_chunks(db_path=DB_PATH):
            WHERE wb.difficulty_tier <= ?
              AND json_extract(cq.srs_state, '$.due') <= ?
            ORDER BY
-             CASE WHEN cq.source = 'manual' THEN 0 ELSE 1 END,
+             CASE WHEN cq.source = 'manual' THEN 0
+                  WHEN wb.frequency_rank <= 5000 THEN 1
+                  ELSE 2 END,
+             wb.frequency_rank ASC,
              json_extract(cq.srs_state, '$.due') ASC""",
         (max_tier, now),
     ).fetchall()
