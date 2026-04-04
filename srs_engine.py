@@ -1271,9 +1271,10 @@ def get_next_chunk(db_path=DB_PATH):
              CASE WHEN json_extract(cq.srs_state, '$.reps') > 0
                   THEN json_extract(cq.srs_state, '$.due')
                   ELSE NULL END ASC,
-             CASE WHEN cq.source = 'manual' THEN 0
-                  WHEN wb.frequency_rank <= 5000 THEN 1
-                  ELSE 2 END,
+             CASE WHEN cq.source = 'manual' AND COALESCE(cq.tag,'') != 'priority_2' THEN 0
+                  WHEN cq.source = 'manual' AND cq.tag = 'priority_2' THEN 1
+                  WHEN wb.frequency_rank <= 5000 THEN 2
+                  ELSE 3 END,
              wb.frequency_rank ASC
            LIMIT 10""",
         (max_tier, now),
@@ -1299,9 +1300,10 @@ def get_due_chunks(db_path=DB_PATH):
              AND json_extract(cq.srs_state, '$.due') <= ?
              AND cq.item_role = 'primary'
            ORDER BY
-             CASE WHEN cq.source = 'manual' THEN 0
-                  WHEN wb.frequency_rank <= 5000 THEN 1
-                  ELSE 2 END,
+             CASE WHEN cq.source = 'manual' AND COALESCE(cq.tag,'') != 'priority_2' THEN 0
+                  WHEN cq.source = 'manual' AND cq.tag = 'priority_2' THEN 1
+                  WHEN wb.frequency_rank <= 5000 THEN 2
+                  ELSE 3 END,
              wb.frequency_rank ASC,
              json_extract(cq.srs_state, '$.due') ASC""",
         (max_tier, now),
