@@ -2753,18 +2753,29 @@ searchInput.addEventListener('input', function() {
   debounceTimer = setTimeout(() => fetchUnifiedSearch(q), 300);
 });
 
-// Enter key: select first result or trigger live lookup
-searchInput.addEventListener('keydown', function(e) {
+// Enter key: immediate search — go straight to word or live lookup
+searchInput.addEventListener('keydown', async function(e) {
   if (e.key === 'Enter') {
     e.preventDefault();
+    clearTimeout(debounceTimer);
     const q = this.value.trim();
     if (q.length < 2) return;
-    // If autocomplete has results, select the first word
-    const firstItem = acBox.querySelector('.ac-word');
-    if (firstItem) {
-      firstItem.click();
-    } else {
-      // No results — trigger live lookup directly
+    acBox.classList.remove('visible');
+    // Search API for exact match
+    try {
+      const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+      const data = await res.json();
+      if (data.results && data.results.length > 0) {
+        // Find exact match first, fallback to first result
+        const exact = data.results.find(r => r.word.toLowerCase() === q.toLowerCase());
+        const pick = exact || data.results[0];
+        selectWord(pick.word_id, pick.word, pick.difficulty_tier, pick.frequency_rank);
+      } else {
+        // Not cached — live lookup
+        selectWord(-1, q, 0, 0);
+      }
+    } catch(err) {
+      // Fallback: live lookup
       selectWord(-1, q, 0, 0);
     }
   }
