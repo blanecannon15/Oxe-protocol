@@ -8084,20 +8084,43 @@ class OxeHandler(http.server.BaseHTTPRequestHandler):
         # ── Chunk Queue Bulk Update ──
         elif path == "/api/chunks/bulk-update":
             rows = body.get("rows", [])
+            mode = body.get("mode", "full")  # "carrier_only" or "full"
             conn = get_conn()
             updated = 0
+            inserted = 0
             for r in rows:
-                conn.execute(
-                    """INSERT OR REPLACE INTO chunk_queue
-                       (id, word_id, target_chunk, carrier_sentence, source, item_role, tag, srs_state, current_pass)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (r["id"], r["word_id"], r["target_chunk"], r["carrier_sentence"],
-                     r["source"], r["item_role"], r.get("tag"), r["srs_state"], r.get("current_pass", 1))
-                )
-                updated += 1
+                cid = r["id"]
+                existing = conn.execute("SELECT id FROM chunk_queue WHERE id = ?", (cid,)).fetchone()
+                if existing and mode == "carrier_only":
+                    # Only update carrier + role/tag, preserve SRS progress
+                    conn.execute(
+                        """UPDATE chunk_queue SET carrier_sentence = ?, item_role = ?, tag = ?
+                           WHERE id = ?""",
+                        (r["carrier_sentence"], r["item_role"], r.get("tag"), cid)
+                    )
+                    updated += 1
+                elif existing and mode == "full":
+                    conn.execute(
+                        """UPDATE chunk_queue SET target_chunk = ?, carrier_sentence = ?,
+                           source = ?, item_role = ?, tag = ?, srs_state = ?, current_pass = ?
+                           WHERE id = ?""",
+                        (r["target_chunk"], r["carrier_sentence"], r["source"],
+                         r["item_role"], r.get("tag"), r["srs_state"], r.get("current_pass", 1), cid)
+                    )
+                    updated += 1
+                else:
+                    # New chunk — insert
+                    conn.execute(
+                        """INSERT INTO chunk_queue
+                           (id, word_id, target_chunk, carrier_sentence, source, item_role, tag, srs_state, current_pass)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (cid, r["word_id"], r["target_chunk"], r["carrier_sentence"],
+                         r["source"], r["item_role"], r.get("tag"), r["srs_state"], r.get("current_pass", 1))
+                    )
+                    inserted += 1
             conn.commit()
             conn.close()
-            self._json({"updated": updated})
+            self._json({"updated": updated, "inserted": inserted})
             return
 
         # ── Speech Ladder POST ──
