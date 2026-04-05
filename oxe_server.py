@@ -2760,7 +2760,9 @@ searchInput.addEventListener('keydown', async function(e) {
     clearTimeout(debounceTimer);
     const q = this.value.trim();
     if (q.length < 2) return;
+    acBox.innerHTML = '';
     acBox.classList.remove('visible');
+    searchInput.blur();
     // Search API for exact match
     try {
       const res = await fetch('/api/search?q=' + encodeURIComponent(q));
